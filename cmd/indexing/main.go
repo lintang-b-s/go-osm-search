@@ -27,7 +27,7 @@ func main() {
 	defer db.Close()
 	kvDB := pkg.NewKVDB(db)
 
-	invertedIndex := pkg.NewDynamicIndex("lintang", 1e7, kvDB)
+	invertedIndex, _ := pkg.NewDynamicIndex("lintang", 1e7, kvDB, false)
 	err = invertedIndex.SipmiBatchIndex(ways, onylySearchNodes, nodeMap, tagIDMap)
 	if err != nil {
 		log.Fatal(err)

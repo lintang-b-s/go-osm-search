@@ -184,7 +184,7 @@ func (Idx *InvertedIndex) IterateInvertedIndex() iter.Seq2[IndexIteratorItem, []
 				return
 			}
 			postingList := DecodePostingList(buf)
-			item := NewIndexIteratorItem(termID, len(Idx.Terms))
+			item := NewIndexIteratorItem(termID, len(Idx.Terms)+1)
 			if !yield(item, postingList) {
 				return
 			}
@@ -209,7 +209,7 @@ func (Idx *InvertedIndex) ExitAndRemove() error {
 }
 
 func (Idx *InvertedIndex) GetAproximateMetadataBufferSize() int {
-	allLen := 16 * 3 // 16 bit * 3
+	allLen := 16 * 3 // 16 byte* 3
 	termsSize := 16 * len(Idx.Terms)
 	postingMetadata := 16 * 4 * len(Idx.PostingMetadata)
 	docTermCountDict := 16 * 3 * len(Idx.DocTermCountDict)
@@ -222,25 +222,25 @@ func (Idx *InvertedIndex) SerializeMetadata() []byte {
 	leftPos := 0
 
 	binary.LittleEndian.PutUint16(buf[leftPos:], uint16(len(Idx.Terms)))
-	leftPos += 2 // 16 bit
+	leftPos += 2 // 16 byte
 
 	binary.LittleEndian.PutUint16(buf[leftPos:], uint16(len(Idx.PostingMetadata)))
-	leftPos += 2 // 16 bit
+	leftPos += 2 // 16 byte
 
 	binary.LittleEndian.PutUint16(buf[leftPos:], uint16(len(Idx.DocTermCountDict)))
-	leftPos += 2 // 16 bit
+	leftPos += 2 // 16 byte
 
 	for _, term := range Idx.Terms {
 		// kita pakai uint16bit untuk menyimpan term
 
 		binary.LittleEndian.PutUint16(buf[leftPos:], uint16(term))
-		leftPos += 2 // 16 bit
+		leftPos += 2 // 16 byte
 	}
 
 	for term, val := range Idx.PostingMetadata {
 
 		binary.LittleEndian.PutUint16(buf[leftPos:], uint16(term))
-		leftPos += 2 // 16 bit
+		leftPos += 2 // 16 byte
 
 		startPositionInIndexFile := val[0]    // 2 byte
 		lenPostingList := val[1]              // 2 byte
@@ -260,10 +260,10 @@ func (Idx *InvertedIndex) SerializeMetadata() []byte {
 		// docID = 2 byte, termCount = 2 byte
 
 		binary.LittleEndian.PutUint16(buf[leftPos:], uint16(docID))
-		leftPos += 2 // 16 bit
+		leftPos += 2 // 16 byte
 
 		binary.LittleEndian.PutUint16(buf[leftPos:], uint16(termCount))
-		leftPos += 2 // 16 bit
+		leftPos += 2 // 16 byte
 	}
 
 	return buf

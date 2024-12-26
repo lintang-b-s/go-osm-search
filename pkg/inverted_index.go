@@ -28,7 +28,8 @@ type InvertedIDXDB interface {
 	SaveNodes(nodes []Node) error
 }
 
-func NewDynamicIndex(outputDir string, maxPostingListSize int, kv InvertedIDXDB) *DynamicIndex {
+func NewDynamicIndex(outputDir string, maxPostingListSize int, kv InvertedIDXDB,
+	server bool) (*DynamicIndex, error) {
 	idx := &DynamicIndex{
 		TermIDMap:                 NewIDMap(),
 		IntermediateIndices:       []string{},
@@ -39,9 +40,14 @@ func NewDynamicIndex(outputDir string, maxPostingListSize int, kv InvertedIDXDB)
 		DocsCount:                 0,
 		KV:                        kv,
 	}
-	idx.LoadMeta()
+	if server {
+		err := idx.LoadMeta()
+		if err != nil {
+			return nil, err
+		}
+	}
 
-	return idx
+	return idx, nil 
 }
 
 var dictionary = sastrawi.DefaultDictionary()
@@ -84,9 +90,13 @@ func (Idx *DynamicIndex) SipmiBatchIndex(ways []OSMWay, onlyOsmNodes []OSMNode, 
 		tagStringMap := make(map[string]string)
 		for k, v := range way.TagMap {
 			tagStringMap[tagIDMap.GetStr(k)] = tagIDMap.GetStr(v)
+
 		}
 
 		name, address, building := GetNameAddressBuildingFromOSMWay(tagStringMap)
+		if name == "" {
+			continue
+		}
 		searchNodes = append(searchNodes, NewNode(nodeIDX, name, centerLat,
 			centerLon, address, building))
 		nodeIDX++
@@ -111,6 +121,9 @@ func (Idx *DynamicIndex) SipmiBatchIndex(ways []OSMWay, onlyOsmNodes []OSMNode, 
 			tagStringMap[tagIDMap.GetStr(k)] = tagIDMap.GetStr(v)
 		}
 		name, address, building := GetNameAddressBuildingFromOSNode(tagStringMap)
+		if name == "" {
+			continue
+		}
 		searchNodes = append(searchNodes, NewNode(nodeIDX, name, node.Lat,
 			node.Lon, address, building))
 		nodeIDX++
@@ -152,7 +165,7 @@ func (Idx *DynamicIndex) SipmiBatchIndex(ways []OSMWay, onlyOsmNodes []OSMNode, 
 	}
 	mergedIndex.OpenWriter()
 
-	err = Idx.Merge(indices, *mergedIndex)
+	err = Idx.Merge(indices, mergedIndex)
 	if err != nil {
 		return err
 	}
@@ -183,7 +196,7 @@ func (Idx *DynamicIndex) SipmiIndex(nodes []Node) error {
 	}
 	mergedIndex.OpenWriter()
 
-	err := Idx.Merge(indices, *mergedIndex)
+	err := Idx.Merge(indices, mergedIndex)
 	if err != nil {
 		return err
 	}
@@ -193,13 +206,13 @@ func (Idx *DynamicIndex) SipmiIndex(nodes []Node) error {
 	return nil
 }
 
-func (Idx *DynamicIndex) Merge(indices []InvertedIndex, mergedIndex InvertedIndex) error {
+func (Idx *DynamicIndex) Merge(indices []InvertedIndex, mergedIndex *InvertedIndex) error {
 	lastTerm, lastPosting := -1, []int{}
 	for output := range heapMergeKArray(indices) {
 		currTerm, currPostings := output.TermID, output.Postings
 
 		if currTerm != lastTerm {
-			if lastTerm > 0 {
+			if lastTerm != -1 {
 				sort.Ints(lastPosting)
 				err := mergedIndex.AppendPostingList(lastTerm, lastPosting)
 				if err != nil {
@@ -212,7 +225,7 @@ func (Idx *DynamicIndex) Merge(indices []InvertedIndex, mergedIndex InvertedInde
 		}
 	}
 
-	if lastTerm > 0 {
+	if lastTerm != -1 {
 		sort.Ints(lastPosting)
 		err := mergedIndex.AppendPostingList(lastTerm, lastPosting)
 		if err != nil {
@@ -297,7 +310,9 @@ func (Idx *DynamicIndex) SipmiParseOSMNode(node Node) [][]int {
 	if soup == "" {
 		return termDocPairs
 	}
-	for _, word := range sastrawi.Tokenize(soup) {
+	words := sastrawi.Tokenize(soup)
+	Idx.DocWordCount[node.ID] = len(words)
+	for _, word := range words {
 		tokenizedWord := stemmer.Stem(word)
 		termID := Idx.TermIDMap.GetID(tokenizedWord)
 		pair := []int{termID, node.ID}
@@ -355,7 +370,7 @@ func (Idx *DynamicIndex) LoadMeta() error {
 		return err
 	}
 	defer metadataFile.Close()
-	buf := make([]byte, 1024*5)
+	buf := make([]byte, 1024*1024*20)
 	metadataFile.Read(buf)
 	save := SipmiIndexMetadata{}
 	dec := gob.NewDecoder(bytes.NewReader(buf))

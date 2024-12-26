@@ -18,6 +18,7 @@ type nodeMapContainer struct {
 var ValidSearchTags = map[string]bool{
 	"amenity":       true,
 	"building":      true,
+	"sport":         true,
 	"craft":         true,
 	"shop":          true,
 	"junction":      true,
@@ -163,7 +164,7 @@ func ParseOSM(mapfile string) ([]OSMWay, []OSMNode, nodeMapContainer, IDMap, err
 		return []OSMWay{}, []OSMNode{}, nodeMapContainer{}, IDMap{}, err
 	}
 
-	return ways, onlyOsmNodes, ctr , TagIDMap, nil
+	return ways, onlyOsmNodes, ctr, TagIDMap, nil
 }
 
 func GetNameAddressBuildingFromOSMWay(tag map[string]string) (string, string, string) {
@@ -218,6 +219,7 @@ func GetNameAddressBuildingFromOSNode(tag map[string]string) (string, string, st
 
 func checkIsWayAlowed(tag map[string]string) bool {
 	for k, _ := range tag {
+
 		if ValidSearchTags[k] {
 			return true
 		}

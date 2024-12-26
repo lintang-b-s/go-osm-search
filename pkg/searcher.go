@@ -36,7 +36,7 @@ func (se *Searcher) FreeFormQuery(query string, k int) ([]Node, error) {
 	docsPQ := NewPriorityQueue[int, float64]()
 	termMapper := se.Idx.GetTermIDMap()
 
-	mainIndex := NewInvertedIndex("index_0", se.Idx.GetOutputDir())
+	mainIndex := NewInvertedIndex("merged_index", se.Idx.GetOutputDir())
 	err := mainIndex.OpenReader()
 	if err != nil {
 		return []Node{}, err
@@ -81,7 +81,7 @@ func (se *Searcher) FreeFormQuery(query string, k int) ([]Node, error) {
 	// normalize dengan cara dibagi dengan norm vector query & document
 	for docID, score := range documentScore {
 		documentScore[docID] = score / (queryNorm * docNorm[docID])
-		pqItem := NewPriorityQueueNode[int](documentScore[docID], docID)
+		pqItem := NewPriorityQueueNode[int, float64](documentScore[docID], docID)
 		docsPQ.Push(pqItem)
 	}
 
@@ -102,7 +102,7 @@ func (se *Searcher) FreeFormQuery(query string, k int) ([]Node, error) {
 
 func (se *Searcher) computeDocTFIDFPerTerm(docID int, termID int, postingList []int) float64 {
 	tf := 0.0
-	docWordCount := se.Idx.GetDocWordCount()
+	docWordCount := se.Idx.GetDocWordCount() // ini masih 0 nilainya sama DocCount
 	for _, docIDPosting := range postingList {
 		// kalo postingListnya pake skip list lebih cepet
 		if docIDPosting == docID {

@@ -43,7 +43,7 @@ func (pq priorityQueue[Item, Rank]) Len() int {
 }
 
 func (pq priorityQueue[Item, Rank]) Less(i, j int) bool {
-	return pq[i].rank < pq[j].rank
+	return pq[i].rank > pq[j].rank
 }
 
 func (pq priorityQueue[Item, Rank]) Swap(i, j int) {

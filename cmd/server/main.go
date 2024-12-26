@@ -16,14 +16,19 @@ func main() {
 	defer db.Close()
 	kvDB := pkg.NewKVDB(db)
 
-	invertedIndex := pkg.NewDynamicIndex("lintang", 1e7, kvDB)
+	invertedIndex, err := pkg.NewDynamicIndex("lintang", 1e7, kvDB, true)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	searcher := pkg.NewSearcher(invertedIndex, kvDB)
-	nodes, err := searcher.FreeFormQuery("Jalan", 10)
+	nodes, err := searcher.FreeFormQuery("Masjid", 10)
 	if err != nil {
 		log.Fatal(err)
 	}
 	for _, node := range nodes {
-		fmt.Println(node)
+		fmt.Println(string(node.Address[:]))
+		fmt.Println(node.Lat, node.Lon)
+		fmt.Println(string(node.Name[:]))
 	}
 }
