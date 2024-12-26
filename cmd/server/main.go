@@ -22,7 +22,7 @@ func main() {
 	}
 
 	searcher := pkg.NewSearcher(invertedIndex, kvDB)
-	nodes, err := searcher.FreeFormQuery("Masjid", 10)
+	nodes, err := searcher.FreeFormQuery("FK FKG UMS", 15)
 	if err != nil {
 		log.Fatal(err)
 	}

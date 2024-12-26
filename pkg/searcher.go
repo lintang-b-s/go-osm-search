@@ -1,6 +1,7 @@
 package pkg
 
 import (
+	"container/heap"
 	"math"
 
 	"github.com/RadhiFadlillah/go-sastrawi"
@@ -34,6 +35,7 @@ func (se *Searcher) FreeFormQuery(query string, k int) ([]Node, error) {
 	documentScore := make(map[int]float64) // menyimpan skor cosine tf-idf docs \dot tf-idf query
 	allPostings := make(map[int][]int)
 	docsPQ := NewPriorityQueue[int, float64]()
+	heap.Init(docsPQ)
 	termMapper := se.Idx.GetTermIDMap()
 
 	mainIndex := NewInvertedIndex("merged_index", se.Idx.GetOutputDir())
@@ -82,7 +84,7 @@ func (se *Searcher) FreeFormQuery(query string, k int) ([]Node, error) {
 	for docID, score := range documentScore {
 		documentScore[docID] = score / (queryNorm * docNorm[docID])
 		pqItem := NewPriorityQueueNode[int, float64](documentScore[docID], docID)
-		docsPQ.Push(pqItem)
+		heap.Push(docsPQ, pqItem)
 	}
 
 	relevantDocs := []Node{}
@@ -90,7 +92,7 @@ func (se *Searcher) FreeFormQuery(query string, k int) ([]Node, error) {
 		if docsPQ.Len() == 0 {
 			break
 		}
-		currRelDocID := docsPQ.Pop().(*priorityQueueNode[int, float64]).item
+		currRelDocID := heap.Pop(docsPQ).(*priorityQueueNode[int, float64]).item
 		doc, err := se.KV.GetNode(currRelDocID)
 		if err != nil {
 			return []Node{}, err
