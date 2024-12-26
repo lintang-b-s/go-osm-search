@@ -34,7 +34,7 @@ func (se *Searcher) FreeFormQuery(query string, k int) ([]Node, error) {
 	}
 	documentScore := make(map[int]float64) // menyimpan skor cosine tf-idf docs \dot tf-idf query
 	allPostings := make(map[int][]int)
-	docsPQ := NewPriorityQueue[int, float64]()
+	docsPQ := NewMaxPriorityQueue[int, float64]()
 	heap.Init(docsPQ)
 	termMapper := se.Idx.GetTermIDMap()
 
@@ -45,9 +45,9 @@ func (se *Searcher) FreeFormQuery(query string, k int) ([]Node, error) {
 	}
 	queryWordCount := make(map[int]int)
 	for _, term := range sastrawi.Tokenize(query) {
-		tokenizedTerm := stemmer.Stem(term)
-		termID := termMapper.GetID(tokenizedTerm)
-		postings, err := mainIndex.GetPostingList(termID) // sorted postings untuk termID
+		tokenizedTerm := stemmer.Stem(term) 
+		termID := termMapper.GetID(tokenizedTerm) 
+		postings, err := mainIndex.GetPostingList(termID) 
 		if err != nil {
 			return []Node{}, err
 		}
@@ -88,23 +88,28 @@ func (se *Searcher) FreeFormQuery(query string, k int) ([]Node, error) {
 	}
 
 	relevantDocs := []Node{}
+	rank := []float64{}
 	for i := 0; i < k; i++ {
 		if docsPQ.Len() == 0 {
 			break
 		}
-		currRelDocID := heap.Pop(docsPQ).(*priorityQueueNode[int, float64]).item
+		
+		heapItem := heap.Pop(docsPQ).(*priorityQueueNode[int, float64])
+		currRelDocID := heapItem.item
+		rank = append(rank, heapItem.rank)
 		doc, err := se.KV.GetNode(currRelDocID)
 		if err != nil {
 			return []Node{}, err
 		}
 		relevantDocs = append(relevantDocs, doc)
 	}
+
 	return relevantDocs, nil
 }
 
 func (se *Searcher) computeDocTFIDFPerTerm(docID int, termID int, postingList []int) float64 {
 	tf := 0.0
-	docWordCount := se.Idx.GetDocWordCount() // ini masih 0 nilainya sama DocCount
+	docWordCount := se.Idx.GetDocWordCount() 
 	for _, docIDPosting := range postingList {
 		// kalo postingListnya pake skip list lebih cepet
 		if docIDPosting == docID {

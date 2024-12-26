@@ -81,7 +81,7 @@ func (Idx *InvertedIndex) Close() error {
 
 		metadataBufferSize := len(metadataBuf)
 
-		bufferSizeBuf := make([]byte, 10)
+		bufferSizeBuf := make([]byte, 100)
 		binary.LittleEndian.PutUint64(bufferSizeBuf[:], math.Float64bits(float64(metadataBufferSize)))
 
 		_, err = bufferSizeFile.Write(bufferSizeBuf)
@@ -112,7 +112,7 @@ func (Idx *InvertedIndex) OpenReader() error {
 	}
 	defer bufferSizeFile.Close()
 
-	buf := make([]byte, 10)
+	buf := make([]byte, 100)
 	_, err = bufferSizeFile.Read(buf)
 	if err != nil {
 		return err
@@ -125,6 +125,7 @@ func (Idx *InvertedIndex) OpenReader() error {
 		return err
 	}
 	Idx.DeserializeMetadata(buf)
+
 	return nil
 }
 
@@ -185,6 +186,7 @@ func (Idx *InvertedIndex) IterateInvertedIndex() iter.Seq2[IndexIteratorItem, []
 			}
 			postingList := DecodePostingList(buf)
 			item := NewIndexIteratorItem(termID, len(Idx.Terms)+1)
+
 			if !yield(item, postingList) {
 				return
 			}
@@ -209,78 +211,78 @@ func (Idx *InvertedIndex) ExitAndRemove() error {
 }
 
 func (Idx *InvertedIndex) GetAproximateMetadataBufferSize() int {
-	allLen := 16 * 3 // 16 byte* 3
-	termsSize := 16 * len(Idx.Terms)
-	postingMetadata := 16 * 4 * len(Idx.PostingMetadata)
-	docTermCountDict := 16 * 3 * len(Idx.DocTermCountDict)
+	allLen := 4 * 3 // 4 byte* 3
+	termsSize := 4 * len(Idx.Terms)
+	postingMetadata := 4 * 4 * len(Idx.PostingMetadata)
+	docTermCountDict := 4 * 3 * len(Idx.DocTermCountDict)
 	return allLen + termsSize + postingMetadata + docTermCountDict + 2
 }
 
 func (Idx *InvertedIndex) SerializeMetadata() []byte {
-	approxBufferSize := Idx.GetAproximateMetadataBufferSize() * 4
+	approxBufferSize := Idx.GetAproximateMetadataBufferSize()
 	buf := make([]byte, approxBufferSize)
 	leftPos := 0
 
-	binary.LittleEndian.PutUint16(buf[leftPos:], uint16(len(Idx.Terms)))
-	leftPos += 2 // 16 byte
+	binary.LittleEndian.PutUint32(buf[leftPos:], uint32(len(Idx.Terms)))
+	leftPos += 4 // 32 bit
 
-	binary.LittleEndian.PutUint16(buf[leftPos:], uint16(len(Idx.PostingMetadata)))
-	leftPos += 2 // 16 byte
+	binary.LittleEndian.PutUint32(buf[leftPos:], uint32(len(Idx.PostingMetadata)))
+	leftPos += 4 // 32 bit
 
-	binary.LittleEndian.PutUint16(buf[leftPos:], uint16(len(Idx.DocTermCountDict)))
-	leftPos += 2 // 16 byte
+	binary.LittleEndian.PutUint32(buf[leftPos:], uint32(len(Idx.DocTermCountDict)))
+	leftPos += 4 // 32 bit
 
 	for _, term := range Idx.Terms {
-		// kita pakai uint16bit untuk menyimpan term
+		// kita pakai uint32bit untuk menyimpan term
 
-		binary.LittleEndian.PutUint16(buf[leftPos:], uint16(term))
-		leftPos += 2 // 16 byte
+		binary.LittleEndian.PutUint32(buf[leftPos:], uint32(term))
+		leftPos += 4 // 32 bit
 	}
 
 	for term, val := range Idx.PostingMetadata {
 
-		binary.LittleEndian.PutUint16(buf[leftPos:], uint16(term))
-		leftPos += 2 // 16 byte
+		binary.LittleEndian.PutUint32(buf[leftPos:], uint32(term))
+		leftPos += 4 // 32 bit
 
-		startPositionInIndexFile := val[0]    // 2 byte
-		lenPostingList := val[1]              // 2 byte
-		lengthInBytesOfPostingLists := val[2] // 2 byte
+		startPositionInIndexFile := val[0]    // 4 byte
+		lenPostingList := val[1]              // 4 byte
+		lengthInBytesOfPostingLists := val[2] // 4 byte
 
-		binary.LittleEndian.PutUint16(buf[leftPos:], uint16(lengthInBytesOfPostingLists))
-		leftPos += 2
+		binary.LittleEndian.PutUint32(buf[leftPos:], uint32(lengthInBytesOfPostingLists))
+		leftPos += 4
 
-		binary.LittleEndian.PutUint16(buf[leftPos:], uint16(lenPostingList))
-		leftPos += 2
+		binary.LittleEndian.PutUint32(buf[leftPos:], uint32(lenPostingList))
+		leftPos += 4
 
-		binary.LittleEndian.PutUint16(buf[leftPos:], uint16(startPositionInIndexFile))
-		leftPos += 2
+		binary.LittleEndian.PutUint32(buf[leftPos:], uint32(startPositionInIndexFile))
+		leftPos += 4
 	}
 
 	for docID, termCount := range Idx.DocTermCountDict {
-		// docID = 2 byte, termCount = 2 byte
+		// docID = 4 byte, termCount = 4 byte
 
-		binary.LittleEndian.PutUint16(buf[leftPos:], uint16(docID))
-		leftPos += 2 // 16 byte
+		binary.LittleEndian.PutUint32(buf[leftPos:], uint32(docID))
+		leftPos += 4 // 32 bit
 
-		binary.LittleEndian.PutUint16(buf[leftPos:], uint16(termCount))
-		leftPos += 2 // 16 byte
+		binary.LittleEndian.PutUint32(buf[leftPos:], uint32(termCount))
+		leftPos += 4 // 32 bit
 	}
 
 	return buf
 }
 
-// DeserializeMetadata. deserialize metadata inverted index (salah)
+// DeserializeMetadata. 
 func (Idx *InvertedIndex) DeserializeMetadata(buf []byte) {
 	leftPos := 0
 
-	termCount := int(binary.LittleEndian.Uint16(buf[0:2]))
-	leftPos += 2
+	termCount := int(binary.LittleEndian.Uint32(buf[0:4]))
+	leftPos += 4
 
-	PostingMetadatacount := int(binary.LittleEndian.Uint16(buf[2:4]))
-	leftPos += 2
+	PostingMetadatacount := int(binary.LittleEndian.Uint32(buf[4:8]))
+	leftPos += 4
 
-	docTermCountDictCount := int(binary.LittleEndian.Uint16(buf[4:6]))
-	leftPos += 2
+	docTermCountDictCount := int(binary.LittleEndian.Uint32(buf[8:12]))
+	leftPos += 4
 
 	Idx.Terms = make([]int, termCount)
 	Idx.PostingMetadata = make(map[int][]int)
@@ -288,35 +290,35 @@ func (Idx *InvertedIndex) DeserializeMetadata(buf []byte) {
 
 	for i := 0; i < termCount; i++ {
 
-		term := int(binary.LittleEndian.Uint16(buf[leftPos:]))
-		leftPos += 2
+		term := int(binary.LittleEndian.Uint32(buf[leftPos:]))
+		leftPos += 4
 		Idx.Terms[i] = term
 	}
 
 	for i := 0; i < PostingMetadatacount; i++ {
 
-		term := int(binary.LittleEndian.Uint16(buf[leftPos:]))
-		leftPos += 2
+		term := int(binary.LittleEndian.Uint32(buf[leftPos:]))
+		leftPos += 4
 
-		lengthInBytesOfPostingLists := int(binary.LittleEndian.Uint16(buf[leftPos:]))
-		leftPos += 2
+		lengthInBytesOfPostingLists := int(binary.LittleEndian.Uint32(buf[leftPos:]))
+		leftPos += 4
 
-		lenPostingList := int(binary.LittleEndian.Uint16(buf[leftPos:]))
-		leftPos += 2
+		lenPostingList := int(binary.LittleEndian.Uint32(buf[leftPos:]))
+		leftPos += 4
 
-		startPositionInIndexFile := int(binary.LittleEndian.Uint16(buf[leftPos:]))
-		leftPos += 2
+		startPositionInIndexFile := int(binary.LittleEndian.Uint32(buf[leftPos:]))
+		leftPos += 4
 
 		Idx.PostingMetadata[term] = []int{startPositionInIndexFile, lenPostingList, lengthInBytesOfPostingLists}
 	}
 
 	for i := 0; i < docTermCountDictCount; i++ {
 
-		docID := int(binary.LittleEndian.Uint16(buf[leftPos:]))
-		leftPos += 2
+		docID := int(binary.LittleEndian.Uint32(buf[leftPos:]))
+		leftPos += 4
 
-		termCount := int(binary.LittleEndian.Uint16(buf[leftPos:]))
-		leftPos += 2
+		termCount := int(binary.LittleEndian.Uint32(buf[leftPos:]))
+		leftPos += 4
 
 		Idx.DocTermCountDict[docID] = termCount
 	}

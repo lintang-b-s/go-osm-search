@@ -167,7 +167,7 @@ func ParseOSM(mapfile string) ([]OSMWay, []OSMNode, nodeMapContainer, IDMap, err
 	return ways, onlyOsmNodes, ctr, TagIDMap, nil
 }
 
-func GetNameAddressBuildingFromOSMWay(tag map[string]string) (string, string, string) {
+func GetNameAddressBuildingFromOSMWay(tag map[string]string) (string, string, string, string) {
 	name := tag["name"]
 	address := ""
 	fullAdress, ok := tag["addr:full"]
@@ -182,19 +182,20 @@ func GetNameAddressBuildingFromOSMWay(tag map[string]string) (string, string, st
 	if ok {
 		address += place + ", "
 	}
-	city, ok := tag["addr:city"]
+	city := ""
+	city, ok = tag["addr:city"]
 	if ok {
 		address += city + ", "
 	}
 	building, ok := tag["amenity"]
 	if !ok {
 		building = tag["building"]
-		return name, address, building
+		return name, address, building, city
 	}
-	return name, address, building
+	return name, address, building, city
 }
 
-func GetNameAddressBuildingFromOSNode(tag map[string]string) (string, string, string) {
+func GetNameAddressBuildingFromOSNode(tag map[string]string) (string, string, string, string) {
 	name := tag["name"]
 	address := ""
 	fullAdress, ok := tag["addr:full"]
@@ -209,12 +210,13 @@ func GetNameAddressBuildingFromOSNode(tag map[string]string) (string, string, st
 	if ok {
 		address += place + ", "
 	}
-	city, ok := tag["addr:city"]
+	city := ""
+	city, ok = tag["addr:city"]
 	if ok {
 		address += city + ", "
 	}
 	building, ok := tag["historic"]
-	return name, address, building
+	return name, address, building, city
 }
 
 func checkIsWayAlowed(tag map[string]string) bool {

@@ -10,7 +10,7 @@ import (
 
 var (
 	listenAddr = flag.String("listenaddr", ":5000", "server listen address")
-	mapFile    = flag.String("f", "surakarta.osm.pbf", "openstreeetmap file buat road network graphnya")
+	mapFile    = flag.String("f", "jabodetabek.osm.pbf", "openstreeetmap file")
 )
 
 func main() {

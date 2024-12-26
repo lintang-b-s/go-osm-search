@@ -2,7 +2,6 @@ package pkg
 
 // https://nlp.stanford.edu/IR-book/pdf/05comp.pdf (Variable byte codes) (figure 5.8 function VBEncodeNumber(n), VBEncode(numbers), VBDecode(bytestream))
 
-
 func encodeNumber(number int) []byte {
 	var bytesList = []byte{}
 	for {
@@ -40,11 +39,10 @@ func Decode(bytestream []byte) []int {
 	return numbers
 }
 
-
 func EncodePostingList(postingList []int) []byte {
-	return Encode(postingList)
+	return Encode(postingList) 
 }
 
 func DecodePostingList(bytestream []byte) []int {
-	return Decode(bytestream)
+	return Decode(bytestream) 
 }

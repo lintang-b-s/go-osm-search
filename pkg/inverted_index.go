@@ -26,6 +26,7 @@ type DynamicIndex struct {
 }
 type InvertedIDXDB interface {
 	SaveNodes(nodes []Node) error
+	GetNode(id int) (Node, error)
 }
 
 func NewDynamicIndex(outputDir string, maxPostingListSize int, kv InvertedIDXDB,
@@ -47,7 +48,7 @@ func NewDynamicIndex(outputDir string, maxPostingListSize int, kv InvertedIDXDB,
 		}
 	}
 
-	return idx, nil 
+	return idx, nil
 }
 
 var dictionary = sastrawi.DefaultDictionary()
@@ -93,12 +94,12 @@ func (Idx *DynamicIndex) SipmiBatchIndex(ways []OSMWay, onlyOsmNodes []OSMNode, 
 
 		}
 
-		name, address, building := GetNameAddressBuildingFromOSMWay(tagStringMap)
+		name, address, building, city := GetNameAddressBuildingFromOSMWay(tagStringMap)
 		if name == "" {
 			continue
 		}
 		searchNodes = append(searchNodes, NewNode(nodeIDX, name, centerLat,
-			centerLon, address, building))
+			centerLon, address, building, city))
 		nodeIDX++
 
 		if len(searchNodes) == 240000 {
@@ -120,12 +121,12 @@ func (Idx *DynamicIndex) SipmiBatchIndex(ways []OSMWay, onlyOsmNodes []OSMNode, 
 		for k, v := range node.TagMap {
 			tagStringMap[tagIDMap.GetStr(k)] = tagIDMap.GetStr(v)
 		}
-		name, address, building := GetNameAddressBuildingFromOSNode(tagStringMap)
+		name, address, building, city := GetNameAddressBuildingFromOSNode(tagStringMap)
 		if name == "" {
 			continue
 		}
 		searchNodes = append(searchNodes, NewNode(nodeIDX, name, node.Lat,
-			node.Lon, address, building))
+			node.Lon, address, building, city))
 		nodeIDX++
 		if len(searchNodes) == 240000 {
 			err := Idx.SipmiInvert(searchNodes, &block)
@@ -140,10 +141,10 @@ func (Idx *DynamicIndex) SipmiBatchIndex(ways []OSMWay, onlyOsmNodes []OSMNode, 
 		}
 	}
 
-	Idx.DocsCount = nodeIDX // harus di simpan di disk
+	Idx.DocsCount = nodeIDX
 
 	bar.Add(1)
-	err := Idx.SipmiInvert(searchNodes, &block)
+	err := Idx.SipmiInvert(searchNodes, &block) 
 	if err != nil {
 		return err
 	}
@@ -223,6 +224,7 @@ func (Idx *DynamicIndex) Merge(indices []InvertedIndex, mergedIndex *InvertedInd
 		} else {
 			lastPosting = append(lastPosting, currPostings...)
 		}
+
 	}
 
 	if lastTerm != -1 {
@@ -235,6 +237,11 @@ func (Idx *DynamicIndex) Merge(indices []InvertedIndex, mergedIndex *InvertedInd
 	return nil
 }
 
+func (Idx *DynamicIndex) GetNode(nodeID int) (Node, error) {
+	return Idx.KV.GetNode(nodeID)
+}
+
+
 func (Idx *DynamicIndex) SipmiInvert(nodes []Node, block *int) error {
 	postingSize := 0
 
@@ -244,9 +251,9 @@ func (Idx *DynamicIndex) SipmiInvert(nodes []Node, block *int) error {
 		if len(termDocPairs) == 0 {
 			continue
 		}
-		// termID, nodeID := termDocPair[0], termDocPair[1]
 		for _, termDocPair := range termDocPairs {
 			termID, nodeID := termDocPair[0], termDocPair[1]
+
 			var postingList []int
 			if _, ok := termToPostingMap[termID]; ok {
 				postingList = termToPostingMap[termID]
@@ -274,6 +281,7 @@ func (Idx *DynamicIndex) SipmiInvert(nodes []Node, block *int) error {
 			}
 			Idx.IntermediateIndices = append(Idx.IntermediateIndices, indexID)
 			for term := range terms {
+
 				sort.Ints(termToPostingMap[term])
 				index.AppendPostingList(term, termToPostingMap[term])
 			}
@@ -296,20 +304,25 @@ func (Idx *DynamicIndex) SipmiInvert(nodes []Node, block *int) error {
 	}
 	Idx.IntermediateIndices = append(Idx.IntermediateIndices, indexID)
 	for _, term := range terms {
+
 		sort.Ints(termToPostingMap[term])
 		index.AppendPostingList(term, termToPostingMap[term])
 	}
 	*block += 1
-	index.Close()
+	err = index.Close()
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
 func (Idx *DynamicIndex) SipmiParseOSMNode(node Node) [][]int {
 	termDocPairs := [][]int{}
-	soup := string(node.Name[:]) + " " + string(node.Address[:]) + " " + string(node.Building[:])
+	soup := string(node.Name[:]) + " " + string(node.City[:]) + " " + string(node.Building[:])
 	if soup == "" {
 		return termDocPairs
 	}
+
 	words := sastrawi.Tokenize(soup)
 	Idx.DocWordCount[node.ID] = len(words)
 	for _, word := range words {
@@ -370,7 +383,7 @@ func (Idx *DynamicIndex) LoadMeta() error {
 		return err
 	}
 	defer metadataFile.Close()
-	buf := make([]byte, 1024*1024*20)
+	buf := make([]byte, 1024*1024*40)
 	metadataFile.Read(buf)
 	save := SipmiIndexMetadata{}
 	dec := gob.NewDecoder(bytes.NewReader(buf))

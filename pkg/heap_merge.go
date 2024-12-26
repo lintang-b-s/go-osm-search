@@ -1,6 +1,7 @@
 package pkg
 
 import (
+	"container/heap"
 	"iter"
 )
 
@@ -18,8 +19,8 @@ func NewHeapMergeOutput(termID int, postings []int) heapMergeOutput {
 
 func heapMergeKArray(indexes []InvertedIndex) iter.Seq[heapMergeOutput] {
 	return func(yield func(heapMergeOutput) bool) {
-		pq := NewPriorityQueue[heapMergeItem, int]()
-
+		pq := NewMinPriorityQueue[heapMergeItem, int]()
+		heap.Init(pq)
 
 		for i, index := range indexes {
 			indexIterator := index.IterateInvertedIndex()
@@ -30,12 +31,12 @@ func heapMergeKArray(indexes []InvertedIndex) iter.Seq[heapMergeOutput] {
 
 			currHeapMergeItem := NewHeapMergeItem(termID, []int{i, 0, termSize}, postingList)
 			pqItem := NewPriorityQueueNode[heapMergeItem](termID, currHeapMergeItem)
-			pq.Push(pqItem)
+			heap.Push(pq, pqItem)
 			stop()
 		}
 
 		for pq.Len() > 0 {
-			curr := pq.Pop().(*priorityQueueNode[heapMergeItem, int])
+			curr := heap.Pop(pq).(*priorityQueueNode[heapMergeItem, int])
 			termID := curr.item.TermID
 			arrIndex := curr.item.Metadata[0]
 			insideIndex := curr.item.Metadata[1]
@@ -56,7 +57,7 @@ func heapMergeKArray(indexes []InvertedIndex) iter.Seq[heapMergeOutput] {
 
 				currHeapMergeItem := NewHeapMergeItem(termID, []int{arrIndex, insideIndex + 1, termSize}, postingList)
 				pqItem := NewPriorityQueueNode[heapMergeItem](termID, currHeapMergeItem)
-				pq.Push(pqItem)
+				heap.Push(pq, pqItem)
 				stop()
 			}
 

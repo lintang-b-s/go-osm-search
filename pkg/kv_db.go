@@ -20,7 +20,7 @@ func (db *KVDB) SaveNodes(nodes []Node) error {
 	batch := db.db.NewWriteBatch()
 
 	for _, node := range nodes {
-		soup := string(node.Name[:]) + " " + string(node.Address[:]) + " " + string(node.Building[:])
+		soup := string(node.Name[:]) + " " + string(node.City[:]) + " " + string(node.Building[:])
 		if soup == "" {
 			continue
 		}
@@ -60,7 +60,7 @@ func (db *KVDB) GetNode(id int) (Node, error) {
 }
 
 func SerializeNode(node Node) ([]byte, error) {
-	buf := make([]byte, 500) // aproksimasi 448 byte buat per node, jadi 500 byte aja
+	buf := make([]byte, 500) // aproksimasi 480 byte buat per node, jadi 500 byte aja
 	leftPos := 0
 
 	binary.LittleEndian.PutUint16(buf[leftPos:], uint16(node.ID))
@@ -80,6 +80,9 @@ func SerializeNode(node Node) ([]byte, error) {
 
 	copy(buf[leftPos:leftPos+64], node.Building[:])
 	leftPos += 64
+
+	copy(buf[leftPos:leftPos+32], node.City[:])
+	leftPos += 32
 
 	return buf[:leftPos], nil
 }
@@ -106,44 +109,8 @@ func DeserializeNode(buf []byte) (Node, error) {
 	copy(node.Building[:], buf[leftPos:leftPos+64])
 	leftPos += 64
 
+	copy(node.City[:], buf[leftPos:leftPos+32])
+	leftPos += 32
+
 	return node, nil
 }
-
-// func (db *KVDB) SaveNodes(nodes []Node) error {
-// 	batch := db.db.NewBatch()
-// 	defer batch.Close()
-
-// 	for _, node := range nodes {
-// 		soup := string(node.Name[:]) + " " + string(node.Address[:]) + " " + string(node.Building[:])
-// 		if soup == "" {
-// 			continue
-// 		}
-// 		nodeBytes, err := SerializeNode(node)
-// 		if err != nil {
-// 			return err
-// 		}
-// 		// err = db.db.Set([]byte(strconv.Itoa(node.ID)), nodeBytes, pebble.Sync)
-// 		// if err != nil {
-// 		// 	return err
-// 		// } lemot banget
-// 		err = batch.Set([]byte(strconv.Itoa(node.ID)), nodeBytes, pebble.Sync)
-// 		if err != nil {
-// 			log.Fatal(err)
-// 		}
-// 	}
-// 	err := batch.Commit(pebble.Sync)
-// 	return err
-// }
-
-// func (db *KVDB) GetNode(id int) (Node, error) {
-// 	nodeBytes, closer, err := db.db.Get([]byte(strconv.Itoa(id)))
-// 	if err != nil {
-// 		return Node{}, err
-// 	}
-// 	defer closer.Close()
-// 	node, err := DeserializeNode(nodeBytes)
-// 	if err != nil {
-// 		return Node{}, err
-// 	}
-// 	return node, nil
-// }
