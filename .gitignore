@@ -3,3 +3,6 @@
 lintang/
 *.osm.pbf
 tmp/
+osm-searchdb/
+
+

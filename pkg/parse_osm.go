@@ -34,8 +34,6 @@ var ValidNodeSearchTag = map[string]bool{
 	"name":     true,
 }
 
-var TagIDMap IDMap = NewIDMap()
-
 type OSMWay struct {
 	NodeIDs []int
 	TagMap  map[int]int
@@ -62,12 +60,13 @@ func NewOSMNode(lat float64, lon float64, tagMap map[int]int) OSMNode {
 	}
 }
 
-func ParseOSM(mapfile string) ([]OSMWay, []OSMNode, nodeMapContainer, error) {
+func ParseOSM(mapfile string) ([]OSMWay, []OSMNode, nodeMapContainer, IDMap, error) {
+	var TagIDMap IDMap = NewIDMap()
 
 	f, err := os.Open(mapfile)
 
 	if err != nil {
-		return []OSMWay{}, []OSMNode{}, nodeMapContainer{}, err
+		return []OSMWay{}, []OSMNode{}, nodeMapContainer{}, IDMap{}, err
 	}
 
 	defer f.Close()
@@ -130,7 +129,7 @@ func ParseOSM(mapfile string) ([]OSMWay, []OSMNode, nodeMapContainer, error) {
 	bar.Add(1)
 	f.Seek(0, io.SeekStart)
 	if err != nil {
-		return []OSMWay{}, []OSMNode{}, nodeMapContainer{}, err
+		return []OSMWay{}, []OSMNode{}, nodeMapContainer{}, IDMap{}, err
 	}
 
 	scanner = osmpbf.New(context.Background(), f, 3)
@@ -161,10 +160,10 @@ func ParseOSM(mapfile string) ([]OSMWay, []OSMNode, nodeMapContainer, error) {
 
 	scanErr := scanner.Err()
 	if scanErr != nil {
-		return []OSMWay{}, []OSMNode{}, nodeMapContainer{}, err
+		return []OSMWay{}, []OSMNode{}, nodeMapContainer{}, IDMap{}, err
 	}
 
-	return ways, onlyOsmNodes, ctr, nil
+	return ways, onlyOsmNodes, ctr , TagIDMap, nil
 }
 
 func GetNameAddressBuildingFromOSMWay(tag map[string]string) (string, string, string) {

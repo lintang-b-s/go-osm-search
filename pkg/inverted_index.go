@@ -11,6 +11,7 @@ import (
 	"github.com/k0kubun/go-ansi"
 	"github.com/schollz/progressbar/v3"
 )
+
 // https://nlp.stanford.edu/IR-book/pdf/04const.pdf (4.3 Single-pass in-memory indexing)
 
 type DynamicIndex struct {
@@ -21,10 +22,14 @@ type DynamicIndex struct {
 	DocWordCount              map[int]int
 	OutputDir                 string
 	DocsCount                 int
+	KV                        InvertedIDXDB
+}
+type InvertedIDXDB interface {
+	SaveNodes(nodes []Node) error
 }
 
-func NewDynamicIndex(outputDir string, maxPostingListSize int) *DynamicIndex {
-	return &DynamicIndex{
+func NewDynamicIndex(outputDir string, maxPostingListSize int, kv InvertedIDXDB) *DynamicIndex {
+	idx := &DynamicIndex{
 		TermIDMap:                 NewIDMap(),
 		IntermediateIndices:       []string{},
 		InMemoryIndices:           make(map[int][]int),
@@ -32,13 +37,18 @@ func NewDynamicIndex(outputDir string, maxPostingListSize int) *DynamicIndex {
 		DocWordCount:              make(map[int]int),
 		OutputDir:                 outputDir,
 		DocsCount:                 0,
+		KV:                        kv,
 	}
+	idx.LoadMeta()
+
+	return idx
 }
 
 var dictionary = sastrawi.DefaultDictionary()
 var stemmer = sastrawi.NewStemmer(dictionary)
 
-func (Idx *DynamicIndex) SipmiBatchIndex(ways []OSMWay, onlyOsmNodes []OSMNode, ctr nodeMapContainer) error {
+func (Idx *DynamicIndex) SipmiBatchIndex(ways []OSMWay, onlyOsmNodes []OSMNode, ctr nodeMapContainer,
+	tagIDMap IDMap) error {
 	searchNodes := []Node{}
 	nodeIDX := 0
 	bar := progressbar.NewOptions(5,
@@ -73,7 +83,7 @@ func (Idx *DynamicIndex) SipmiBatchIndex(ways []OSMWay, onlyOsmNodes []OSMNode, 
 		}
 		tagStringMap := make(map[string]string)
 		for k, v := range way.TagMap {
-			tagStringMap[TagIDMap.GetStr(k)] = TagIDMap.GetStr(v)
+			tagStringMap[tagIDMap.GetStr(k)] = tagIDMap.GetStr(v)
 		}
 
 		name, address, building := GetNameAddressBuildingFromOSMWay(tagStringMap)
@@ -81,8 +91,12 @@ func (Idx *DynamicIndex) SipmiBatchIndex(ways []OSMWay, onlyOsmNodes []OSMNode, 
 			centerLon, address, building))
 		nodeIDX++
 
-		if nodeIDX%150000 == 0 {
+		if len(searchNodes) == 240000 {
 			err := Idx.SipmiInvert(searchNodes, &block)
+			if err != nil {
+				return err
+			}
+			err = Idx.KV.SaveNodes(searchNodes)
 			if err != nil {
 				return err
 			}
@@ -94,14 +108,18 @@ func (Idx *DynamicIndex) SipmiBatchIndex(ways []OSMWay, onlyOsmNodes []OSMNode, 
 	for _, node := range onlyOsmNodes {
 		tagStringMap := make(map[string]string)
 		for k, v := range node.TagMap {
-			tagStringMap[TagIDMap.GetStr(k)] = TagIDMap.GetStr(v)
+			tagStringMap[tagIDMap.GetStr(k)] = tagIDMap.GetStr(v)
 		}
 		name, address, building := GetNameAddressBuildingFromOSNode(tagStringMap)
 		searchNodes = append(searchNodes, NewNode(nodeIDX, name, node.Lat,
 			node.Lon, address, building))
 		nodeIDX++
-		if nodeIDX%150000 == 0 {
+		if len(searchNodes) == 240000 {
 			err := Idx.SipmiInvert(searchNodes, &block)
+			if err != nil {
+				return err
+			}
+			err = Idx.KV.SaveNodes(searchNodes)
 			if err != nil {
 				return err
 			}
@@ -113,6 +131,10 @@ func (Idx *DynamicIndex) SipmiBatchIndex(ways []OSMWay, onlyOsmNodes []OSMNode, 
 
 	bar.Add(1)
 	err := Idx.SipmiInvert(searchNodes, &block)
+	if err != nil {
+		return err
+	}
+	err = Idx.KV.SaveNodes(searchNodes)
 	if err != nil {
 		return err
 	}
@@ -271,7 +293,10 @@ func (Idx *DynamicIndex) SipmiInvert(nodes []Node, block *int) error {
 
 func (Idx *DynamicIndex) SipmiParseOSMNode(node Node) [][]int {
 	termDocPairs := [][]int{}
-	soup := node.Name + " " + node.Address + " " + node.Building
+	soup := string(node.Name[:]) + " " + string(node.Address[:]) + " " + string(node.Building[:])
+	if soup == "" {
+		return termDocPairs
+	}
 	for _, word := range sastrawi.Tokenize(soup) {
 		tokenizedWord := stemmer.Stem(word)
 		termID := Idx.TermIDMap.GetID(tokenizedWord)
@@ -313,6 +338,7 @@ func (Idx *DynamicIndex) SaveMeta() error {
 	if err != nil {
 		return err
 	}
+	defer metadataFile.Close()
 	err = metadataFile.Truncate(0)
 	if err != nil {
 		return err
@@ -328,7 +354,8 @@ func (Idx *DynamicIndex) LoadMeta() error {
 	if err != nil {
 		return err
 	}
-	buf := make([]byte, 1024*1024*2) // 2mb
+	defer metadataFile.Close()
+	buf := make([]byte, 1024*5)
 	metadataFile.Read(buf)
 	save := SipmiIndexMetadata{}
 	dec := gob.NewDecoder(bytes.NewReader(buf))

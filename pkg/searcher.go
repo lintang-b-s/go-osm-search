@@ -18,10 +18,12 @@ type SearcherKVDB interface {
 }
 
 type Searcher struct {
-	TF  map[int]map[int]float64 // docID -> termID -> tf score
-	IDF map[int]float64         // termID -> idf score
 	Idx DynamicIndexer
 	KV  SearcherKVDB
+}
+
+func NewSearcher(idx DynamicIndexer, kv SearcherKVDB) *Searcher {
+	return &Searcher{Idx: idx, KV: kv}
 }
 
 // https://nlp.stanford.edu/IR-book/pdf/06vect.pdf (figure 6.14 bagian function COSINESCORE(q))
@@ -34,7 +36,7 @@ func (se *Searcher) FreeFormQuery(query string, k int) ([]Node, error) {
 	docsPQ := NewPriorityQueue[int, float64]()
 	termMapper := se.Idx.GetTermIDMap()
 
-	mainIndex := NewInvertedIndex("merged_index", se.Idx.GetOutputDir())
+	mainIndex := NewInvertedIndex("index_0", se.Idx.GetOutputDir())
 	err := mainIndex.OpenReader()
 	if err != nil {
 		return []Node{}, err

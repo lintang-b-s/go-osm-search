@@ -1,14 +1,16 @@
 package pkg
 
 import (
-	"bytes"
 	"encoding/binary"
-	"encoding/gob"
+	"errors"
 	"iter"
+	"math"
 	"os"
 )
 
 type InvertedIndex struct {
+	IndexName        string
+	DirName          string
 	PostingMetadata  map[int][]int // termID -> [startPositionInIndexFile, len(postingList), lengthInBytesOfPostingLists]
 	IndexFilePath    string
 	MetadataFilePath string
@@ -21,6 +23,8 @@ type InvertedIndex struct {
 
 func NewInvertedIndex(index_name, directoryName string) *InvertedIndex {
 	return &InvertedIndex{
+		IndexName:        index_name,
+		DirName:          directoryName,
 		PostingMetadata:  make(map[int][]int),
 		IndexFilePath:    directoryName + "/" + index_name + ".index",
 		MetadataFilePath: directoryName + "/" + index_name + ".metadata",
@@ -50,20 +54,41 @@ func (Idx *InvertedIndex) Close() error {
 		if err != nil {
 			return err
 		}
+		defer metadataFile.Close()
+
 		err = metadataFile.Truncate(0)
 		if err != nil {
 			return err
 		}
 
-		// metadataBuf := Idx.SerializeMetadata() // keknya ini salah soalnya postingmetadata selalu [0,0,0]
-		metadataBuf, err := Idx.SerializeMetadataGob()
-		if err != nil {
-			return err
-		}
+		metadataBuf := Idx.SerializeMetadata()
+
 		_, err = metadataFile.Write(metadataBuf)
 		if err != nil {
 			return err
 		}
+
+		bufferSizeFile, err := os.OpenFile(Idx.DirName+"/"+Idx.IndexName+"_size.metadata", os.O_RDWR|os.O_CREATE, 0666)
+		if err != nil {
+			return err
+		}
+		defer bufferSizeFile.Close()
+
+		err = bufferSizeFile.Truncate(0)
+		if err != nil {
+			return err
+		}
+
+		metadataBufferSize := len(metadataBuf)
+
+		bufferSizeBuf := make([]byte, 10)
+		binary.LittleEndian.PutUint64(bufferSizeBuf[:], math.Float64bits(float64(metadataBufferSize)))
+
+		_, err = bufferSizeFile.Write(bufferSizeBuf)
+		if err != nil {
+			return err
+		}
+
 	}
 	return nil
 }
@@ -79,15 +104,35 @@ func (Idx *InvertedIndex) OpenReader() error {
 	if err != nil {
 		return err
 	}
-	buf := make([]byte, 1024*1024*2) // 2mb
-	metadataFile.Read(buf)
-	// Idx.DeserializeMetadata(buf)
-	Idx.DeserializeMetadataGob(buf)
+	defer metadataFile.Close()
+
+	bufferSizeFile, err := os.OpenFile(Idx.DirName+"/"+Idx.IndexName+"_size.metadata", os.O_RDWR|os.O_CREATE, 0666)
+	if err != nil {
+		return err
+	}
+	defer bufferSizeFile.Close()
+
+	buf := make([]byte, 10)
+	_, err = bufferSizeFile.Read(buf)
+	if err != nil {
+		return err
+	}
+	approxBufferSize := int(math.Float64frombits((binary.LittleEndian.Uint64(buf))))
+
+	buf = make([]byte, approxBufferSize)
+	_, err = metadataFile.Read(buf)
+	if err != nil {
+		return err
+	}
+	Idx.DeserializeMetadata(buf)
 	return nil
 }
 
 func (Idx *InvertedIndex) GetPostingList(termID int) ([]int, error) {
-	postingMetadata := Idx.PostingMetadata[termID]
+	postingMetadata, ok := Idx.PostingMetadata[termID]
+	if !ok {
+		return []int{}, errors.New("termID not found")
+	}
 	startPositionInIndexFile := int64(postingMetadata[0])
 	Idx.IndexFile.Seek(startPositionInIndexFile, 0)
 	buf := make([]byte, postingMetadata[2])
@@ -147,7 +192,6 @@ func (Idx *InvertedIndex) IterateInvertedIndex() iter.Seq2[IndexIteratorItem, []
 	}
 }
 
-
 func (Idx *InvertedIndex) ExitAndRemove() error {
 	err := Idx.Close()
 	if err != nil {
@@ -164,17 +208,18 @@ func (Idx *InvertedIndex) ExitAndRemove() error {
 	return nil
 }
 
-/*
-	 SerializeMetadata serializes the metadata of the inverted index. serialize PostingMetadata, Terms, and DocTermCountDict.
+func (Idx *InvertedIndex) GetAproximateMetadataBufferSize() int {
+	allLen := 16 * 3 // 16 bit * 3
+	termsSize := 16 * len(Idx.Terms)
+	postingMetadata := 16 * 4 * len(Idx.PostingMetadata)
+	docTermCountDict := 16 * 3 * len(Idx.DocTermCountDict)
+	return allLen + termsSize + postingMetadata + docTermCountDict + 2
+}
 
-		struktur buffer = dari kiri ke kanan=offset dari rightPos
-		dari kanan ke kiri = list term, key & value PostingMetadata, key & value DocTermCountDict
-		 (salah)
-*/
 func (Idx *InvertedIndex) SerializeMetadata() []byte {
-	buf := make([]byte, 1024*1024*2) // 2mb
+	approxBufferSize := Idx.GetAproximateMetadataBufferSize() * 4
+	buf := make([]byte, approxBufferSize)
 	leftPos := 0
-	rightPos := len(buf) - 1
 
 	binary.LittleEndian.PutUint16(buf[leftPos:], uint16(len(Idx.Terms)))
 	leftPos += 2 // 16 bit
@@ -187,91 +232,41 @@ func (Idx *InvertedIndex) SerializeMetadata() []byte {
 
 	for _, term := range Idx.Terms {
 		// kita pakai uint16bit untuk menyimpan term
-		offset := rightPos - 2
 
-		binary.LittleEndian.PutUint16(buf[leftPos:], uint16(offset))
+		binary.LittleEndian.PutUint16(buf[leftPos:], uint16(term))
 		leftPos += 2 // 16 bit
-
-		rightPos -= 2 // 16 bit / 2 byte
-		binary.LittleEndian.PutUint16(buf[rightPos:], uint16(term))
 	}
 
 	for term, val := range Idx.PostingMetadata {
-		// term = 2 byte, setiap posting = 2byte
-		offset := rightPos - 2 - 2*len(val) // 2*len(postingList) karena setiap value dari PostingMetadata = 2 byte
 
-		binary.LittleEndian.PutUint16(buf[leftPos:], uint16(offset))
+		binary.LittleEndian.PutUint16(buf[leftPos:], uint16(term))
 		leftPos += 2 // 16 bit
-
-		rightPos -= 2 // 16 bit / 2 byte
-		binary.LittleEndian.PutUint16(buf[rightPos:], uint16(term))
 
 		startPositionInIndexFile := val[0]    // 2 byte
 		lenPostingList := val[1]              // 2 byte
 		lengthInBytesOfPostingLists := val[2] // 2 byte
 
-		rightPos -= 2
-		binary.LittleEndian.PutUint16(buf[rightPos:], uint16(lengthInBytesOfPostingLists))
+		binary.LittleEndian.PutUint16(buf[leftPos:], uint16(lengthInBytesOfPostingLists))
+		leftPos += 2
 
-		rightPos -= 2
-		binary.LittleEndian.PutUint16(buf[rightPos:], uint16(lenPostingList))
+		binary.LittleEndian.PutUint16(buf[leftPos:], uint16(lenPostingList))
+		leftPos += 2
 
-		rightPos -= 2
-		binary.LittleEndian.PutUint16(buf[rightPos:], uint16(startPositionInIndexFile))
+		binary.LittleEndian.PutUint16(buf[leftPos:], uint16(startPositionInIndexFile))
+		leftPos += 2
 	}
 
 	for docID, termCount := range Idx.DocTermCountDict {
 		// docID = 2 byte, termCount = 2 byte
-		offset := rightPos - 2 - 2
 
-		binary.LittleEndian.PutUint16(buf[leftPos:], uint16(offset))
+		binary.LittleEndian.PutUint16(buf[leftPos:], uint16(docID))
 		leftPos += 2 // 16 bit
 
-		rightPos -= 2 // 16 bit / 2 byte
-		binary.LittleEndian.PutUint16(buf[rightPos:], uint16(docID))
-
-		rightPos -= 2
-		binary.LittleEndian.PutUint16(buf[rightPos:], uint16(termCount))
+		binary.LittleEndian.PutUint16(buf[leftPos:], uint16(termCount))
+		leftPos += 2 // 16 bit
 	}
 
 	return buf
-}
-
-type SaveMetadata struct {
-	PostingMeta  map[int][]int
-	Terms        []int
-	DocWordCount map[int]int
-}
-
-func NewSaveMetadata(postings map[int][]int, docWordCount map[int]int, terms []int) SaveMetadata {
-	return SaveMetadata{
-		postings, terms, docWordCount,
-	}
-}
-func (Idx *InvertedIndex) SerializeMetadataGob() ([]byte, error) {
-	buf := new(bytes.Buffer)
-	enc := gob.NewEncoder(buf)
-	save := NewSaveMetadata(Idx.PostingMetadata, Idx.DocTermCountDict, Idx.Terms)
-	err := enc.Encode(save)
-	return buf.Bytes(), err
-}
-
-func (Idx *InvertedIndex) DeserializeMetadataGob(data []byte) error {
-	// fileSize := fileInfo.Size()
-
-	// data := make([]byte, fileSize)
-	// _, err = io.ReadFull(f, data)
-	// if err != nil {
-	// 	fmt.Println("Error reading file:", err)
-	// 	return err
-	// }
-	save := SaveMetadata{}
-	dec := gob.NewDecoder(bytes.NewReader(data))
-	err := dec.Decode(&save)
-	Idx.PostingMetadata = save.PostingMeta
-	Idx.DocTermCountDict = save.DocWordCount
-	Idx.Terms = save.Terms
-	return err
 }
 
 // DeserializeMetadata. deserialize metadata inverted index (salah)
@@ -291,46 +286,50 @@ func (Idx *InvertedIndex) DeserializeMetadata(buf []byte) {
 	Idx.PostingMetadata = make(map[int][]int)
 	Idx.DocTermCountDict = make(map[int]int)
 
-	for i := termCount - 1; i >= 0; i-- {
-		// dibalik karena urutan terms di buffer dari kanan ke kiri
-		offset := int(binary.LittleEndian.Uint16(buf[leftPos : leftPos+2]))
-		leftPos += 2
+	for i := 0; i < termCount; i++ {
 
-		term := int(binary.LittleEndian.Uint16(buf[offset : offset+2]))
-		offset += 2
+		term := int(binary.LittleEndian.Uint16(buf[leftPos:]))
+		leftPos += 2
 		Idx.Terms[i] = term
 	}
 
 	for i := 0; i < PostingMetadatacount; i++ {
-		offset := int(binary.LittleEndian.Uint16(buf[leftPos : leftPos+2]))
+
+		term := int(binary.LittleEndian.Uint16(buf[leftPos:]))
 		leftPos += 2
 
-		term := int(binary.LittleEndian.Uint16(buf[offset : offset+2]))
-		offset += 2
+		lengthInBytesOfPostingLists := int(binary.LittleEndian.Uint16(buf[leftPos:]))
+		leftPos += 2
 
-		lengthInBytesOfPostingLists := int(binary.LittleEndian.Uint16(buf[offset : offset+2]))
-		offset += 2
+		lenPostingList := int(binary.LittleEndian.Uint16(buf[leftPos:]))
+		leftPos += 2
 
-		lenPostingList := int(binary.LittleEndian.Uint16(buf[offset : offset+2]))
-		offset += 2
-
-		startPositionInIndexFile := int(binary.LittleEndian.Uint16(buf[offset : offset+2]))
-		offset += 2
+		startPositionInIndexFile := int(binary.LittleEndian.Uint16(buf[leftPos:]))
+		leftPos += 2
 
 		Idx.PostingMetadata[term] = []int{startPositionInIndexFile, lenPostingList, lengthInBytesOfPostingLists}
 	}
 
 	for i := 0; i < docTermCountDictCount; i++ {
 
-		offset := int(binary.LittleEndian.Uint16(buf[leftPos : leftPos+2]))
+		docID := int(binary.LittleEndian.Uint16(buf[leftPos:]))
 		leftPos += 2
 
-		docID := int(binary.LittleEndian.Uint16(buf[offset : offset+2]))
-		offset += 2
-
-		termCount := int(binary.LittleEndian.Uint16(buf[offset : offset+2]))
-		offset += 2
+		termCount := int(binary.LittleEndian.Uint16(buf[leftPos:]))
+		leftPos += 2
 
 		Idx.DocTermCountDict[docID] = termCount
+	}
+}
+
+type SaveMetadata struct {
+	PostingMeta  map[int][]int
+	Terms        []int
+	DocWordCount map[int]int
+}
+
+func NewSaveMetadata(postings map[int][]int, docWordCount map[int]int, terms []int) SaveMetadata {
+	return SaveMetadata{
+		postings, terms, docWordCount,
 	}
 }

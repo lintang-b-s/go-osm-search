@@ -20,7 +20,6 @@ func heapMergeKArray(indexes []InvertedIndex) iter.Seq[heapMergeOutput] {
 	return func(yield func(heapMergeOutput) bool) {
 		pq := NewPriorityQueue[heapMergeItem, int]()
 
-		// output := []heapMergeOutput{}
 
 		for i, index := range indexes {
 			indexIterator := index.IterateInvertedIndex()
@@ -45,7 +44,6 @@ func heapMergeKArray(indexes []InvertedIndex) iter.Seq[heapMergeOutput] {
 
 			currOutput := NewHeapMergeOutput(termID, postingList)
 
-			// output = append(output, currOutput)
 			if !yield(currOutput) {
 				return
 			}
