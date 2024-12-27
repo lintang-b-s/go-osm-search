@@ -13,7 +13,6 @@ import (
 )
 
 // https://nlp.stanford.edu/IR-book/pdf/04const.pdf (4.3 Single-pass in-memory indexing)
-
 type DynamicIndex struct {
 	TermIDMap                 IDMap
 	IntermediateIndices       []string
@@ -54,7 +53,7 @@ func NewDynamicIndex(outputDir string, maxPostingListSize int, kv InvertedIDXDB,
 var dictionary = sastrawi.DefaultDictionary()
 var stemmer = sastrawi.NewStemmer(dictionary)
 
-func (Idx *DynamicIndex) SipmiBatchIndex(ways []OSMWay, onlyOsmNodes []OSMNode, ctr nodeMapContainer,
+func (Idx *DynamicIndex) SpimiBatchIndex(ways []OSMWay, onlyOsmNodes []OSMNode, ctr nodeMapContainer,
 	tagIDMap IDMap) error {
 	searchNodes := []Node{}
 	nodeIDX := 0
@@ -111,7 +110,7 @@ func (Idx *DynamicIndex) SipmiBatchIndex(ways []OSMWay, onlyOsmNodes []OSMNode, 
 		nodeIDX++
 
 		if len(searchNodes) == 240000 {
-			err := Idx.SipmiInvert(searchNodes, &block)
+			err := Idx.SpimiInvert(searchNodes, &block)
 			if err != nil {
 				return err
 			}
@@ -143,7 +142,7 @@ func (Idx *DynamicIndex) SipmiBatchIndex(ways []OSMWay, onlyOsmNodes []OSMNode, 
 			node.Lon, address, building, city))
 		nodeIDX++
 		if len(searchNodes) == 240000 {
-			err := Idx.SipmiInvert(searchNodes, &block)
+			err := Idx.SpimiInvert(searchNodes, &block)
 			if err != nil {
 				return err
 			}
@@ -158,7 +157,7 @@ func (Idx *DynamicIndex) SipmiBatchIndex(ways []OSMWay, onlyOsmNodes []OSMNode, 
 	Idx.DocsCount = nodeIDX
 
 	bar.Add(1)
-	err := Idx.SipmiInvert(searchNodes, &block)
+	err := Idx.SpimiInvert(searchNodes, &block)
 	if err != nil {
 		return err
 	}
@@ -216,9 +215,9 @@ func IsNodeDuplicateCheck(name string, lats, lon float64, nodeBoundingBox map[st
 	return contain
 }
 
-func (Idx *DynamicIndex) SipmiIndex(nodes []Node) error {
+func (Idx *DynamicIndex) SpimiIndex(nodes []Node) error {
 	block := 0
-	Idx.SipmiInvert(nodes, &block)
+	Idx.SpimiInvert(nodes, &block)
 
 	mergedIndex := NewInvertedIndex("merged_index", Idx.OutputDir)
 	indices := []InvertedIndex{}
@@ -273,31 +272,31 @@ func (Idx *DynamicIndex) GetNode(nodeID int) (Node, error) {
 	return Idx.KV.GetNode(nodeID)
 }
 
-func (Idx *DynamicIndex) SipmiInvert(nodes []Node, block *int) error {
+// https://nlp.stanford.edu/IR-book/pdf/04const.pdf (Figure 4.4 Spimi-invert)
+func (Idx *DynamicIndex) SpimiInvert(nodes []Node, block *int) error {
 	postingSize := 0
 
 	termToPostingMap := make(map[int][]int)
-	for _, node := range nodes {
-		termDocPairs := Idx.SipmiParseOSMNode(node)
-		if len(termDocPairs) == 0 {
+	tokenStreams := Idx.SpimiParseOSMNodes(nodes) // [pair of termID and nodeID]
+
+	var postingList []int
+	for _, termDocPair := range tokenStreams {
+
+		if len(tokenStreams) == 0 {
 			continue
 		}
-		for _, termDocPair := range termDocPairs {
-			termID, nodeID := termDocPair[0], termDocPair[1]
-
-			var postingList []int
-			if _, ok := termToPostingMap[termID]; ok {
-				postingList = termToPostingMap[termID]
-			} else {
-				postingList = []int{}
-				termToPostingMap[termID] = postingList
-			}
-			postingList = append(postingList, nodeID)
+		termID, nodeID := termDocPair[0], termDocPair[1]
+		if _, ok := termToPostingMap[termID]; ok {
+			postingList = termToPostingMap[termID]
+		} else {
+			postingList = []int{}
 			termToPostingMap[termID] = postingList
-			postingSize += 1
 		}
+		postingList = append(postingList, nodeID)
+		termToPostingMap[termID] = postingList
+		postingSize += 1
 
-		if postingSize >= 1e8 {
+		if postingSize >= Idx.MaxDynamicPostingListSize {
 			postingSize = 0
 			terms := []int{}
 			for termID, _ := range termToPostingMap {
@@ -335,7 +334,6 @@ func (Idx *DynamicIndex) SipmiInvert(nodes []Node, block *int) error {
 	}
 	Idx.IntermediateIndices = append(Idx.IntermediateIndices, indexID)
 	for _, term := range terms {
-
 		sort.Ints(termToPostingMap[term])
 		index.AppendPostingList(term, termToPostingMap[term])
 	}
@@ -347,7 +345,7 @@ func (Idx *DynamicIndex) SipmiInvert(nodes []Node, block *int) error {
 	return nil
 }
 
-func (Idx *DynamicIndex) SipmiParseOSMNode(node Node) [][]int {
+func (Idx *DynamicIndex) SpimiParseOSMNode(node Node) [][]int {
 	termDocPairs := [][]int{}
 	soup := string(node.Name[:]) + " " + string(node.Building[:]) + " " + string(node.Address[:])
 	if soup == "" {
@@ -365,14 +363,22 @@ func (Idx *DynamicIndex) SipmiParseOSMNode(node Node) [][]int {
 	return termDocPairs
 }
 
-type SipmiIndexMetadata struct {
+func (Idx *DynamicIndex) SpimiParseOSMNodes(nodes []Node) [][]int {
+	termDocPairs := [][]int{}
+	for _, node := range nodes {
+		termDocPairs = append(termDocPairs, Idx.SpimiParseOSMNode(node)...)
+	}
+	return termDocPairs
+}
+
+type SpimiIndexMetadata struct {
 	TermIDMap    IDMap
 	DocWordCount map[int]int
 	DocsCount    int
 }
 
-func NewSipmiIndexMetadata(termIDMap IDMap, docWordCount map[int]int, docsCount int) SipmiIndexMetadata {
-	return SipmiIndexMetadata{
+func NewSpimiIndexMetadata(termIDMap IDMap, docWordCount map[int]int, docsCount int) SpimiIndexMetadata {
+	return SpimiIndexMetadata{
 		TermIDMap:    termIDMap,
 		DocWordCount: docWordCount,
 		DocsCount:    docsCount,
@@ -385,10 +391,10 @@ func (Idx *DynamicIndex) Close() error {
 
 func (Idx *DynamicIndex) SaveMeta() error {
 	// save to disk
-	sipmiMeta := NewSipmiIndexMetadata(Idx.TermIDMap, Idx.DocWordCount, Idx.DocsCount)
+	SpimiMeta := NewSpimiIndexMetadata(Idx.TermIDMap, Idx.DocWordCount, Idx.DocsCount)
 	buf := new(bytes.Buffer)
 	enc := gob.NewEncoder(buf)
-	err := enc.Encode(sipmiMeta)
+	err := enc.Encode(SpimiMeta)
 	if err != nil {
 		return err
 	}
@@ -416,7 +422,7 @@ func (Idx *DynamicIndex) LoadMeta() error {
 	defer metadataFile.Close()
 	buf := make([]byte, 1024*1024*40)
 	metadataFile.Read(buf)
-	save := SipmiIndexMetadata{}
+	save := SpimiIndexMetadata{}
 	dec := gob.NewDecoder(bytes.NewReader(buf))
 	err = dec.Decode(&save)
 	if err != nil {
