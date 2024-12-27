@@ -20,7 +20,7 @@ func (db *KVDB) SaveNodes(nodes []Node) error {
 	batch := db.db.NewWriteBatch()
 
 	for _, node := range nodes {
-		soup := string(node.Name[:]) + " " + string(node.City[:]) + " " + string(node.Building[:])
+		soup := string(node.Name[:]) + " " + string(node.Building[:]) + " " + string(node.Address[:])
 		if soup == "" {
 			continue
 		}
@@ -39,6 +39,7 @@ func (db *KVDB) SaveNodes(nodes []Node) error {
 
 func (db *KVDB) GetNode(id int) (Node, error) {
 	txn := db.db.NewTransaction(false)
+
 	badgerItem, err := txn.Get([]byte(strconv.Itoa(id)))
 	if err != nil {
 		return Node{}, err

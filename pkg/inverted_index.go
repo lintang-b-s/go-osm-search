@@ -74,6 +74,8 @@ func (Idx *DynamicIndex) SipmiBatchIndex(ways []OSMWay, onlyOsmNodes []OSMNode, 
 	bar.Add(1)
 	block := 0
 
+	nodeBoundingBox := make(map[string]BoundingBox)
+
 	for _, way := range ways { // ways yang makan banyak memory
 		lat := make([]float64, len(way.NodeIDs))
 		lon := make([]float64, len(way.NodeIDs))
@@ -84,6 +86,7 @@ func (Idx *DynamicIndex) SipmiBatchIndex(ways []OSMWay, onlyOsmNodes []OSMNode, 
 			lat[i] = nodeLat
 			lon[i] = nodeLon
 		}
+
 		centerLat, centerLon, err := CenterOfPolygonLatLon(lat, lon)
 		if err != nil {
 			return err
@@ -95,9 +98,14 @@ func (Idx *DynamicIndex) SipmiBatchIndex(ways []OSMWay, onlyOsmNodes []OSMNode, 
 		}
 
 		name, address, building, city := GetNameAddressBuildingFromOSMWay(tagStringMap)
-		if name == "" {
+
+		if IsWayDuplicateCheck(name, lat, lon, nodeBoundingBox) {
+			// cek duplikat kalo sebelumnya ada way dengan nama sama dan posisi sama dengan way ini.
 			continue
 		}
+
+		nodeBoundingBox[name] = NewBoundingBox(lat, lon)
+
 		searchNodes = append(searchNodes, NewNode(nodeIDX, name, centerLat,
 			centerLon, address, building, city))
 		nodeIDX++
@@ -125,6 +133,12 @@ func (Idx *DynamicIndex) SipmiBatchIndex(ways []OSMWay, onlyOsmNodes []OSMNode, 
 		if name == "" {
 			continue
 		}
+
+		if IsNodeDuplicateCheck(name, node.Lat, node.Lon, nodeBoundingBox) {
+			// cek duplikat kalo sebelumnya ada way dengan nama sama dan posisi sama dengan node ini. gak usah set bounding box buat node.
+			continue
+		}
+
 		searchNodes = append(searchNodes, NewNode(nodeIDX, name, node.Lat,
 			node.Lon, address, building, city))
 		nodeIDX++
@@ -144,7 +158,7 @@ func (Idx *DynamicIndex) SipmiBatchIndex(ways []OSMWay, onlyOsmNodes []OSMNode, 
 	Idx.DocsCount = nodeIDX
 
 	bar.Add(1)
-	err := Idx.SipmiInvert(searchNodes, &block) 
+	err := Idx.SipmiInvert(searchNodes, &block)
 	if err != nil {
 		return err
 	}
@@ -182,6 +196,24 @@ func (Idx *DynamicIndex) SipmiBatchIndex(ways []OSMWay, onlyOsmNodes []OSMNode, 
 	}
 	bar.Add(1)
 	return nil
+}
+
+func IsWayDuplicateCheck(name string, lats, lon []float64, nodeBoundingBox map[string]BoundingBox) bool {
+	prevBB, ok := nodeBoundingBox[name]
+	if !ok {
+		return false
+	}
+	contain := prevBB.PointsContains(lats, lon)
+	return contain
+}
+
+func IsNodeDuplicateCheck(name string, lats, lon float64, nodeBoundingBox map[string]BoundingBox) bool {
+	prevBB, ok := nodeBoundingBox[name]
+	if !ok {
+		return false
+	}
+	contain := prevBB.Contains(lats, lon)
+	return contain
 }
 
 func (Idx *DynamicIndex) SipmiIndex(nodes []Node) error {
@@ -240,7 +272,6 @@ func (Idx *DynamicIndex) Merge(indices []InvertedIndex, mergedIndex *InvertedInd
 func (Idx *DynamicIndex) GetNode(nodeID int) (Node, error) {
 	return Idx.KV.GetNode(nodeID)
 }
-
 
 func (Idx *DynamicIndex) SipmiInvert(nodes []Node, block *int) error {
 	postingSize := 0
@@ -318,7 +349,7 @@ func (Idx *DynamicIndex) SipmiInvert(nodes []Node, block *int) error {
 
 func (Idx *DynamicIndex) SipmiParseOSMNode(node Node) [][]int {
 	termDocPairs := [][]int{}
-	soup := string(node.Name[:]) + " " + string(node.City[:]) + " " + string(node.Building[:])
+	soup := string(node.Name[:]) + " " + string(node.Building[:]) + " " + string(node.Address[:])
 	if soup == "" {
 		return termDocPairs
 	}

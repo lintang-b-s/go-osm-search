@@ -19,7 +19,16 @@ var ValidSearchTags = map[string]bool{
 	"amenity":       true,
 	"building":      true,
 	"sport":         true,
+	"tourism":       true,
+	"leisure":       true,
+	"boundary":      true,
+	"landuse":       true,	
 	"craft":         true,
+	"aeroway":       true,
+	"historic":      true,
+	"residential":   true,
+	"public_transport": true,
+	"railway":       true,
 	"shop":          true,
 	"junction":      true,
 	"route":         true,
@@ -63,6 +72,7 @@ func NewOSMNode(lat float64, lon float64, tagMap map[int]int) OSMNode {
 
 func ParseOSM(mapfile string) ([]OSMWay, []OSMNode, nodeMapContainer, IDMap, error) {
 	var TagIDMap IDMap = NewIDMap()
+
 
 	f, err := os.Open(mapfile)
 
@@ -109,6 +119,10 @@ func ParseOSM(mapfile string) ([]OSMWay, []OSMNode, nodeMapContainer, IDMap, err
 		if !checkIsWayAlowed(tag) {
 			continue
 		}
+		name, _, _, _ := GetNameAddressBuildingFromOSMWay(tag)
+		if name == "" {
+			continue
+		}
 
 		myTag := make(map[int]int)
 		for k, v := range tag {
@@ -143,6 +157,10 @@ func ParseOSM(mapfile string) ([]OSMWay, []OSMNode, nodeMapContainer, IDMap, err
 			node := o.(*osm.Node)
 			if _, ok := wayNodesMap[node.ID]; ok {
 				ctr.nodeMap[int(o.(*osm.Node).ID)] = o.(*osm.Node)
+			}
+			name, _, _, _ := GetNameAddressBuildingFromOSNode(node.TagMap())
+			if name == "" {
+				continue
 			}
 			if checkIsNodeAlowed(node.TagMap()) {
 				lat := node.Lat

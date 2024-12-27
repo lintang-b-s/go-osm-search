@@ -24,3 +24,49 @@ func CenterOfPolygonLatLon(lat, lon []float64) (float64, float64, error) {
 	centerLat, centerLon := getCenterOfPolygon(x, y)
 	return centerLat, centerLon, nil
 }
+
+type BoundingBox struct {
+	min, max []float64 // lat, lon
+}
+
+func NewBoundingBox(lats, lons []float64) BoundingBox {
+	min, max := []float64{lats[0], lons[0]}, []float64{lats[0], lons[0]}
+	for i := 1; i < len(lats); i++ {
+		if lats[i] < min[0] {
+			min[0] = lats[i]
+		}
+		if lats[i] > max[0] {
+			max[0] = lats[i]
+		}
+		if lons[i] < min[1] {
+			min[1] = lons[i]
+		}
+		if lons[i] > max[1] {
+			max[1] = lons[i]
+		}
+	}
+	return BoundingBox{
+		min: min,
+		max: max,
+	}
+}
+
+
+func (bb *BoundingBox) Contains(lat, lon float64) bool {
+	if lat < bb.min[0] || lat > bb.max[0] {
+		return false
+	}
+	if lon < bb.min[1] || lon > bb.max[1] {
+		return false
+	}
+	return true
+}
+
+func (bb *BoundingBox) PointsContains(lats, lons []float64) bool {
+	for i := 0; i < len(lats); i++ {
+		if !bb.Contains(lats[i], lons[i]) {
+			return false
+		}
+	}
+	return true
+}

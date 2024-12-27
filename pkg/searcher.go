@@ -19,12 +19,28 @@ type SearcherKVDB interface {
 }
 
 type Searcher struct {
-	Idx DynamicIndexer
-	KV  SearcherKVDB
+	Idx       DynamicIndexer
+	KV        SearcherKVDB
+	MainIndex *InvertedIndex
 }
 
 func NewSearcher(idx DynamicIndexer, kv SearcherKVDB) *Searcher {
+
 	return &Searcher{Idx: idx, KV: kv}
+}
+
+func (se *Searcher) LoadMainIndex() error {
+	mainIndex := NewInvertedIndex("merged_index", se.Idx.GetOutputDir())
+	err := mainIndex.OpenReader()
+	if err != nil {
+		return err
+	}
+	se.MainIndex = mainIndex
+	return nil
+}
+
+func (se *Searcher) Close() {
+	se.MainIndex.Close()
 }
 
 // https://nlp.stanford.edu/IR-book/pdf/06vect.pdf (figure 6.14 bagian function COSINESCORE(q))
@@ -38,16 +54,11 @@ func (se *Searcher) FreeFormQuery(query string, k int) ([]Node, error) {
 	heap.Init(docsPQ)
 	termMapper := se.Idx.GetTermIDMap()
 
-	mainIndex := NewInvertedIndex("merged_index", se.Idx.GetOutputDir())
-	err := mainIndex.OpenReader()
-	if err != nil {
-		return []Node{}, err
-	}
 	queryWordCount := make(map[int]int)
 	for _, term := range sastrawi.Tokenize(query) {
-		tokenizedTerm := stemmer.Stem(term) 
-		termID := termMapper.GetID(tokenizedTerm) 
-		postings, err := mainIndex.GetPostingList(termID) 
+		tokenizedTerm := stemmer.Stem(term)
+		termID := termMapper.GetID(tokenizedTerm)
+		postings, err := se.MainIndex.GetPostingList(termID)
 		if err != nil {
 			return []Node{}, err
 		}
@@ -64,9 +75,9 @@ func (se *Searcher) FreeFormQuery(query string, k int) ([]Node, error) {
 		termOccurences := len(postings)
 		idfTermQuery := math.Log10(float64(se.Idx.GetDocsCount())) - math.Log10(float64(termOccurences))
 		tfIDFTermQuery := tfTermQuery * idfTermQuery
-		for _, docID := range postings {
+		for postingIDx, docID := range postings {
 			// compute tf-idf query dan document & compute cosine nya
-			tfIDFTermDoc := se.computeDocTFIDFPerTerm(docID, qTermID, postings)
+			tfIDFTermDoc := se.computeDocTFIDFPerTerm(docID, qTermID, postings, postingIDx)
 
 			documentScore[docID] += tfIDFTermDoc * tfIDFTermQuery
 
@@ -88,15 +99,14 @@ func (se *Searcher) FreeFormQuery(query string, k int) ([]Node, error) {
 	}
 
 	relevantDocs := []Node{}
-	rank := []float64{}
+
 	for i := 0; i < k; i++ {
 		if docsPQ.Len() == 0 {
 			break
 		}
-		
+
 		heapItem := heap.Pop(docsPQ).(*priorityQueueNode[int, float64])
 		currRelDocID := heapItem.item
-		rank = append(rank, heapItem.rank)
 		doc, err := se.KV.GetNode(currRelDocID)
 		if err != nil {
 			return []Node{}, err
@@ -107,16 +117,20 @@ func (se *Searcher) FreeFormQuery(query string, k int) ([]Node, error) {
 	return relevantDocs, nil
 }
 
-func (se *Searcher) computeDocTFIDFPerTerm(docID int, termID int, postingList []int) float64 {
+func (se *Searcher) computeDocTFIDFPerTerm(docID int, termID int, postingList []int, postingIDx int) float64 {
 	tf := 0.0
-	docWordCount := se.Idx.GetDocWordCount() 
-	for _, docIDPosting := range postingList {
-		// kalo postingListnya pake skip list lebih cepet
+	docWordCount := se.Idx.GetDocWordCount()
+	for idx := postingIDx; idx < len(postingList); idx++ {
+		// postinglistnya sudah sorted
+		docIDPosting := postingList[idx]
 		if docIDPosting == docID {
 			tf += 1.0 / float64(docWordCount[docID])
+		} else {
+			break
 		}
 	}
 	termOccurences := len(postingList)
 	idf := math.Log10(float64(se.Idx.GetDocsCount())) - math.Log10(float64(termOccurences))
 	return tf * idf
 }
+

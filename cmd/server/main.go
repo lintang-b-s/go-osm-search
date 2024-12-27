@@ -19,10 +19,15 @@ func main() {
 	invertedIndex, err := pkg.NewDynamicIndex("lintang", 1e7, kvDB, true)
 	if err != nil {
 		log.Fatal(err)
-}
+	}
 
 	searcher := pkg.NewSearcher(invertedIndex, kvDB)
-	nodes, err := searcher.FreeFormQuery("Taman Anggrek Ragunan", 15)
+	err = searcher.LoadMainIndex()
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer searcher.Close()
+	nodes, err := searcher.FreeFormQuery("Dunia Fantasi", 15)
 	if err != nil {
 		log.Fatal(err)
 	}
