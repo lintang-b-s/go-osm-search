@@ -128,7 +128,7 @@ func (lm *NGramLanguageModel) CountOnegram(data [][]int, wg *sync.WaitGroup) {
 	wg.Done()
 }
 
-func (lm *NGramLanguageModel) CountTwogram(data [][]int,  wg *sync.WaitGroup) {
+func (lm *NGramLanguageModel) CountTwogram(data [][]int, wg *sync.WaitGroup) {
 
 	var nGrams = make(map[[2]int]int)
 
@@ -180,7 +180,7 @@ func (lm *NGramLanguageModel) CountThreegram(data [][]int, wg *sync.WaitGroup) {
 	wg.Done()
 }
 
-func (lm *NGramLanguageModel) CountFourgram(data [][]int,  wg *sync.WaitGroup) {
+func (lm *NGramLanguageModel) CountFourgram(data [][]int, wg *sync.WaitGroup) {
 
 	var nGrams = make(map[[4]int]int)
 
@@ -227,7 +227,7 @@ func (lm *NGramLanguageModel) EstimateProbability(nextWord int, previousNGram []
 		if count, ok := lm.Data.OneGramCount[previousNGram[0]]; ok {
 			prevNgramCount = count
 		} else {
-			prevNgramCount = 1
+			return 0
 		}
 		denominator := prevNgramCount
 
@@ -250,7 +250,7 @@ func (lm *NGramLanguageModel) EstimateProbability(nextWord int, previousNGram []
 		if count, ok := lm.Data.TwoGramCount[prevNGram]; ok {
 			prevNgramCount = count
 		} else {
-			prevNgramCount = 1
+			return 0
 		}
 		denominator := prevNgramCount
 
@@ -273,7 +273,7 @@ func (lm *NGramLanguageModel) EstimateProbability(nextWord int, previousNGram []
 		if count, ok := lm.Data.ThreeGramCount[prevNGram]; ok {
 			prevNgramCount = count
 		} else {
-			prevNgramCount = 1
+			return 0
 		}
 		denominator := prevNgramCount
 
@@ -329,6 +329,7 @@ func (lm *NGramLanguageModel) StupidBackoff(nextWord int, prevNgrams []int, n in
 		case 2:
 			newProb = 0.4 * lm.EstimateProbability(nextWord, prevNgrams, 2)
 			if newProb == 0 {
+				prevNgrams = prevNgrams[1:]
 				n--
 			} else {
 				done = true
@@ -337,6 +338,7 @@ func (lm *NGramLanguageModel) StupidBackoff(nextWord int, prevNgrams []int, n in
 			newProb = 0.4 * lm.EstimateProbability(nextWord, prevNgrams, 3)
 			if newProb == 0 {
 				if newProb == 0 {
+					prevNgrams = prevNgrams[1:]
 					n--
 				} else {
 					done = true
@@ -346,6 +348,7 @@ func (lm *NGramLanguageModel) StupidBackoff(nextWord int, prevNgrams []int, n in
 			newProb = 0.4 * lm.EstimateProbability(nextWord, prevNgrams, 4)
 			if newProb == 0 {
 				if newProb == 0 {
+					prevNgrams = prevNgrams[1:]
 					n--
 				} else {
 					done = true
@@ -361,8 +364,8 @@ func (lm *NGramLanguageModel) MakeCountMatrix(data [][]int) {
 	var wg sync.WaitGroup
 	wg.Add(4)
 	go lm.CountOnegram(data, &wg)
-	go lm.CountTwogram(data,&wg)
-	go lm.CountThreegram(data,&wg)
+	go lm.CountTwogram(data, &wg)
+	go lm.CountThreegram(data, &wg)
 	go lm.CountFourgram(data, &wg)
 	wg.Wait()
 }
