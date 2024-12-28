@@ -314,42 +314,13 @@ func (lm *NGramLanguageModel) EstimateWordCandidatesProbabilitiesWithStupidBacko
 }
 
 func (lm *NGramLanguageModel) StupidBackoff(nextWord int, prevNgrams []int, n int) float64 {
-	done := false
 	newProb := 0.0
-	for !done {
-		switch n {
-		case 1:
-			newProb = 0.4 * lm.EstimateProbability(nextWord, prevNgrams, 1)
-			done = true
-		case 2:
-			newProb = 0.4 * lm.EstimateProbability(nextWord, prevNgrams, 2)
-			if newProb == 0 {
-				prevNgrams = prevNgrams[1:]
-				n--
-			} else {
-				done = true
-			}
-		case 3:
-			newProb = 0.4 * lm.EstimateProbability(nextWord, prevNgrams, 3)
-			if newProb == 0 {
-				if newProb == 0 {
-					prevNgrams = prevNgrams[1:]
-					n--
-				} else {
-					done = true
-				}
-			}
-		case 4:
-			newProb = 0.4 * lm.EstimateProbability(nextWord, prevNgrams, 4)
-			if newProb == 0 {
-				if newProb == 0 {
-					prevNgrams = prevNgrams[1:]
-					n--
-				} else {
-					done = true
-				}
-			}
+	for ; n > 0; n-- {
+		newProb = 0.4 * lm.EstimateProbability(nextWord, prevNgrams, n)
+		if newProb != 0 {
+			break
 		}
+		prevNgrams = prevNgrams[1:]
 	}
 	return newProb
 }
