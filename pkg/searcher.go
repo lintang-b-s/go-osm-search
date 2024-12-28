@@ -96,7 +96,7 @@ func (se *Searcher) FreeFormQuery(query string, k int) ([]Node, error) {
 	queryWordCount := make(map[int]int)
 
 	queryTermsID := []int{}
-	
+
 	queryTerms := sastrawi.Tokenize(query)
 	for idx, term := range queryTerms {
 		tokenizedTerm := stemmer.Stem(term)
@@ -114,7 +114,7 @@ func (se *Searcher) FreeFormQuery(query string, k int) ([]Node, error) {
 
 	fanInFanOut := NewFanInFanOut[int, PostingsResult](len(queryTermsID))
 	fanInFanOut.GeneratePipeline(queryTermsID)
-	outs := fanInFanOut.FanOut(3, se.GetPostingListCon)
+	outs := fanInFanOut.FanOut(len(queryTermsID), se.GetPostingListCon)
 
 	var mu sync.Mutex
 	// collect all postings

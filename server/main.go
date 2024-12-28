@@ -37,7 +37,7 @@ func main() {
 		log.Fatal(err)
 	}
 	defer searcher.Close()
-	nodes, err := searcher.FreeFormQuery("Dunia Fantasu", 15)
+	nodes, err := searcher.FreeFormQuery("Dunia Fantasi", 15)
 	if err != nil {
 		log.Fatal(err)
 	}

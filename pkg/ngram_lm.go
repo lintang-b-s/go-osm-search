@@ -108,7 +108,7 @@ func (lm *NGramLanguageModel) CountOnegram(data [][]int) {
 		doc = lm.AddStartEndToken(doc, 1)
 
 		m := len(doc)
-		for i := range m {
+		for i := 0; i < m; i++ {
 			nGram := doc[i]
 
 			if _, ok := nGrams[nGram]; !ok {
@@ -130,14 +130,13 @@ func (lm *NGramLanguageModel) CountTwogram(data [][]int) {
 
 	for _, doc := range data {
 
-		doc = lm.AddStartEndToken(doc, 1)
+		doc = lm.AddStartEndToken(doc, 2)
 
-		m := len(doc)
-		for i := range m {
+		m := len(doc) - 2 + 1
+		for i := 0; i < m; i++ {
 			var nGram [2]int
-			for j := 0; j < 2; j++ {
-				nGram[j] = doc[i+j]
-			}
+
+			copy(nGram[:], doc[i:i+2])
 
 			if _, ok := nGrams[nGram]; !ok {
 				nGrams[nGram] = 1
@@ -150,20 +149,19 @@ func (lm *NGramLanguageModel) CountTwogram(data [][]int) {
 	lm.Data.TwoGramCount = nGrams
 }
 
-func (lm *NGramLanguageModel) CounThreegram(data [][]int) {
+func (lm *NGramLanguageModel) CountThreegram(data [][]int) {
 
 	var nGrams = make(map[[3]int]int)
 
 	for _, doc := range data {
 
-		doc = lm.AddStartEndToken(doc, 1)
+		doc = lm.AddStartEndToken(doc, 3)
 
-		m := len(doc)
-		for i := range m {
+		m := len(doc) - 3 + 1
+		for i := 0; i < m; i++ {
 			var nGram [3]int
-			for j := 0; j < 3; j++ {
-				nGram[j] = doc[i+j]
-			}
+
+			copy(nGram[:], doc[i:i+3])
 
 			if _, ok := nGrams[nGram]; !ok {
 				nGrams[nGram] = 1
@@ -182,14 +180,13 @@ func (lm *NGramLanguageModel) CountFourgram(data [][]int) {
 
 	for _, doc := range data {
 
-		doc = lm.AddStartEndToken(doc, 1)
+		doc = lm.AddStartEndToken(doc, 4)
 
-		m := len(doc)
-		for i := range m {
+		m := len(doc) - 4 + 1
+		for i := 0; i < m; i++ {
 			var nGram [4]int
-			for j := 0; j < 4; j++ {
-				nGram[j] = doc[i+j]
-			}
+
+			copy(nGram[:], doc[i:i+4])
 
 			if _, ok := nGrams[nGram]; !ok {
 				nGrams[nGram] = 1
@@ -306,7 +303,7 @@ func (lm *NGramLanguageModel) EstimateWordCandidatesProbabilities(nextWordCandid
 func (lm *NGramLanguageModel) MakeCountMatrix(data [][]int) {
 	lm.CountOnegram(data)
 	lm.CountTwogram(data)
-	lm.CounThreegram(data)
+	lm.CountThreegram(data)
 	lm.CountFourgram(data)
 }
 
@@ -346,7 +343,6 @@ func (lm *NGramLanguageModel) SaveNGramData() error {
 
 	return err
 }
-
 
 func (lm *NGramLanguageModel) LoadNGramData() error {
 	ngramFile, err := os.Open("ngram.index")
