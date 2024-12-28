@@ -6,11 +6,17 @@ import (
 	"os"
 	"sort"
 	"strconv"
+	"strings"
 
 	"github.com/RadhiFadlillah/go-sastrawi"
 	"github.com/k0kubun/go-ansi"
 	"github.com/schollz/progressbar/v3"
 )
+
+type SpellCorrectorI interface {
+	Preprocessdata(tokenizedDocs [][]string)
+	GetCorrectSpellingSuggestion(mispelledWord string, prevWords []string) (string, error)
+}
 
 // https://nlp.stanford.edu/IR-book/pdf/04const.pdf (4.3 Single-pass in-memory indexing)
 type DynamicIndex struct {
@@ -22,14 +28,33 @@ type DynamicIndex struct {
 	OutputDir                 string
 	DocsCount                 int
 	KV                        InvertedIDXDB
+	SpellCorrectorBuilder     SpellCorrectorI
+	IndexedData               IndexedData
 }
+
+type IndexedData struct {
+	Ways     []OSMWay
+	Nodes    []OSMNode
+	Ctr      nodeMapContainer
+	TagIDMap IDMap
+}
+
+func NewIndexedData(ways []OSMWay, nodes []OSMNode, ctr nodeMapContainer, tagIDMap IDMap) IndexedData {
+	return IndexedData{
+		Ways:     ways,
+		Nodes:    nodes,
+		Ctr:      ctr,
+		TagIDMap: tagIDMap,
+	}
+}
+
 type InvertedIDXDB interface {
 	SaveNodes(nodes []Node) error
 	GetNode(id int) (Node, error)
 }
 
 func NewDynamicIndex(outputDir string, maxPostingListSize int, kv InvertedIDXDB,
-	server bool) (*DynamicIndex, error) {
+	server bool, spell SpellCorrectorI, indexedData IndexedData) (*DynamicIndex, error) {
 	idx := &DynamicIndex{
 		TermIDMap:                 NewIDMap(),
 		IntermediateIndices:       []string{},
@@ -39,6 +64,8 @@ func NewDynamicIndex(outputDir string, maxPostingListSize int, kv InvertedIDXDB,
 		OutputDir:                 outputDir,
 		DocsCount:                 0,
 		KV:                        kv,
+		SpellCorrectorBuilder:     spell,
+		IndexedData:               indexedData,
 	}
 	if server {
 		err := idx.LoadMeta()
@@ -53,11 +80,10 @@ func NewDynamicIndex(outputDir string, maxPostingListSize int, kv InvertedIDXDB,
 var dictionary = sastrawi.DefaultDictionary()
 var stemmer = sastrawi.NewStemmer(dictionary)
 
-func (Idx *DynamicIndex) SpimiBatchIndex(ways []OSMWay, onlyOsmNodes []OSMNode, ctr nodeMapContainer,
-	tagIDMap IDMap) error {
+func (Idx *DynamicIndex) SpimiBatchIndex() error {
 	searchNodes := []Node{}
 	nodeIDX := 0
-	bar := progressbar.NewOptions(5,
+	bar := progressbar.NewOptions(6,
 		progressbar.OptionSetWriter(ansi.NewAnsiStdout()),
 		progressbar.OptionEnableColorCodes(true),
 		progressbar.OptionShowBytes(true),
@@ -75,13 +101,13 @@ func (Idx *DynamicIndex) SpimiBatchIndex(ways []OSMWay, onlyOsmNodes []OSMNode, 
 
 	nodeBoundingBox := make(map[string]BoundingBox)
 
-	for _, way := range ways { // ways yang makan banyak memory
+	for _, way := range Idx.IndexedData.Ways { // ways yang makan banyak memory
 		lat := make([]float64, len(way.NodeIDs))
 		lon := make([]float64, len(way.NodeIDs))
 		for i := 0; i < len(way.NodeIDs); i++ {
 			node := way.NodeIDs[i]
-			nodeLat := ctr.nodeMap[node].Lat
-			nodeLon := ctr.nodeMap[node].Lon
+			nodeLat := Idx.IndexedData.Ctr.nodeMap[node].Lat
+			nodeLon := Idx.IndexedData.Ctr.nodeMap[node].Lon
 			lat[i] = nodeLat
 			lon[i] = nodeLon
 		}
@@ -92,24 +118,24 @@ func (Idx *DynamicIndex) SpimiBatchIndex(ways []OSMWay, onlyOsmNodes []OSMNode, 
 		}
 		tagStringMap := make(map[string]string)
 		for k, v := range way.TagMap {
-			tagStringMap[tagIDMap.GetStr(k)] = tagIDMap.GetStr(v)
+			tagStringMap[Idx.IndexedData.TagIDMap.GetStr(k)] = Idx.IndexedData.TagIDMap.GetStr(v)
 
 		}
 
-		name, address, building, city := GetNameAddressBuildingFromOSMWay(tagStringMap)
+		name, address, tipe, city := GetNameAddressTypeFromOSMWay(tagStringMap)
 
-		if IsWayDuplicateCheck(name, lat, lon, nodeBoundingBox) {
+		if IsWayDuplicateCheck(strings.ToLower(name), lat, lon, nodeBoundingBox) {
 			// cek duplikat kalo sebelumnya ada way dengan nama sama dan posisi sama dengan way ini.
 			continue
 		}
 
-		nodeBoundingBox[name] = NewBoundingBox(lat, lon)
+		nodeBoundingBox[strings.ToLower(name)] = NewBoundingBox(lat, lon)
 
 		searchNodes = append(searchNodes, NewNode(nodeIDX, name, centerLat,
-			centerLon, address, building, city))
+			centerLon, address, tipe, city))
 		nodeIDX++
 
-		if len(searchNodes) == 240000 {
+		if len(searchNodes) == 200000 {
 			err := Idx.SpimiInvert(searchNodes, &block)
 			if err != nil {
 				return err
@@ -123,25 +149,25 @@ func (Idx *DynamicIndex) SpimiBatchIndex(ways []OSMWay, onlyOsmNodes []OSMNode, 
 	}
 	bar.Add(1)
 
-	for _, node := range onlyOsmNodes {
+	for _, node := range Idx.IndexedData.Nodes {
 		tagStringMap := make(map[string]string)
 		for k, v := range node.TagMap {
-			tagStringMap[tagIDMap.GetStr(k)] = tagIDMap.GetStr(v)
+			tagStringMap[Idx.IndexedData.TagIDMap.GetStr(k)] = Idx.IndexedData.TagIDMap.GetStr(v)
 		}
-		name, address, building, city := GetNameAddressBuildingFromOSNode(tagStringMap)
+		name, address, tipe, city := GetNameAddressTypeFromOSNode(tagStringMap)
 		if name == "" {
 			continue
 		}
 
-		if IsNodeDuplicateCheck(name, node.Lat, node.Lon, nodeBoundingBox) {
+		if IsNodeDuplicateCheck(strings.ToLower(name), node.Lat, node.Lon, nodeBoundingBox) {
 			// cek duplikat kalo sebelumnya ada way dengan nama sama dan posisi sama dengan node ini. gak usah set bounding box buat node.
 			continue
 		}
 
 		searchNodes = append(searchNodes, NewNode(nodeIDX, name, node.Lat,
-			node.Lon, address, building, city))
+			node.Lon, address, tipe, city))
 		nodeIDX++
-		if len(searchNodes) == 240000 {
+		if len(searchNodes) == 200000 {
 			err := Idx.SpimiInvert(searchNodes, &block)
 			if err != nil {
 				return err
@@ -197,13 +223,22 @@ func (Idx *DynamicIndex) SpimiBatchIndex(ways []OSMWay, onlyOsmNodes []OSMNode, 
 	return nil
 }
 
-func IsWayDuplicateCheck(name string, lats, lon []float64, nodeBoundingBox map[string]BoundingBox) bool {
+func IsWayDuplicateCheck(name string, lats, lons []float64, nodeBoundingBox map[string]BoundingBox) bool {
 	prevBB, ok := nodeBoundingBox[name]
+
 	if !ok {
 		return false
 	}
-	contain := prevBB.PointsContains(lats, lon)
-	return contain
+	contain := prevBB.PointsContains(lats, lons)
+
+	if !contain {
+		// perbesar bounding box nya karena namanya sama tapi mungkin bb sebelumnya lebih kecil & gak contain bb ini.
+		nodeBoundingBox[name] = NewBoundingBox(lats, lons)
+	}
+
+	currWayBB := NewBoundingBox(lats, lons)
+	inverseContain := currWayBB.PointsContains(prevBB.min, prevBB.max) // cek sebaliknya (cuur osm way Bounding Box contain previous same name bounding box)
+	return contain || inverseContain
 }
 
 func IsNodeDuplicateCheck(name string, lats, lon float64, nodeBoundingBox map[string]BoundingBox) bool {
@@ -347,7 +382,7 @@ func (Idx *DynamicIndex) SpimiInvert(nodes []Node, block *int) error {
 
 func (Idx *DynamicIndex) SpimiParseOSMNode(node Node) [][]int {
 	termDocPairs := [][]int{}
-	soup := string(node.Name[:]) + " " + string(node.Building[:]) + " " + string(node.Address[:])
+	soup := string(node.Name[:]) + " " + string(node.Tipe[:]) + " " + string(node.Address[:])
 	if soup == "" {
 		return termDocPairs
 	}
@@ -369,6 +404,81 @@ func (Idx *DynamicIndex) SpimiParseOSMNodes(nodes []Node) [][]int {
 		termDocPairs = append(termDocPairs, Idx.SpimiParseOSMNode(node)...)
 	}
 	return termDocPairs
+}
+
+func (Idx *DynamicIndex) BuildSpellCorrectorAndNgram() error {
+	searchNodes := []Node{}
+	nodeIDX := 0
+
+	nodeBoundingBox := make(map[string]BoundingBox)
+
+	for _, way := range Idx.IndexedData.Ways { // ways yang makan banyak memory
+		lat := make([]float64, len(way.NodeIDs))
+		lon := make([]float64, len(way.NodeIDs))
+		for i := 0; i < len(way.NodeIDs); i++ {
+			node := way.NodeIDs[i]
+			nodeLat := Idx.IndexedData.Ctr.nodeMap[node].Lat
+			nodeLon := Idx.IndexedData.Ctr.nodeMap[node].Lon
+			lat[i] = nodeLat
+			lon[i] = nodeLon
+		}
+
+		centerLat, centerLon, err := CenterOfPolygonLatLon(lat, lon)
+		if err != nil {
+			return err
+		}
+		tagStringMap := make(map[string]string)
+		for k, v := range way.TagMap {
+			tagStringMap[Idx.IndexedData.TagIDMap.GetStr(k)] = Idx.IndexedData.TagIDMap.GetStr(v)
+
+		}
+
+		name, address, tipe, city := GetNameAddressTypeFromOSMWay(tagStringMap)
+
+		if IsWayDuplicateCheck(strings.ToLower(name), lat, lon, nodeBoundingBox) {
+			// cek duplikat kalo sebelumnya ada way dengan nama sama dan posisi sama dengan way ini.
+			continue
+		}
+
+		nodeBoundingBox[strings.ToLower(name)] = NewBoundingBox(lat, lon)
+
+		searchNodes = append(searchNodes, NewNode(nodeIDX, name, centerLat,
+			centerLon, address, tipe, city))
+		nodeIDX++
+	
+	}
+
+	for _, node := range Idx.IndexedData.Nodes {
+		tagStringMap := make(map[string]string)
+		for k, v := range node.TagMap {
+			tagStringMap[Idx.IndexedData.TagIDMap.GetStr(k)] = Idx.IndexedData.TagIDMap.GetStr(v)
+		}
+		name, address, tipe, city := GetNameAddressTypeFromOSNode(tagStringMap)
+		if name == "" {
+			continue
+		}
+
+		if IsNodeDuplicateCheck(strings.ToLower(name), node.Lat, node.Lon, nodeBoundingBox) {
+			// cek duplikat kalo sebelumnya ada way dengan nama sama dan posisi sama dengan node ini. gak usah set bounding box buat node.
+			continue
+		}
+
+		searchNodes = append(searchNodes, NewNode(nodeIDX, name, node.Lat,
+			node.Lon, address, tipe, city))
+		nodeIDX++
+		
+	}
+
+	Idx.DocsCount = nodeIDX
+
+
+	tokenizedDocs := [][]string{}
+	for _, node := range searchNodes {
+		soup := string(node.Name[:]) + " " + string(node.Tipe[:]) + " " + string(node.Address[:])
+		tokenizedDocs = append(tokenizedDocs, sastrawi.Tokenize(soup))
+	}
+	Idx.SpellCorrectorBuilder.Preprocessdata(tokenizedDocs)
+	return nil 
 }
 
 type SpimiIndexMetadata struct {
@@ -448,4 +558,8 @@ func (Idx *DynamicIndex) GetDocsCount() int {
 
 func (Idx *DynamicIndex) GetTermIDMap() IDMap {
 	return Idx.TermIDMap
+}
+
+func (Idx *DynamicIndex) BuildVocabulary() {
+	Idx.TermIDMap.BuildVocabulary()
 }

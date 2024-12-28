@@ -27,12 +27,29 @@ func main() {
 	defer db.Close()
 	kvDB := pkg.NewKVDB(db)
 
-	invertedIndex, _ := pkg.NewDynamicIndex("lintang", 1e7, kvDB, false)
-	err = invertedIndex.SpimiBatchIndex(ways, onylySearchNodes, nodeMap, tagIDMap)
+	ngramLM := pkg.NewNGramLanguageModel()
+	spellCorrectorBuilder := pkg.NewSpellCorrector(ngramLM)
+
+	indexedData := pkg.NewIndexedData(ways, onylySearchNodes, nodeMap, tagIDMap)
+	invertedIndex, _ := pkg.NewDynamicIndex("lintang", 1e7, kvDB, false, spellCorrectorBuilder, indexedData)
+
+	// indexing
+	var errChan = make(chan error)
+	go func() {
+		errChan <- invertedIndex.BuildSpellCorrectorAndNgram()
+		close(errChan)
+	}()
+
+	err = invertedIndex.SpimiBatchIndex()
 	if err != nil {
 		log.Fatal(err)
 	}
 	err = invertedIndex.Close()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	err = <-errChan
 	if err != nil {
 		log.Fatal(err)
 	}

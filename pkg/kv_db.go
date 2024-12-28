@@ -20,7 +20,7 @@ func (db *KVDB) SaveNodes(nodes []Node) error {
 	batch := db.db.NewWriteBatch()
 
 	for _, node := range nodes {
-		soup := string(node.Name[:]) + " " + string(node.Building[:]) + " " + string(node.Address[:])
+		soup := string(node.Name[:]) + " " + string(node.Tipe[:]) + " " + string(node.Address[:])
 		if soup == "" {
 			continue
 		}
@@ -61,11 +61,11 @@ func (db *KVDB) GetNode(id int) (Node, error) {
 }
 
 func SerializeNode(node Node) ([]byte, error) {
-	buf := make([]byte, 500) // aproksimasi 480 byte buat per node, jadi 500 byte aja
+	buf := make([]byte, 500) // aproksimasi 420 byte buat per node, jadi 500 byte aja
 	leftPos := 0
 
-	binary.LittleEndian.PutUint16(buf[leftPos:], uint16(node.ID))
-	leftPos += 2
+	binary.LittleEndian.PutUint32(buf[leftPos:], uint32(node.ID))
+	leftPos += 4
 
 	copy(buf[leftPos:leftPos+64], node.Name[:])
 	leftPos += 64
@@ -79,7 +79,7 @@ func SerializeNode(node Node) ([]byte, error) {
 	copy(buf[leftPos:leftPos+128], node.Address[:])
 	leftPos += 128
 
-	copy(buf[leftPos:leftPos+64], node.Building[:])
+	copy(buf[leftPos:leftPos+64], node.Tipe[:])
 	leftPos += 64
 
 	copy(buf[leftPos:leftPos+32], node.City[:])
@@ -92,8 +92,8 @@ func DeserializeNode(buf []byte) (Node, error) {
 	node := Node{}
 	leftPos := 0
 
-	node.ID = int(binary.LittleEndian.Uint16(buf[leftPos:]))
-	leftPos += 2
+	node.ID = int(binary.LittleEndian.Uint32(buf[leftPos:]))
+	leftPos += 4
 
 	copy(node.Name[:], buf[leftPos:leftPos+64])
 	leftPos += 64
@@ -107,7 +107,7 @@ func DeserializeNode(buf []byte) (Node, error) {
 	copy(node.Address[:], buf[leftPos:leftPos+128])
 	leftPos += 128
 
-	copy(node.Building[:], buf[leftPos:leftPos+64])
+	copy(node.Tipe[:], buf[leftPos:leftPos+64])
 	leftPos += 64
 
 	copy(node.City[:], buf[leftPos:leftPos+32])

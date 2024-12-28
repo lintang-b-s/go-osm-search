@@ -1,8 +1,11 @@
 package pkg
 
+import "sort"
+
 type IDMap struct {
 	StrToID map[string]int
 	IDToStr map[int]string
+	Vocabulary map[string]bool
 }
 
 func NewIDMap() IDMap {
@@ -27,4 +30,31 @@ func (idMap *IDMap) GetStr(id int) string {
 		return str
 	}
 	return ""
+}
+
+func (idMap *IDMap) GetSortedTerms() []string {
+	sortedTerms := make([]string, len(idMap.StrToID))
+	for term, id := range idMap.StrToID {
+		sortedTerms[id] = term
+	}
+	sort.Strings(sortedTerms)
+	return sortedTerms
+}
+
+
+func (idMap *IDMap) BuildVocabulary() {
+	idMap.Vocabulary = make(map[string]bool)
+	for id:= range idMap.StrToID {
+		idMap.Vocabulary[id] = true
+	}
+}
+
+func (idMap *IDMap) GetVocabulary() map[string]bool {
+	return idMap.Vocabulary
+}
+
+
+func (idMap *IDMap) IsInVocabulary(term string) bool {
+	_, ok := idMap.Vocabulary[term]
+	return ok
 }

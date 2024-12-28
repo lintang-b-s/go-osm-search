@@ -16,12 +16,22 @@ func main() {
 	defer db.Close()
 	kvDB := pkg.NewKVDB(db)
 
-	invertedIndex, err := pkg.NewDynamicIndex("lintang", 1e7, kvDB, true)
+	ngramLM := pkg.NewNGramLanguageModel()
+	spellCorrector := pkg.NewSpellCorrector(ngramLM)
+
+	invertedIndex, err := pkg.NewDynamicIndex("lintang", 1e7, kvDB, true, spellCorrector, pkg.IndexedData{})
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	searcher := pkg.NewSearcher(invertedIndex, kvDB)
+	err = spellCorrector.InitializeSpellCorrector(invertedIndex.TermIDMap.GetSortedTerms())
+	if err != nil {
+		log.Fatal(err)
+	}
+
+
+	
+	searcher := pkg.NewSearcher(invertedIndex, kvDB, spellCorrector)
 	err = searcher.LoadMainIndex()
 	if err != nil {
 		log.Fatal(err)
@@ -35,5 +45,6 @@ func main() {
 		fmt.Println(string(node.Address[:]))
 		fmt.Println(node.Lat, node.Lon)
 		fmt.Println(string(node.Name[:]))
+		fmt.Println(string(node.Tipe[:]))
 	}
 }

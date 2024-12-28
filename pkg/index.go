@@ -94,19 +94,19 @@ func (Idx *InvertedIndex) Close() error {
 }
 
 func (Idx *InvertedIndex) OpenReader() error {
-	file, err := os.OpenFile(Idx.IndexFilePath, os.O_RDWR|os.O_CREATE, 0666)
+	file, err := os.OpenFile(Idx.IndexFilePath, os.O_RDONLY|os.O_CREATE, 0666)
 	if err != nil {
 		return err
 	}
 	Idx.IndexFile = file
 
-	metadataFile, err := os.OpenFile(Idx.MetadataFilePath, os.O_RDWR|os.O_CREATE, 0666)
+	metadataFile, err := os.OpenFile(Idx.MetadataFilePath, os.O_RDONLY|os.O_CREATE, 0666)
 	if err != nil {
 		return err
 	}
 	defer metadataFile.Close()
 
-	bufferSizeFile, err := os.OpenFile(Idx.DirName+"/"+Idx.IndexName+"_size.metadata", os.O_RDWR|os.O_CREATE, 0666)
+	bufferSizeFile, err := os.OpenFile(Idx.DirName+"/"+Idx.IndexName+"_size.metadata", os.O_RDONLY|os.O_CREATE, 0666)
 	if err != nil {
 		return err
 	}

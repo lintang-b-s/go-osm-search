@@ -16,27 +16,28 @@ type nodeMapContainer struct {
 }
 
 var ValidSearchTags = map[string]bool{
-	"amenity":       true,
-	"building":      true,
-	"sport":         true,
-	"tourism":       true,
-	"leisure":       true,
-	"boundary":      true,
-	"landuse":       true,	
-	"craft":         true,
-	"aeroway":       true,
-	"historic":      true,
-	"residential":   true,
+	"amenity":          true,
+	"building":         true,
+	"sport":            true,
+	"tourism":          true,
+	"leisure":          true,
+	"boundary":         true,
+	"landuse":          true,
+	"craft":            true,
+	"aeroway":          true,
+	"historic":         true,
+	"residential":      true,
 	"public_transport": true,
-	"railway":       true,
-	"shop":          true,
-	"junction":      true,
-	"route":         true,
-	"ferry":         true,
-	"highway":       true,
-	"motorcar":      true,
-	"motor_vehicle": true,
-	"access":        true,
+	"railway":          true,
+	"shop":             true,
+	"junction":         true,
+	"route":            true,
+	"ferry":            true,
+	"highway":          true,
+	"motorcar":         true,
+	"motor_vehicle":    true,
+	"access":           true,
+	"industrial":       true,
 }
 
 var ValidNodeSearchTag = map[string]bool{
@@ -72,7 +73,6 @@ func NewOSMNode(lat float64, lon float64, tagMap map[int]int) OSMNode {
 
 func ParseOSM(mapfile string) ([]OSMWay, []OSMNode, nodeMapContainer, IDMap, error) {
 	var TagIDMap IDMap = NewIDMap()
-
 
 	f, err := os.Open(mapfile)
 
@@ -119,7 +119,7 @@ func ParseOSM(mapfile string) ([]OSMWay, []OSMNode, nodeMapContainer, IDMap, err
 		if !checkIsWayAlowed(tag) {
 			continue
 		}
-		name, _, _, _ := GetNameAddressBuildingFromOSMWay(tag)
+		name, _, _, _ := GetNameAddressTypeFromOSMWay(tag)
 		if name == "" {
 			continue
 		}
@@ -158,7 +158,7 @@ func ParseOSM(mapfile string) ([]OSMWay, []OSMNode, nodeMapContainer, IDMap, err
 			if _, ok := wayNodesMap[node.ID]; ok {
 				ctr.nodeMap[int(o.(*osm.Node).ID)] = o.(*osm.Node)
 			}
-			name, _, _, _ := GetNameAddressBuildingFromOSNode(node.TagMap())
+			name, _, _, _ := GetNameAddressTypeFromOSNode(node.TagMap())
 			if name == "" {
 				continue
 			}
@@ -185,7 +185,7 @@ func ParseOSM(mapfile string) ([]OSMWay, []OSMNode, nodeMapContainer, IDMap, err
 	return ways, onlyOsmNodes, ctr, TagIDMap, nil
 }
 
-func GetNameAddressBuildingFromOSMWay(tag map[string]string) (string, string, string, string) {
+func GetNameAddressTypeFromOSMWay(tag map[string]string) (string, string, string, string) {
 	name := tag["name"]
 	address := ""
 	fullAdress, ok := tag["addr:full"]
@@ -205,15 +205,11 @@ func GetNameAddressBuildingFromOSMWay(tag map[string]string) (string, string, st
 	if ok {
 		address += city + ", "
 	}
-	building, ok := tag["amenity"]
-	if !ok {
-		building = tag["building"]
-		return name, address, building, city
-	}
-	return name, address, building, city
+	tipe := GetOSMObjectType(tag)
+	return name, address, tipe, city
 }
 
-func GetNameAddressBuildingFromOSNode(tag map[string]string) (string, string, string, string) {
+func GetNameAddressTypeFromOSNode(tag map[string]string) (string, string, string, string) {
 	name := tag["name"]
 	address := ""
 	fullAdress, ok := tag["addr:full"]
@@ -233,8 +229,61 @@ func GetNameAddressBuildingFromOSNode(tag map[string]string) (string, string, st
 	if ok {
 		address += city + ", "
 	}
-	building, ok := tag["historic"]
-	return name, address, building, city
+	tipe := GetOSMObjectType(tag)
+	return name, address, tipe, city
+}
+
+func GetOSMObjectType(tag map[string]string) string {
+	tipe, ok := tag["amenity"]
+	if ok {
+		return tipe
+	}
+	// building tidak include (karena cuma yes/no)
+	tipe, ok = tag["historic"]
+	if ok {
+		return tipe
+	}
+	tipe, ok = tag["sport"]
+	if ok {
+		return tipe
+	}
+	tipe, ok = tag["tourism"]
+	if ok {
+		return tipe
+	}
+	tipe, ok = tag["leisure"]
+	if ok {
+		return tipe
+	}
+	tipe, ok = tag["landuse"]
+	if ok {
+		return tipe
+	}
+	tipe, ok = tag["craft"]
+	if ok {
+		return tipe
+	}
+	tipe, ok = tag["aeroway"]
+	if ok {
+		return tipe
+	}
+	tipe, ok = tag["residential"]
+	if ok {
+		return tipe
+	}
+	tipe, ok = tag["public_transport"]
+	if ok {
+		return tipe
+	}
+	tipe, ok = tag["industrial"]
+	if ok {
+		return tipe
+	}
+	tipe, ok = tag["shop"]
+	if ok {
+		return tipe
+	}
+	return ""
 }
 
 func checkIsWayAlowed(tag map[string]string) bool {

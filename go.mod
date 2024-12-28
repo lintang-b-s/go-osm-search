@@ -13,6 +13,9 @@ require (
 require github.com/google/go-cmp v0.6.0 // indirect
 
 require (
+	github.com/bits-and-blooms/bitset v1.2.0 // indirect
+	github.com/blevesearch/mmap-go v1.0.4 // indirect
+	github.com/blevesearch/vellum v1.1.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/datadog/czlib v0.0.0-20160811164712-4bc9a24e37f2 // indirect
 	github.com/dgraph-io/ristretto/v2 v2.0.0 // indirect
