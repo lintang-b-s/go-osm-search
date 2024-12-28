@@ -445,7 +445,7 @@ func (Idx *DynamicIndex) BuildSpellCorrectorAndNgram() error {
 		searchNodes = append(searchNodes, NewNode(nodeIDX, name, centerLat,
 			centerLon, address, tipe, city))
 		nodeIDX++
-	
+
 	}
 
 	for _, node := range Idx.IndexedData.Nodes {
@@ -466,19 +466,25 @@ func (Idx *DynamicIndex) BuildSpellCorrectorAndNgram() error {
 		searchNodes = append(searchNodes, NewNode(nodeIDX, name, node.Lat,
 			node.Lon, address, tipe, city))
 		nodeIDX++
-		
+
 	}
 
 	Idx.DocsCount = nodeIDX
 
-
 	tokenizedDocs := [][]string{}
 	for _, node := range searchNodes {
 		soup := string(node.Name[:]) + " " + string(node.Tipe[:]) + " " + string(node.Address[:])
-		tokenizedDocs = append(tokenizedDocs, sastrawi.Tokenize(soup))
+		// tokenizedDocs = append(tokenizedDocs, sastrawi.Tokenize(soup))
+		tokenized := sastrawi.Tokenize(soup)
+		stemmedTokens := []string{}
+		for _, token := range tokenized {
+			stemmedToken := stemmer.Stem(token)
+			stemmedTokens = append(stemmedTokens, stemmedToken)
+		}
+		tokenizedDocs = append(tokenizedDocs, stemmedTokens)
 	}
 	Idx.SpellCorrectorBuilder.Preprocessdata(tokenizedDocs)
-	return nil 
+	return nil
 }
 
 type SpimiIndexMetadata struct {

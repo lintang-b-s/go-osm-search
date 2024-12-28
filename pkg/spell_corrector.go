@@ -2,18 +2,20 @@ package pkg
 
 import (
 	"bytes"
+	"errors"
 
 	"github.com/blevesearch/vellum"
 	"github.com/blevesearch/vellum/levenshtein"
 )
 
 const (
-	COUNT_THRESOLD_NGRAM = 1
+	COUNT_THRESOLD_NGRAM = 2
 	EDIT_DISTANCE        = 2
 )
 
 type NgramLM interface {
 	EstimateWordCandidatesProbabilities(nextWordCandidates []int, prevNgrams []int, n int) map[int]float64
+	EstimateWordCandidatesProbabilitiesWithStupidBackoff(nextWordCandidates []int, prevNgrams []int, n int) map[int]float64
 	PreProcessData(tokenizedDocs [][]string, countThresold int) [][]int
 	MakeCountMatrix(data [][]int)
 	SaveNGramData() error
@@ -32,6 +34,7 @@ func NewSpellCorrector(ngram NgramLM) *SpellCorrector {
 		NGram: ngram,
 	}
 }
+
 // BuildFiniteStateTransducerSortedTerms. membuat finite state transducer dari sorted terms. Di panggil saat server dijalankan.
 func (sc *SpellCorrector) BuildFiniteStateTransducerSortedTerms(sortedTerms []string) error {
 
@@ -42,7 +45,13 @@ func (sc *SpellCorrector) BuildFiniteStateTransducerSortedTerms(sortedTerms []st
 	}
 
 	for _, term := range sortedTerms {
-		fstBuilder.Insert([]byte(term), 0)
+		if err := fstBuilder.Insert([]byte(term), 0); err != nil {
+			return err
+		}
+	}
+
+	if err := fstBuilder.Close(); err != nil {
+		return err
 	}
 
 	fst, err := vellum.Load(buf.Bytes())
@@ -54,42 +63,47 @@ func (sc *SpellCorrector) BuildFiniteStateTransducerSortedTerms(sortedTerms []st
 	return nil
 }
 
-func (sc *SpellCorrector) InitializeSpellCorrector(sortedTerms []string) error {
+func (sc *SpellCorrector) InitializeSpellCorrector(sortedTerms []string, termIDMap IDMap) error {
+	sc.TermIDMap = termIDMap 
 	sc.BuildFiniteStateTransducerSortedTerms(sortedTerms)
 	err := sc.NGram.LoadNGramData()
-	return err 
+
+	return err
 }
 
 // Preprocessdata. memproses data tokenized docs untuk membuat countmatrix n-gram.  Di panggil saat indexing dijalankan.
-func (sc *SpellCorrector) Preprocessdata(tokenizedDocs [][]string)  {
+func (sc *SpellCorrector) Preprocessdata(tokenizedDocs [][]string) {
 	sc.Data = sc.NGram.PreProcessData(tokenizedDocs, COUNT_THRESOLD_NGRAM)
 	sc.NGram.MakeCountMatrix(sc.Data)
-	// sortedTerms := sc.TermIDMap.GetSortedTerms()
-	// err := sc.BuildFiniteStateTransducerSortedTerms(sortedTerms)
+
 	sc.NGram.SaveNGramData()
-	return
+
 }
 
 func (sc *SpellCorrector) GetCorrectSpellingSuggestion(mispelledWord string, prevWords []string) (string, error) {
-	lv, err := levenshtein.NewLevenshteinAutomatonBuilder(EDIT_DISTANCE, true)
+	lv, err := levenshtein.NewLevenshteinAutomatonBuilder(EDIT_DISTANCE, false) // harus false
 	if err != nil {
 		return "", err
 	}
-	dfa, err := lv.BuildDfa(mispelledWord, 2)
+	dfa, err := lv.BuildDfa(mispelledWord, EDIT_DISTANCE)
 	if err != nil {
 		return "", err
 	}
 
-	fstIt, err := sc.CorpusTermsFST.Search(dfa, []byte{}, []byte{})
+	fstIt, err := sc.CorpusTermsFST.Search(dfa, nil, nil)
 
 	correctWordCandidates := []int{}
-	for err != nil {
+	for err == nil {
+		if err != nil {
+			if errors.Is(err, vellum.ErrIteratorDone) {
+				break
+			}
+			return "", err
+		}
 		key, _ := fstIt.Current()
-		err = fstIt.Next()
 		correctWordCandidates = append(correctWordCandidates, sc.TermIDMap.GetID(string(key)))
-	}
-	if err != nil {
-		return "", err
+
+		err = fstIt.Next()
 	}
 
 	prevTokens := []int{}
@@ -97,9 +111,16 @@ func (sc *SpellCorrector) GetCorrectSpellingSuggestion(mispelledWord string, pre
 		prevTokens = append(prevTokens, sc.TermIDMap.GetID(prevWord))
 	}
 
-	correctWordProbabilities := sc.NGram.EstimateWordCandidatesProbabilities(correctWordCandidates, prevTokens, 1)
+	n := 4
+	if len(prevTokens) < 3 {
+		// bigram = [prev] [current]
+		n = len(prevTokens) + 1
+	}
 
-	maxProb := -1.0
+	// correctWordProbabilities := sc.NGram.EstimateWordCandidatesProbabilities(correctWordCandidates, prevTokens, n)
+	correctWordProbabilities := sc.NGram.EstimateWordCandidatesProbabilitiesWithStupidBackoff(correctWordCandidates, prevTokens, n)
+
+	maxProb := -9999.0
 	var correctWord string
 
 	for key, value := range correctWordProbabilities {

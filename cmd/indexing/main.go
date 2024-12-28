@@ -11,6 +11,7 @@ import (
 var (
 	listenAddr = flag.String("listenaddr", ":5000", "server listen address")
 	mapFile    = flag.String("f", "jabodetabek_big.osm.pbf", "openstreeetmap file")
+	outputDir = flag.String("f", "lintang", "output directory buat simpan inverted index, ngram, dll")
 )
 
 func main() {
@@ -27,11 +28,11 @@ func main() {
 	defer db.Close()
 	kvDB := pkg.NewKVDB(db)
 
-	ngramLM := pkg.NewNGramLanguageModel()
+	ngramLM := pkg.NewNGramLanguageModel(*outputDir)
 	spellCorrectorBuilder := pkg.NewSpellCorrector(ngramLM)
 
 	indexedData := pkg.NewIndexedData(ways, onylySearchNodes, nodeMap, tagIDMap)
-	invertedIndex, _ := pkg.NewDynamicIndex("lintang", 1e7, kvDB, false, spellCorrectorBuilder, indexedData)
+	invertedIndex, _ := pkg.NewDynamicIndex(*outputDir, 1e7, kvDB, false, spellCorrectorBuilder, indexedData)
 
 	// indexing
 	var errChan = make(chan error)

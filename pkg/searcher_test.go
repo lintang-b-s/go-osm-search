@@ -18,7 +18,7 @@ func LoadIndex() (*Searcher, *badger.DB) {
 
 	kvDB := NewKVDB(db)
 
-	ngramLM := NewNGramLanguageModel()
+	ngramLM := NewNGramLanguageModel("lintang")
 	spellCorrector := NewSpellCorrector(ngramLM)
 
 	invertedIndex, err := NewDynamicIndex("lintang", 1e7, kvDB, true, spellCorrector, IndexedData{})
@@ -26,7 +26,7 @@ func LoadIndex() (*Searcher, *badger.DB) {
 		log.Fatal(err)
 	}
 
-	err = spellCorrector.InitializeSpellCorrector(invertedIndex.TermIDMap.GetSortedTerms())
+	err = spellCorrector.InitializeSpellCorrector(invertedIndex.TermIDMap.GetSortedTerms(), invertedIndex.GetTermIDMap())
 	if err != nil {
 		log.Fatal(err)
 	}

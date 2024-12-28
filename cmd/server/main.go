@@ -16,7 +16,7 @@ func main() {
 	defer db.Close()
 	kvDB := pkg.NewKVDB(db)
 
-	ngramLM := pkg.NewNGramLanguageModel()
+	ngramLM := pkg.NewNGramLanguageModel("lintang")
 	spellCorrector := pkg.NewSpellCorrector(ngramLM)
 
 	invertedIndex, err := pkg.NewDynamicIndex("lintang", 1e7, kvDB, true, spellCorrector, pkg.IndexedData{})
@@ -24,20 +24,18 @@ func main() {
 		log.Fatal(err)
 	}
 
-	err = spellCorrector.InitializeSpellCorrector(invertedIndex.TermIDMap.GetSortedTerms())
+	err = spellCorrector.InitializeSpellCorrector(invertedIndex.TermIDMap.GetSortedTerms(), invertedIndex.GetTermIDMap())
 	if err != nil {
 		log.Fatal(err)
 	}
 
-
-	
 	searcher := pkg.NewSearcher(invertedIndex, kvDB, spellCorrector)
 	err = searcher.LoadMainIndex()
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer searcher.Close()
-	nodes, err := searcher.FreeFormQuery("Dunia Fantasu", 15)
+	nodes, err := searcher.FreeFormQuery("Dunia Fintasu", 15) // Dufan
 	if err != nil {
 		log.Fatal(err)
 	}

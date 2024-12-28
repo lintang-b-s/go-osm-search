@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/gob"
 	"os"
+	"sync"
 )
 
 const (
@@ -17,6 +18,7 @@ type NGramLanguageModel struct {
 	WordCounts map[int]int
 	TermIDMap  IDMap
 	Data       NGramData
+	OutputDir  string
 }
 
 type NGramData struct {
@@ -27,11 +29,12 @@ type NGramData struct {
 	TotalWordFreq  int
 }
 
-func NewNGramLanguageModel() *NGramLanguageModel {
+func NewNGramLanguageModel(outDir string) *NGramLanguageModel {
 	return &NGramLanguageModel{
 		Vocabulary: make([]int, 0),
 		WordCounts: make(map[int]int),
 		TermIDMap:  NewIDMap(),
+		OutputDir:  outDir,
 	}
 }
 
@@ -99,7 +102,7 @@ func (lm *NGramLanguageModel) PreProcessData(tokenizedDocs [][]string, countThre
 	return replacedTokenizedDocs
 }
 
-func (lm *NGramLanguageModel) CountOnegram(data [][]int) {
+func (lm *NGramLanguageModel) CountOnegram(data [][]int, wg *sync.WaitGroup) {
 
 	var nGrams = make(map[int]int)
 
@@ -122,9 +125,10 @@ func (lm *NGramLanguageModel) CountOnegram(data [][]int) {
 	}
 
 	lm.Data.OneGramCount = nGrams
+	wg.Done()
 }
 
-func (lm *NGramLanguageModel) CountTwogram(data [][]int) {
+func (lm *NGramLanguageModel) CountTwogram(data [][]int,  wg *sync.WaitGroup) {
 
 	var nGrams = make(map[[2]int]int)
 
@@ -147,9 +151,10 @@ func (lm *NGramLanguageModel) CountTwogram(data [][]int) {
 	}
 
 	lm.Data.TwoGramCount = nGrams
+	wg.Done()
 }
 
-func (lm *NGramLanguageModel) CountThreegram(data [][]int) {
+func (lm *NGramLanguageModel) CountThreegram(data [][]int, wg *sync.WaitGroup) {
 
 	var nGrams = make(map[[3]int]int)
 
@@ -172,9 +177,10 @@ func (lm *NGramLanguageModel) CountThreegram(data [][]int) {
 	}
 
 	lm.Data.ThreeGramCount = nGrams
+	wg.Done()
 }
 
-func (lm *NGramLanguageModel) CountFourgram(data [][]int) {
+func (lm *NGramLanguageModel) CountFourgram(data [][]int,  wg *sync.WaitGroup) {
 
 	var nGrams = make(map[[4]int]int)
 
@@ -197,6 +203,7 @@ func (lm *NGramLanguageModel) CountFourgram(data [][]int) {
 	}
 
 	lm.Data.FourGramCount = nGrams
+	wg.Done()
 }
 
 // EstimateProbability. menghitung probabilitas nextWord berdasarkan previous tokens.
@@ -216,16 +223,15 @@ func (lm *NGramLanguageModel) EstimateProbability(nextWord int, previousNGram []
 		return probability
 
 	case 2:
-		prevNGram := [1]int{previousNGram[0]}
 		var prevNgramCount int
-		if count, ok := lm.Data.OneGramCount[nextWord]; ok {
+		if count, ok := lm.Data.OneGramCount[previousNGram[0]]; ok {
 			prevNgramCount = count
 		} else {
-			prevNgramCount = 0
+			prevNgramCount = 1
 		}
 		denominator := prevNgramCount
 
-		nGram := [2]int{prevNGram[0], nextWord}
+		nGram := [2]int{previousNGram[0], nextWord}
 
 		var nGramCount int
 		if count, ok := lm.Data.TwoGramCount[nGram]; ok {
@@ -244,7 +250,7 @@ func (lm *NGramLanguageModel) EstimateProbability(nextWord int, previousNGram []
 		if count, ok := lm.Data.TwoGramCount[prevNGram]; ok {
 			prevNgramCount = count
 		} else {
-			prevNgramCount = 0
+			prevNgramCount = 1
 		}
 		denominator := prevNgramCount
 
@@ -267,7 +273,7 @@ func (lm *NGramLanguageModel) EstimateProbability(nextWord int, previousNGram []
 		if count, ok := lm.Data.ThreeGramCount[prevNGram]; ok {
 			prevNgramCount = count
 		} else {
-			prevNgramCount = 0
+			prevNgramCount = 1
 		}
 		denominator := prevNgramCount
 
@@ -299,12 +305,66 @@ func (lm *NGramLanguageModel) EstimateWordCandidatesProbabilities(nextWordCandid
 	return nextWordProbabilities
 }
 
+// https://web.stanford.edu/~jurafsky/slp3/3.pdf
+func (lm *NGramLanguageModel) EstimateWordCandidatesProbabilitiesWithStupidBackoff(
+	nextWordCandidates []int, prevNgrams []int, n int) map[int]float64 {
+	var nextWordProbabilities = make(map[int]float64)
+
+	for _, nextWord := range nextWordCandidates {
+		probability := lm.StupidBackoff(nextWord, prevNgrams, n)
+		nextWordProbabilities[nextWord] = probability
+	}
+
+	return nextWordProbabilities
+}
+
+func (lm *NGramLanguageModel) StupidBackoff(nextWord int, prevNgrams []int, n int) float64 {
+	done := false
+	newProb := 0.0
+	for !done {
+		switch n {
+		case 1:
+			newProb = 0.4 * lm.EstimateProbability(nextWord, prevNgrams, 1)
+			done = true
+		case 2:
+			newProb = 0.4 * lm.EstimateProbability(nextWord, prevNgrams, 2)
+			if newProb == 0 {
+				n--
+			} else {
+				done = true
+			}
+		case 3:
+			newProb = 0.4 * lm.EstimateProbability(nextWord, prevNgrams, 3)
+			if newProb == 0 {
+				if newProb == 0 {
+					n--
+				} else {
+					done = true
+				}
+			}
+		case 4:
+			newProb = 0.4 * lm.EstimateProbability(nextWord, prevNgrams, 4)
+			if newProb == 0 {
+				if newProb == 0 {
+					n--
+				} else {
+					done = true
+				}
+			}
+		}
+	}
+	return newProb
+}
+
 // MakeCountMatrix. menghitung frekuensi n-gram dari data
 func (lm *NGramLanguageModel) MakeCountMatrix(data [][]int) {
-	lm.CountOnegram(data)
-	lm.CountTwogram(data)
-	lm.CountThreegram(data)
-	lm.CountFourgram(data)
+	var wg sync.WaitGroup
+	wg.Add(4)
+	go lm.CountOnegram(data, &wg)
+	go lm.CountTwogram(data,&wg)
+	go lm.CountThreegram(data,&wg)
+	go lm.CountFourgram(data, &wg)
+	wg.Wait()
 }
 
 // AddStartEndToken. menambahkan token <s> sebanyak n dan </s> pada awal dan akhir dokumen
@@ -329,7 +389,7 @@ func (lm *NGramLanguageModel) SaveNGramData() error {
 		return err
 	}
 
-	ngramFile, err := os.OpenFile("ngram.index", os.O_RDWR|os.O_CREATE, 0666)
+	ngramFile, err := os.OpenFile(lm.OutputDir+"/"+"ngram.index", os.O_RDWR|os.O_CREATE, 0666)
 	if err != nil {
 		return err
 	}
@@ -345,15 +405,19 @@ func (lm *NGramLanguageModel) SaveNGramData() error {
 }
 
 func (lm *NGramLanguageModel) LoadNGramData() error {
-	ngramFile, err := os.Open("ngram.index")
+
+	ngramFile, err := os.OpenFile(lm.OutputDir+"/"+"ngram.index", os.O_RDONLY|os.O_CREATE, 0666)
 	if err != nil {
 		return err
 	}
 	defer ngramFile.Close()
 
-	dec := gob.NewDecoder(ngramFile)
+	buf := make([]byte, 1024*1024*10)
+	ngramFile.Read(buf)
+	dec := gob.NewDecoder(bytes.NewReader(buf))
 	err = dec.Decode(&lm.Data)
 	if err != nil {
+
 		return err
 	}
 

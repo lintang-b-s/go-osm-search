@@ -98,11 +98,13 @@ func (se *Searcher) FreeFormQuery(query string, k int) ([]Node, error) {
 	queryTermsID := []int{}
 
 	queryTerms := sastrawi.Tokenize(query)
-	for idx, term := range queryTerms {
+
+	prevStemmedTokens := []string{}
+	for _, term := range queryTerms {
 		tokenizedTerm := stemmer.Stem(term)
 		isInVocab := se.TermIDMap.IsInVocabulary(tokenizedTerm)
 		if !isInVocab {
-			correction, err := se.SpellCorrector.GetCorrectSpellingSuggestion(tokenizedTerm, queryTerms[:idx])
+			correction, err := se.SpellCorrector.GetCorrectSpellingSuggestion(tokenizedTerm, prevStemmedTokens)
 			if err != nil {
 				return []Node{}, err
 			}
@@ -110,6 +112,7 @@ func (se *Searcher) FreeFormQuery(query string, k int) ([]Node, error) {
 		}
 		termID := se.TermIDMap.GetID(tokenizedTerm)
 		queryTermsID = append(queryTermsID, termID)
+		prevStemmedTokens = append(prevStemmedTokens, tokenizedTerm)
 	}
 
 	fanInFanOut := NewFanInFanOut[int, PostingsResult](len(queryTermsID))
@@ -135,6 +138,7 @@ func (se *Searcher) FreeFormQuery(query string, k int) ([]Node, error) {
 	if err != nil {
 		return []Node{}, err
 	}
+
 	docWordCount := se.Idx.GetDocWordCount()
 
 	docNorm := make(map[int]float64)
