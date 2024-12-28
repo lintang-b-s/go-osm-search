@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/gob"
 	"os"
-	"sync"
 )
 
 const (
@@ -102,7 +101,7 @@ func (lm *NGramLanguageModel) PreProcessData(tokenizedDocs [][]string, countThre
 	return replacedTokenizedDocs
 }
 
-func (lm *NGramLanguageModel) CountOnegram(data [][]int, wg *sync.WaitGroup) {
+func (lm *NGramLanguageModel) CountOnegram(data [][]int) {
 
 	var nGrams = make(map[int]int)
 
@@ -125,10 +124,9 @@ func (lm *NGramLanguageModel) CountOnegram(data [][]int, wg *sync.WaitGroup) {
 	}
 
 	lm.Data.OneGramCount = nGrams
-	wg.Done()
 }
 
-func (lm *NGramLanguageModel) CountTwogram(data [][]int, wg *sync.WaitGroup) {
+func (lm *NGramLanguageModel) CountTwogram(data [][]int) {
 
 	var nGrams = make(map[[2]int]int)
 
@@ -151,10 +149,9 @@ func (lm *NGramLanguageModel) CountTwogram(data [][]int, wg *sync.WaitGroup) {
 	}
 
 	lm.Data.TwoGramCount = nGrams
-	wg.Done()
 }
 
-func (lm *NGramLanguageModel) CountThreegram(data [][]int, wg *sync.WaitGroup) {
+func (lm *NGramLanguageModel) CountThreegram(data [][]int) {
 
 	var nGrams = make(map[[3]int]int)
 
@@ -177,10 +174,9 @@ func (lm *NGramLanguageModel) CountThreegram(data [][]int, wg *sync.WaitGroup) {
 	}
 
 	lm.Data.ThreeGramCount = nGrams
-	wg.Done()
 }
 
-func (lm *NGramLanguageModel) CountFourgram(data [][]int, wg *sync.WaitGroup) {
+func (lm *NGramLanguageModel) CountFourgram(data [][]int) {
 
 	var nGrams = make(map[[4]int]int)
 
@@ -203,7 +199,6 @@ func (lm *NGramLanguageModel) CountFourgram(data [][]int, wg *sync.WaitGroup) {
 	}
 
 	lm.Data.FourGramCount = nGrams
-	wg.Done()
 }
 
 // EstimateProbability. menghitung probabilitas nextWord berdasarkan previous tokens.
@@ -361,13 +356,11 @@ func (lm *NGramLanguageModel) StupidBackoff(nextWord int, prevNgrams []int, n in
 
 // MakeCountMatrix. menghitung frekuensi n-gram dari data
 func (lm *NGramLanguageModel) MakeCountMatrix(data [][]int) {
-	var wg sync.WaitGroup
-	wg.Add(4)
-	go lm.CountOnegram(data, &wg)
-	go lm.CountTwogram(data, &wg)
-	go lm.CountThreegram(data, &wg)
-	go lm.CountFourgram(data, &wg)
-	wg.Wait()
+
+	lm.CountOnegram(data)
+	lm.CountTwogram(data)
+	lm.CountThreegram(data)
+	lm.CountFourgram(data)
 }
 
 // AddStartEndToken. menambahkan token <s> sebanyak n dan </s> pada awal dan akhir dokumen

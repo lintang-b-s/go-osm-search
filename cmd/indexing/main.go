@@ -11,7 +11,7 @@ import (
 var (
 	listenAddr = flag.String("listenaddr", ":5000", "server listen address")
 	mapFile    = flag.String("f", "jabodetabek_big.osm.pbf", "openstreeetmap file")
-	outputDir = flag.String("f", "lintang", "output directory buat simpan inverted index, ngram, dll")
+	outputDir = flag.String("o", "lintang", "output directory buat simpan inverted index, ngram, dll")
 )
 
 func main() {
