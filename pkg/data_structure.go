@@ -9,7 +9,7 @@ type Node struct {
 	Address [128]byte `json:"address"` // dari tag addr:city/addr:street/addr:place/dll osm, digabungin pakai koma // 128 karakter
 	City    [32]byte  `json:"city"`    // dari tag addr:city osm
 	Tipe    [64]byte  `json:"type"`    // dari value tag amenity / building osm atau historic kalau node
-} // aproksimasi buffer size = 4 + 64 + 8 + 8 + 128 + 64 +32 = 308 byte
+} // buffer size = 4 + 64 + 8 + 8 + 128 + 64 +32 = 308 byte
 
 func NewNode(id int, name string, lat float64, lon float64, address string, tipe string, city string) Node {
 	var nameB [64]byte

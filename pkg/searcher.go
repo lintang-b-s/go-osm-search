@@ -7,6 +7,10 @@ import (
 	"github.com/RadhiFadlillah/go-sastrawi"
 )
 
+const (
+	NUM_WORKER_FANINFANOUT = 3
+)
+
 type DynamicIndexer interface {
 	GetOutputDir() string
 	GetDocWordCount() map[int]int
@@ -103,9 +107,9 @@ func (se *Searcher) FreeFormQuery(query string, k int) ([]Node, error) {
 		tokenizedTerm := stemmer.Stem(term)
 		isInVocab := se.TermIDMap.IsInVocabulary(tokenizedTerm)
 		if i == 0 {
-			prevStemmedTokens = append(prevStemmedTokens, START_TOKEN)
+			prevStemmedTokens = append(prevStemmedTokens, []string{START_TOKEN, START_TOKEN, START_TOKEN}...)
 		}
-		
+
 		if !isInVocab {
 
 			correction, err := se.SpellCorrector.GetCorrectSpellingSuggestion(tokenizedTerm, prevStemmedTokens)
@@ -120,31 +124,27 @@ func (se *Searcher) FreeFormQuery(query string, k int) ([]Node, error) {
 		prevStemmedTokens = append(prevStemmedTokens, tokenizedTerm)
 
 		if i == 0 {
-			prevStemmedTokens = prevStemmedTokens[1:]
+			prevStemmedTokens = prevStemmedTokens[3:]
 		}
 	}
 
 	fanInFanOut := NewFanInFanOut[int, PostingsResult](len(queryTermsID))
 	fanInFanOut.GeneratePipeline(queryTermsID)
-	outs := fanInFanOut.FanOut(len(queryTermsID), se.GetPostingListCon)
 
-	// collect all postings
-	err := fanInFanOut.FanIn(func(resChan <-chan PostingsResult) error {
+	outs := []<-chan PostingsResult{}
+	for i := 0; i < NUM_WORKER_FANINFANOUT; i++ {
+		outs1 := fanInFanOut.FanOut(se.GetPostingListCon)
+		outs = append(outs, outs1)
+	}
 
-		postingsRes := <-resChan
+	results := fanInFanOut.FanIn(outs...)
+	for postingsRes := range results {
 		err := postingsRes.GetError()
 		if err != nil {
-
-			return err
+			return []Node{}, err
 		}
-		allPostings[postingsRes.TermID] = postingsRes.Postings
-		queryWordCount[postingsRes.TermID] += 1
-
-		return nil
-	}, outs...)
-
-	if err != nil {
-		return []Node{}, err
+		allPostings[postingsRes.GetTermID()] = postingsRes.GetPostings()
+		queryWordCount[postingsRes.GetTermID()] += 1
 	}
 
 	docWordCount := se.Idx.GetDocWordCount()

@@ -35,7 +35,7 @@ func main() {
 		log.Fatal(err)
 	}
 	defer searcher.Close()
-	nodes, err := searcher.FreeFormQuery("Dunia Fintasu", 15) // Dufan
+	nodes, err := searcher.FreeFormQuery("Kebun BInuTung RaGunin ", 15) // Kebun binatang ragunan
 	if err != nil {
 		log.Fatal(err)
 	}

@@ -35,7 +35,7 @@ func main() {
 	invertedIndex, _ := pkg.NewDynamicIndex(*outputDir, 1e7, kvDB, false, spellCorrectorBuilder, indexedData)
 
 	// indexing
-	var errChan = make(chan error)
+	var errChan = make(chan error, 1)
 	go func() {
 		errChan <- invertedIndex.BuildSpellCorrectorAndNgram()
 		close(errChan)

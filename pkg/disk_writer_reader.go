@@ -27,11 +27,11 @@ varint encode 64 bit integer ke byte slice 1-9 bytes, dengan angka yang lebih ke
 ref: https://sqlite.org/src4/doc/trunk/www/varint.wiki
 */
 func (d *DiskWriterReader) WriteUVarint(n uint64) int {
-	newBuf := binary.AppendUvarint(d.Buf, n) // returnnya jumlah bytes dari varint yang ditulis ke buffer , kalo angka kecil bisa cuma 1/2/3 bytes kalo angka besar bisa lebih dari itu
+	newBuf := binary.AppendUvarint(d.Buf, n)
 	d.Offset = len(newBuf)
 
 	d.Buf = newBuf
-	return len(newBuf) // needs simpan ini ke metadata buat nandain offset field setelah n.
+	return len(newBuf)
 }
 
 func (d *DiskWriterReader) WriteFloat64(n float64) {
@@ -137,4 +137,8 @@ func (d *DiskWriterReader) Read() (int, error) {
 
 func (d *DiskWriterReader) Close() error {
 	return d.File.Close()
+}
+
+func (d *DiskWriterReader) BufferSize() int {
+	return len(d.Buf)
 }
