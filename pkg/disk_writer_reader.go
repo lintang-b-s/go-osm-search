@@ -2,6 +2,7 @@ package pkg
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/binary"
 	"math"
 	"os"
@@ -52,7 +53,7 @@ func (d *DiskWriterReader) Write64Bytes(data [64]byte) {
 	d.Offset = len(d.Buf)
 }
 
-func (d *DiskWriterReader) Write128Bytes(data [128]byte, size int) {
+func (d *DiskWriterReader) Write128Bytes(data [128]byte) {
 	d.Buf = append(d.Buf, data[:]...)
 	d.Offset = len(d.Buf)
 }
@@ -142,3 +143,18 @@ func (d *DiskWriterReader) Close() error {
 func (d *DiskWriterReader) BufferSize() int {
 	return len(d.Buf)
 }
+
+func (d *DiskWriterReader) Paddingblock() {
+	paddingSize := MAX_BUFFER_SIZE - len(d.Buf)
+	padding := bytes.Repeat([]byte{0}, paddingSize)
+	d.Buf = append(d.Buf, padding...)
+	d.Offset = len(d.Buf)
+}
+
+func (d *DiskWriterReader) ResetFileSeek() {
+	d.File.Seek(0, 0)
+}
+
+// func (d *DiskWriterReader) ReadOneBlock(offset int) {
+// 	d.ReadAt(offset, MAX_BUFFER_SIZE)
+// }

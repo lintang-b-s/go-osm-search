@@ -5,7 +5,7 @@ import (
 )
 
 type JobI interface {
-	[]int32 | int
+	[]int32 | int | []byte 
 }
 type JobFunc[T JobI, G any] func(job T) G
 

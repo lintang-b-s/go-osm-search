@@ -102,31 +102,39 @@ func (se *Searcher) FreeFormQuery(query string, k int) ([]Node, error) {
 
 	queryTerms := sastrawi.Tokenize(query)
 
-	prevStemmedTokens := []string{}
+	// {{term1,term1OneEdit}, {term2, term2Edit}, ...}
+	allPossibleQueryTerms := make([][]int, len(queryTerms))
+
 	for i, term := range queryTerms {
 		tokenizedTerm := stemmer.Stem(term)
 		isInVocab := se.TermIDMap.IsInVocabulary(tokenizedTerm)
-		if i == 0 {
-			prevStemmedTokens = append(prevStemmedTokens, []string{START_TOKEN, START_TOKEN, START_TOKEN}...)
-		}
 
 		if !isInVocab {
 
-			correction, err := se.SpellCorrector.GetCorrectSpellingSuggestion(tokenizedTerm, prevStemmedTokens)
+			correctionOne, err := se.SpellCorrector.GetWordCandidates(tokenizedTerm, 1)
 			if err != nil {
 				return []Node{}, err
 			}
-			tokenizedTerm = correction
-		}
-		termID := se.TermIDMap.GetID(tokenizedTerm)
-		queryTermsID = append(queryTermsID, termID)
-
-		prevStemmedTokens = append(prevStemmedTokens, tokenizedTerm)
-
-		if i == 0 {
-			prevStemmedTokens = prevStemmedTokens[3:]
+			correctionTwo, err := se.SpellCorrector.GetWordCandidates(tokenizedTerm, 2)
+			if err != nil {
+				return []Node{}, err
+			}
+			allPossibleQueryTerms[i] = append(allPossibleQueryTerms[i], correctionOne...)
+			allPossibleQueryTerms[i] = append(allPossibleQueryTerms[i], correctionTwo...)
+		} else {
+			termID := se.TermIDMap.GetID(tokenizedTerm)
+			allPossibleQueryTerms[i] = []int{termID}
 		}
 	}
+
+	allCorrectQueryCandidates := se.SpellCorrector.GetCorrectQueryCandidates(allPossibleQueryTerms)
+	correctQuery, err := se.SpellCorrector.GetCorrectSpellingSuggestion(allCorrectQueryCandidates)
+	if err != nil {
+		return []Node{}, err
+	}
+
+	queryTermsID = append(queryTermsID, correctQuery...)
+	
 
 	fanInFanOut := NewFanInFanOut[int, PostingsResult](len(queryTermsID))
 	fanInFanOut.GeneratePipeline(queryTermsID)

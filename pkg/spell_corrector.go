@@ -14,8 +14,7 @@ const (
 )
 
 type NgramLM interface {
-	EstimateWordCandidatesProbabilities(nextWordCandidates []int, prevNgrams []int, n int) map[int]float64
-	EstimateWordCandidatesProbabilitiesWithStupidBackoff(nextWordCandidates []int, prevNgrams []int, n int) map[int]float64
+	EstimateQueriesProbabilities(queries [][]int, n int) []float64
 	PreProcessData(tokenizedDocs [][]string, countThresold int) [][]int
 	MakeCountMatrix(data [][]int)
 	SaveNGramData() error
@@ -80,14 +79,14 @@ func (sc *SpellCorrector) Preprocessdata(tokenizedDocs [][]string) {
 
 }
 
-func (sc *SpellCorrector) GetCorrectSpellingSuggestion(mispelledWord string, prevWords []string) (string, error) {
-	lv, err := levenshtein.NewLevenshteinAutomatonBuilder(EDIT_DISTANCE, false) // harus false
+func (sc SpellCorrector) GetWordCandidates(mispelledWord string, editDistance int) ([]int, error) {
+	lv, err := levenshtein.NewLevenshteinAutomatonBuilder(uint8(editDistance), false) // harus false
 	if err != nil {
-		return "", err
+		return []int{}, err
 	}
-	dfa, err := lv.BuildDfa(mispelledWord, EDIT_DISTANCE)
+	dfa, err := lv.BuildDfa(mispelledWord, uint8(editDistance))
 	if err != nil {
-		return "", err
+		return []int{}, err
 	}
 
 	fstIt, err := sc.CorpusTermsFST.Search(dfa, nil, nil)
@@ -98,36 +97,47 @@ func (sc *SpellCorrector) GetCorrectSpellingSuggestion(mispelledWord string, pre
 			if errors.Is(err, vellum.ErrIteratorDone) {
 				break
 			}
-			return "", err
+			return []int{}, err
 		}
 		key, _ := fstIt.Current()
 		correctWordCandidates = append(correctWordCandidates, sc.TermIDMap.GetID(string(key)))
 
 		err = fstIt.Next()
 	}
+	return correctWordCandidates, nil
+}
 
-	prevTokens := []int{}
-	for _, prevWord := range prevWords {
-		prevTokens = append(prevTokens, sc.TermIDMap.GetID(prevWord))
+func (sc SpellCorrector) GetCorrectQueryCandidates(allPossibleQueryTerms [][]int) [][]int {
+	temp := [][]int{{}}
+
+	for i := 0; i < len(allPossibleQueryTerms); i++ {
+		newTemp := [][]int{}
+		for _, product := range temp {
+			for _, term := range allPossibleQueryTerms[i] {
+				tempCopy := product
+				tempCopy = append(tempCopy, term)
+				newTemp = append(newTemp, tempCopy)
+			}
+		}
+		temp = newTemp
 	}
+	return temp
+}
 
-	n := 4
-	if len(prevTokens) < 3 {
-		// trigram = [prev-1,prev] [current]
-		n = len(prevTokens) + 1
-	}
+func (sc *SpellCorrector) GetCorrectSpellingSuggestion(allCorrectQueryCandidates [][]int) ([]int, error) {
 
-	// correctWordProbabilities := sc.NGram.EstimateWordCandidatesProbabilities(correctWordCandidates, prevTokens, n)
-	correctWordProbabilities := sc.NGram.EstimateWordCandidatesProbabilitiesWithStupidBackoff(correctWordCandidates, prevTokens, n)
+	correctQueriesProbabilities := sc.NGram.EstimateQueriesProbabilities(allCorrectQueryCandidates, 4)
 
 	maxProb := -9999.0
-	var correctWord string
+	var correctQuery = []int{}
+	correctQueryIDX := -1
 
-	for key, value := range correctWordProbabilities {
+	for key, value := range correctQueriesProbabilities {
 		if value > maxProb {
 			maxProb = value
-			correctWord = sc.TermIDMap.GetStr(key)
+			correctQueryIDX = key
 		}
 	}
-	return correctWord, nil
+	correctQuery = append(correctQuery, allCorrectQueryCandidates[correctQueryIDX]...)
+	return correctQuery, nil
 }

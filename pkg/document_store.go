@@ -15,7 +15,7 @@ type DiskWriterReaderI interface {
 	WriteFloat64(n float64)
 	Write32Bytes(data [32]byte)
 	Write64Bytes(data [64]byte)
-	Write128Bytes(data [128]byte, size int)
+	Write128Bytes(data [128]byte)
 	ReadBytes(offset int, size int) []byte
 	Flush() (int, error)
 	ReadAt(offset int, fieldBytesSize int) error
@@ -23,20 +23,31 @@ type DiskWriterReaderI interface {
 	ReadUint64(bytesOffset int) (uint64, int)
 	ReadFloat64(bytesOffset int) (float64, int)
 	Read() (int, error)
+	ResetFileSeek()
+	Paddingblock()
 	BufferSize() int
 	Close() error
 }
 
 type DocumentStore struct {
 	DiskWriterReader DiskWriterReaderI
-	OutputDir string
+	OutputDir        string
+	BlockFirstDocID  []int
+	BlockOffsets     []int
+	DocOffsetInBlock map[int]int // docID -> offset in block (bukan offset di file/seluruh block)
+	BackgroundWorker *BackgroundWorker[int, error]
 }
 
 func NewDocumentStore(diskIO DiskWriterReaderI, out string) *DocumentStore {
-	return &DocumentStore{
+	ds := &DocumentStore{
 		DiskWriterReader: diskIO,
-		OutputDir: out,
+		OutputDir:        out,
+		BlockFirstDocID:  make([]int, 0),
+		BlockOffsets:     []int{0},
 	}
+	ds.BackgroundWorker = NewBackgroundWorker[int, error](1, 1, ds.Flush)
+	ds.BackgroundWorker.Start()
+	return ds
 }
 
 func (d *DocumentStore) WriteDoc(node Node) {
@@ -44,7 +55,7 @@ func (d *DocumentStore) WriteDoc(node Node) {
 	d.DiskWriterReader.Write64Bytes(node.Name)
 	d.DiskWriterReader.WriteFloat64(node.Lat)
 	d.DiskWriterReader.WriteFloat64(node.Lon)
-	d.DiskWriterReader.Write128Bytes(node.Address, 128)
+	d.DiskWriterReader.Write128Bytes(node.Address)
 	d.DiskWriterReader.Write64Bytes(node.Tipe)
 	d.DiskWriterReader.Write32Bytes(node.City)
 }
@@ -54,8 +65,10 @@ func (d *DocumentStore) IsBufferFull() bool {
 	return d.DiskWriterReader.BufferSize() >= int(bufferMaxSize)
 }
 
-func (d *DocumentStore) Flush() (int, error) {
-	return d.DiskWriterReader.Flush()
+func (d *DocumentStore) Flush(n int) error {
+	d.DiskWriterReader.Paddingblock()
+	_, err := d.DiskWriterReader.Flush()
+	return err
 }
 
 func (d *DocumentStore) ReadDoc(offset int) (Node, int) {
@@ -78,4 +91,33 @@ func (d *DocumentStore) ReadDoc(offset int) (Node, int) {
 	return newNode, offset
 }
 
+func (d *DocumentStore) WriteDocs(docs []Node) {
+	d.BlockFirstDocID = append(d.BlockFirstDocID, docs[0].ID)
+	for _, doc := range docs {
+		if d.IsBufferFull() {
+			d.BackgroundWorker.TiggerProcessing(0)
+			d.BlockFirstDocID = append(d.BlockFirstDocID, doc.ID)
+			lastOffset := d.BlockOffsets[len(d.BlockOffsets)-1]
+			d.BlockOffsets = append(d.BlockOffsets, lastOffset+d.DiskWriterReader.BufferSize())
+		}
+		d.DocOffsetInBlock[doc.ID] = d.DiskWriterReader.BufferSize()
+		d.WriteDoc(doc)
+	}
+}
 
+func (d *DocumentStore) GetDoc(docID int) Node {
+	compare := func(a, b int) int {
+		return a - b
+	}
+
+	blockPos := BinarySearch(d.BlockFirstDocID, docID, compare)
+	if blockPos > 0 {
+		blockPos-- // return posisi offset block dari docID
+	}
+
+	blockOffset := d.BlockOffsets[blockPos]
+
+	node, _ := d.ReadDoc(blockOffset + d.DocOffsetInBlock[docID])
+	d.DiskWriterReader.ResetFileSeek()
+	return node
+}

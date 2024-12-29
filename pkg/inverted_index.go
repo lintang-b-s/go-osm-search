@@ -15,7 +15,9 @@ import (
 
 type SpellCorrectorI interface {
 	Preprocessdata(tokenizedDocs [][]string)
-	GetCorrectSpellingSuggestion(mispelledWord string, prevWords []string) (string, error)
+	GetWordCandidates(mispelledWord string, editDistance int) ([]int, error)
+	GetCorrectQueryCandidates(allPossibleQueryTerms [][]int) [][]int
+	GetCorrectSpellingSuggestion(allCorrectQueryCandidates [][]int) ([]int, error)
 }
 
 // https://nlp.stanford.edu/IR-book/pdf/04const.pdf (4.3 Single-pass in-memory indexing)

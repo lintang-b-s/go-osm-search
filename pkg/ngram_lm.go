@@ -3,13 +3,15 @@ package pkg
 import (
 	"bytes"
 	"encoding/gob"
+	"math"
 	"os"
 )
 
 const (
-	UNKNOWN_TOKEN = "<UNK>"
-	START_TOKEN   = "<s>"
-	END_TOKEN     = "</s>"
+	UNKNOWN_TOKEN    = "<UNK>"
+	START_TOKEN      = "<s>"
+	END_TOKEN        = "</s>"
+	EDIT_PROBABILITY = 0.5
 )
 
 type NGramLanguageModel struct {
@@ -289,28 +291,40 @@ func (lm *NGramLanguageModel) EstimateProbability(nextWord int, previousNGram []
 	return 0
 }
 
-// EstimateProbabilities. menghitung probabilitas nextWordCandidates berdasarkan previous tokens.
-func (lm *NGramLanguageModel) EstimateWordCandidatesProbabilities(nextWordCandidates []int, prevNgrams []int, n int) map[int]float64 {
-	var nextWordProbabilities = make(map[int]float64)
+func (lm *NGramLanguageModel) EstimateQueryProbability(query []int) float64 {
+	probability := math.Log(lm.EstimateProbability(query[0], []int{}, 1))
 
-	for _, nextWord := range nextWordCandidates {
-		probability := lm.EstimateProbability(nextWord, prevNgrams, n)
-		nextWordProbabilities[nextWord] = probability
+	for i := 0; i < len(query); i++ {
+		if i == 0 {
+			probability += math.Log(lm.EstimateProbability(query[i], []int{}, 1))
+		}
+
+		if i == 1 {
+			bigram := lm.StupidBackoff(query[i], query[i-1:i], 2)
+			probability += math.Log(bigram)
+		}
+
+		if i == 2 {
+			trigram := lm.StupidBackoff(query[i], query[i-2:i], 3)
+			probability += math.Log(trigram)
+		}
+
+		if i >= 3 {
+			fourgram := lm.StupidBackoff(query[i], query[i-3:i], 4)
+			probability += math.Log(fourgram)
+		}
 	}
-	return nextWordProbabilities
+	return probability
 }
 
-// https://web.stanford.edu/~jurafsky/slp3/3.pdf
-func (lm *NGramLanguageModel) EstimateWordCandidatesProbabilitiesWithStupidBackoff(
-	nextWordCandidates []int, prevNgrams []int, n int) map[int]float64 {
-	var nextWordProbabilities = make(map[int]float64)
+func (lm *NGramLanguageModel) EstimateQueriesProbabilities(queries [][]int, n int) []float64 {
 
-	for _, nextWord := range nextWordCandidates {
-		probability := lm.StupidBackoff(nextWord, prevNgrams, n)
-		nextWordProbabilities[nextWord] = probability
+	var sentencesProbabilities = make([]float64, 0)
+	for _, sentence := range queries {
+		probability := lm.EstimateQueryProbability(sentence)
+		sentencesProbabilities = append(sentencesProbabilities, probability)
 	}
-
-	return nextWordProbabilities
+	return sentencesProbabilities
 }
 
 func (lm *NGramLanguageModel) StupidBackoff(nextWord int, prevNgrams []int, n int) float64 {
