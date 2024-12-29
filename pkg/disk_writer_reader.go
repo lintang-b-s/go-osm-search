@@ -6,12 +6,14 @@ import (
 	"encoding/binary"
 	"math"
 	"os"
+	"sync"
 )
 
 type DiskWriterReader struct {
 	Buf    []byte
 	File   *os.File
 	Offset int
+	mu     sync.Mutex
 }
 
 func NewDiskWriterReader(buf []byte, f *os.File) *DiskWriterReader {
@@ -58,39 +60,64 @@ func (d *DiskWriterReader) Write128Bytes(data [128]byte) {
 	d.Offset = len(d.Buf)
 }
 
-func (d *DiskWriterReader) ReadBytes(offset int, size int) []byte {
-	d.ReadAt(offset, size)
-	return d.Buf[:size]
+func (d *DiskWriterReader) ReadBytes(offset int, size int) ([]byte, error) {
+	buf, err := d.ReadAt(offset, size)
+	return buf, err
 }
 
-func (d *DiskWriterReader) Flush() (int, error) {
+func (d *DiskWriterReader) LockBuffer() {
+	d.mu.Lock()
+}
+
+func (d *DiskWriterReader) UnlockBuffer() {
+	d.mu.Unlock()
+}
+
+func (d *DiskWriterReader) Flush(bufferSize int) (int, error) {
+	// d.LockBuffer()
+
+	buf := make([]byte, bufferSize)
+	copy(buf, d.Buf)
+
+	d.Buf = make([]byte, 0, bufferSize)
+	d.Offset = 0
+
+	// d.UnlockBuffer()
+
+	paddingSize := bufferSize - len(buf)
+	padding := bytes.Repeat([]byte{0}, paddingSize)
+	buf = append(buf, padding...)
+
 	writer := bufio.NewWriter(d.File)
-	bytesWritten, err := writer.Write(d.Buf)
+	bytesWritten, err := writer.Write(buf)
 	if err != nil {
 		return 0, err
 	}
 	err = writer.Flush()
+
 	return bytesWritten, err
 }
 
 // ReadAt. read specific field pada specific offset dengan ukuran field nya fieldBytesSize bytes
-func (d *DiskWriterReader) ReadAt(offset int, fieldBytesSize int) error {
+func (d *DiskWriterReader) ReadAt(offset int, fieldBytesSize int) ([]byte, error) {
 	_, err := d.File.Seek(int64(offset), 0)
 	reader := bufio.NewReader(d.File)
 
 	if err != nil {
-		return err
+		return []byte{}, err
 	}
+
+	buf := make([]byte, fieldBytesSize)
 
 	for i := 0; i < fieldBytesSize; i++ {
 		b, err := reader.ReadByte()
 		if err != nil {
-			return err
+			return []byte{}, err
 		}
-		d.Buf[i] = b
+		buf[i] = b
 	}
 
-	return nil
+	return buf, nil
 }
 
 func (d *DiskWriterReader) ReadUVarint(bytesOffset int) (uint64, int) {
@@ -130,12 +157,6 @@ func (d *DiskWriterReader) ReadFloat64(bytesOffset int) (float64, int) {
 	return math.Float64frombits(ui), bytesWritten
 }
 
-func (d *DiskWriterReader) Read() (int, error) {
-	reader := bufio.NewReader(d.File)
-	bytesRead, err := reader.Read(d.Buf)
-	return bytesRead, err
-}
-
 func (d *DiskWriterReader) Close() error {
 	return d.File.Close()
 }
@@ -149,12 +170,9 @@ func (d *DiskWriterReader) Paddingblock() {
 	padding := bytes.Repeat([]byte{0}, paddingSize)
 	d.Buf = append(d.Buf, padding...)
 	d.Offset = len(d.Buf)
+
 }
 
 func (d *DiskWriterReader) ResetFileSeek() {
 	d.File.Seek(0, 0)
 }
-
-// func (d *DiskWriterReader) ReadOneBlock(offset int) {
-// 	d.ReadAt(offset, MAX_BUFFER_SIZE)
-// }

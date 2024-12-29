@@ -2,26 +2,33 @@ package pkg
 
 import (
 	"log"
+	"os"
 	"testing"
 	"time"
 
 	"math/rand"
-
-	"github.com/dgraph-io/badger/v4"
 )
 
-func LoadIndex() (*Searcher, *badger.DB) {
-	db, err := badger.Open(badger.DefaultOptions("osm-searchdb"))
-	if err != nil {
-		log.Fatal(err)
-	}
+const (
+	outputDir = "lintang"
+)
 
-	kvDB := NewKVDB(db)
+func LoadIndex() (*Searcher, *os.File, *DocumentStore) {
 
 	ngramLM := NewNGramLanguageModel("lintang")
 	spellCorrector := NewSpellCorrector(ngramLM)
 
-	invertedIndex, err := NewDynamicIndex("lintang", 1e7, kvDB, true, spellCorrector, IndexedData{})
+	docsBuffer := make([]byte, 0, 16*1024)
+	file, err := os.OpenFile(outputDir+"/"+"docs_store.fdx", os.O_RDWR|os.O_CREATE, 0666)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	documentStoreIO := NewDiskWriterReader(docsBuffer, file)
+	documentStore := NewDocumentStore(documentStoreIO, outputDir)
+	documentStore.LoadMeta()
+
+	invertedIndex, err := NewDynamicIndex("lintang", 1e7, true, spellCorrector, IndexedData{}, documentStore)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -31,28 +38,32 @@ func LoadIndex() (*Searcher, *badger.DB) {
 		log.Fatal(err)
 	}
 
-	searcher := NewSearcher(invertedIndex, kvDB, spellCorrector)
-	return searcher, db
+	searcher := NewSearcher(invertedIndex, documentStore, spellCorrector)
+	return searcher, file, documentStore
+}
+
+var searchQuery = []string{
+	"Taman Anggrek",
+	"Universitas Indonesia",
+	"Dunia Fantasi",
+	"Stasiun",
+	"Kebun BiNItsng", // coba spell corrector
+	// "Kebun Binatang",
+	"Monumen Nasional",
+	"Halim Perdana",
+	"Bandar Udara",
+	"Taman",
+	"Buaya Lubang",
+	"Mall",
+	"TPU Tanah",
 }
 
 // go test -bench=./...
 func BenchmarkFullTextQuery(b *testing.B) {
-	searchQuery := []string{
-		"Taman Anggrek",
-		"Universitas Indonesia",
-		"Dunia Fantasi",
-		"Stasiun",
-		"Kebun BiNItsng", // coba spell corrector 
-		"Monumen Nasional",
-		"Halim Perdana",
-		"Bandar Udara",
-		"Taman",
-		"Buaya Lubang",
-		"Mall",
-		"TPU Tanah",
-	}
-	searcher, db := LoadIndex()
-	defer db.Close()
+
+	searcher, f, docStore := LoadIndex()
+	defer f.Close()
+	defer docStore.Close()
 	err := searcher.LoadMainIndex()
 	if err != nil {
 		log.Fatal(err)
@@ -68,5 +79,42 @@ func BenchmarkFullTextQuery(b *testing.B) {
 			b.Fatal(err)
 		}
 	}
-	// 5054429 ns/op
+	// 5054429 ns/op -> ganti badgerdb pake self made document store jadi 1739005 ns/op
+}
+
+func BenchmarkFullTextQueryWithoutSpellCorrector(b *testing.B) {
+	var searchQuery = []string{
+		"Taman Anggrek",
+		"Universitas Indonesia",
+		"Dunia Fantasi",
+		"Stasiun",
+		"Kebun Binatang",
+		"Monumen Nasional",
+		"Halim Perdana",
+		"Bandar Udara",
+		"Taman",
+		"Buaya Lubang",
+		"Mall",
+		"TPU Tanah",
+	}
+
+	searcher, f, docStore := LoadIndex()
+	defer f.Close()
+	defer docStore.Close()
+	err := searcher.LoadMainIndex()
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer searcher.Close()
+
+	rand.Seed(time.Now().UnixNano())
+
+	for n := 0; n < b.N; n++ {
+		randomIndex := rand.Intn(len(searchQuery))
+		_, err := searcher.FreeFormQueryWithoutSpellCorrection(searchQuery[randomIndex], 15)
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+	// 1847172 ns/op
 }

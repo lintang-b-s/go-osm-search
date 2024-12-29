@@ -20,6 +20,10 @@ type SpellCorrectorI interface {
 	GetCorrectSpellingSuggestion(allCorrectQueryCandidates [][]int, originalQueryTermIDs []int) ([]int, error)
 }
 
+type DocumentStoreI interface {
+	WriteDocs(docs []Node)
+}
+
 // https://nlp.stanford.edu/IR-book/pdf/04const.pdf (4.3 Single-pass in-memory indexing)
 type DynamicIndex struct {
 	TermIDMap                 IDMap
@@ -29,9 +33,10 @@ type DynamicIndex struct {
 	DocWordCount              map[int]int
 	OutputDir                 string
 	DocsCount                 int
-	KV                        InvertedIDXDB
+	// KV                        InvertedIDXDB
 	SpellCorrectorBuilder     SpellCorrectorI
 	IndexedData               IndexedData
+	DocumentStore             DocumentStoreI
 }
 
 type IndexedData struct {
@@ -52,11 +57,10 @@ func NewIndexedData(ways []OSMWay, nodes []OSMNode, ctr nodeMapContainer, tagIDM
 
 type InvertedIDXDB interface {
 	SaveNodes(nodes []Node) error
-	GetNode(id int) (Node, error)
 }
 
-func NewDynamicIndex(outputDir string, maxPostingListSize int, kv InvertedIDXDB,
-	server bool, spell SpellCorrectorI, indexedData IndexedData) (*DynamicIndex, error) {
+func NewDynamicIndex(outputDir string, maxPostingListSize int,
+	server bool, spell SpellCorrectorI, indexedData IndexedData, docStore DocumentStoreI) (*DynamicIndex, error) {
 	idx := &DynamicIndex{
 		TermIDMap:                 NewIDMap(),
 		IntermediateIndices:       []string{},
@@ -65,9 +69,10 @@ func NewDynamicIndex(outputDir string, maxPostingListSize int, kv InvertedIDXDB,
 		DocWordCount:              make(map[int]int),
 		OutputDir:                 outputDir,
 		DocsCount:                 0,
-		KV:                        kv,
+		// KV:                        kv,
 		SpellCorrectorBuilder:     spell,
 		IndexedData:               indexedData,
+		DocumentStore:             docStore,
 	}
 	if server {
 		err := idx.LoadMeta()
@@ -142,7 +147,8 @@ func (Idx *DynamicIndex) SpimiBatchIndex() error {
 			if err != nil {
 				return err
 			}
-			err = Idx.KV.SaveNodes(searchNodes)
+			// err = Idx.KV.SaveNodes(searchNodes)
+			Idx.DocumentStore.WriteDocs(searchNodes)
 			if err != nil {
 				return err
 			}
@@ -174,7 +180,8 @@ func (Idx *DynamicIndex) SpimiBatchIndex() error {
 			if err != nil {
 				return err
 			}
-			err = Idx.KV.SaveNodes(searchNodes)
+			// err = Idx.KV.SaveNodes(searchNodes)
+			Idx.DocumentStore.WriteDocs(searchNodes)
 			if err != nil {
 				return err
 			}
@@ -189,7 +196,8 @@ func (Idx *DynamicIndex) SpimiBatchIndex() error {
 	if err != nil {
 		return err
 	}
-	err = Idx.KV.SaveNodes(searchNodes)
+	// err = Idx.KV.SaveNodes(searchNodes)
+	Idx.DocumentStore.WriteDocs(searchNodes)
 	if err != nil {
 		return err
 	}
@@ -303,10 +311,6 @@ func (Idx *DynamicIndex) Merge(indices []InvertedIndex, mergedIndex *InvertedInd
 		}
 	}
 	return nil
-}
-
-func (Idx *DynamicIndex) GetNode(nodeID int) (Node, error) {
-	return Idx.KV.GetNode(nodeID)
 }
 
 // https://nlp.stanford.edu/IR-book/pdf/04const.pdf (Figure 4.4 Spimi-invert)

@@ -19,21 +19,22 @@ type DynamicIndexer interface {
 	BuildVocabulary()
 }
 
-type SearcherKVDB interface {
-	GetNode(id int) (Node, error)
+type SearcherDocStore interface {
+	GetDoc(int) (Node, error)
 }
 
 type Searcher struct {
-	Idx            DynamicIndexer
-	KV             SearcherKVDB
+	Idx DynamicIndexer
+	// KV             SearcherKVDB
 	MainIndex      *InvertedIndex
 	SpellCorrector SpellCorrectorI
 	TermIDMap      IDMap
+	DocStore       SearcherDocStore
 }
 
-func NewSearcher(idx DynamicIndexer, kv SearcherKVDB, spell SpellCorrectorI) *Searcher {
+func NewSearcher(idx DynamicIndexer, docStore SearcherDocStore, spell SpellCorrectorI) *Searcher {
 
-	return &Searcher{Idx: idx, KV: kv, SpellCorrector: spell}
+	return &Searcher{Idx: idx, DocStore: docStore, SpellCorrector: spell}
 }
 
 func (se *Searcher) LoadMainIndex() error {
@@ -105,7 +106,6 @@ func (se *Searcher) FreeFormQuery(query string, k int) ([]Node, error) {
 	// {{term1,term1OneEdit}, {term2, term2Edit}, ...}
 	allPossibleQueryTerms := make([][]int, len(queryTerms))
 	originalQueryTerms := make([]int, len(queryTerms))
-	
 
 	for i, term := range queryTerms {
 		tokenizedTerm := stemmer.Stem(term)
@@ -139,7 +139,6 @@ func (se *Searcher) FreeFormQuery(query string, k int) ([]Node, error) {
 	}
 
 	queryTermsID = append(queryTermsID, correctQuery...)
-	
 
 	fanInFanOut := NewFanInFanOut[int, PostingsResult](len(queryTermsID))
 	fanInFanOut.GeneratePipeline(queryTermsID)
@@ -206,10 +205,117 @@ func (se *Searcher) FreeFormQuery(query string, k int) ([]Node, error) {
 
 		heapItem := heap.Pop(docsPQ).(*priorityQueueNode[int, float64])
 		currRelDocID := heapItem.item
-		doc, err := se.KV.GetNode(currRelDocID)
+		// doc, err := se.KV.GetNode(currRelDocID)
+		doc, err := se.DocStore.GetDoc(currRelDocID)
 		if err != nil {
 			return []Node{}, err
 		}
+
+		relevantDocs = append(relevantDocs, doc)
+	}
+
+	return relevantDocs, nil
+}
+
+func (se *Searcher) FreeFormQueryWithoutSpellCorrection(query string, k int) ([]Node, error) {
+	if k == 0 {
+		k = 10
+	}
+	documentScore := make(map[int]float64) // menyimpan skor cosine tf-idf docs \dot tf-idf query
+	allPostings := make(map[int][]int)
+	docsPQ := NewMaxPriorityQueue[int, float64]()
+	heap.Init(docsPQ)
+
+	queryWordCount := make(map[int]int)
+
+	queryTermsID := []int{}
+
+	queryTerms := sastrawi.Tokenize(query)
+
+	// {{term1,term1OneEdit}, {term2, term2Edit}, ...}
+	// allPossibleQueryTerms := make([][]int, len(queryTerms))
+	originalQueryTerms := make([]int, len(queryTerms))
+
+	for i, term := range queryTerms {
+		tokenizedTerm := stemmer.Stem(term)
+
+		originalQueryTerms[i] = se.TermIDMap.GetID(tokenizedTerm)
+
+	}
+
+	queryTermsID = append(queryTermsID, originalQueryTerms...)
+
+	fanInFanOut := NewFanInFanOut[int, PostingsResult](len(queryTermsID))
+	fanInFanOut.GeneratePipeline(queryTermsID)
+
+	outs := []<-chan PostingsResult{}
+	for i := 0; i < NUM_WORKER_FANINFANOUT; i++ {
+		outs1 := fanInFanOut.FanOut(se.GetPostingListCon)
+		outs = append(outs, outs1)
+	}
+
+	results := fanInFanOut.FanIn(outs...)
+	for postingsRes := range results {
+		err := postingsRes.GetError()
+		if err != nil {
+			return []Node{}, err
+		}
+		allPostings[postingsRes.GetTermID()] = postingsRes.GetPostings()
+		queryWordCount[postingsRes.GetTermID()] += 1
+	}
+
+	docWordCount := se.Idx.GetDocWordCount()
+
+	docNorm := make(map[int]float64)
+	queryNorm := 0.0
+	for qTermID, postings := range allPostings {
+		// iterate semua term di query, hitung tf-idf query dan tf-idf document, accumulate skor cosine di docScore
+		tfTermQuery := float64(queryWordCount[qTermID]) / float64(len(queryWordCount))
+		termOccurences := len(postings)
+		idfTermQuery := math.Log10(float64(se.Idx.GetDocsCount())) - math.Log10(float64(termOccurences))
+		tfIDFTermQuery := tfTermQuery * idfTermQuery
+		for _, docID := range postings {
+			// compute tf-idf query dan document & compute cosine nya
+
+			tf := 1.0 / float64(docWordCount[docID])
+			termOccurences := len(postings)
+			idf := math.Log10(float64(se.Idx.GetDocsCount())) - math.Log10(float64(termOccurences))
+			tfIDFTermDoc := tf * idf
+
+			documentScore[docID] += tfIDFTermDoc * tfIDFTermQuery
+
+			docNorm[docID] += tfIDFTermDoc * tfIDFTermDoc
+		}
+		queryNorm += tfIDFTermQuery * tfIDFTermQuery
+	}
+
+	queryNorm = math.Sqrt(queryNorm)
+	for docID, norm := range docNorm {
+		docNorm[docID] = math.Sqrt(norm)
+	}
+
+	// normalize dengan cara dibagi dengan norm vector query & document
+	for docID, score := range documentScore {
+		documentScore[docID] = score / (queryNorm * docNorm[docID])
+		pqItem := NewPriorityQueueNode[int, float64](documentScore[docID], docID)
+		heap.Push(docsPQ, pqItem)
+
+	}
+
+	relevantDocs := []Node{}
+	for i := 0; i < k; i++ {
+		if docsPQ.Len() == 0 {
+			break
+		}
+
+		heapItem := heap.Pop(docsPQ).(*priorityQueueNode[int, float64])
+		currRelDocID := heapItem.item
+		// doc, err := se.KV.GetNode(currRelDocID)
+		doc, err := se.DocStore.GetDoc(currRelDocID)
+		if err != nil {
+			return []Node{}, err
+		}
+
 		relevantDocs = append(relevantDocs, doc)
 	}
 

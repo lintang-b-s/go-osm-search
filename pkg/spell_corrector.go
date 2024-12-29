@@ -3,6 +3,7 @@ package pkg
 import (
 	"bytes"
 	"errors"
+	"math"
 
 	"github.com/blevesearch/vellum"
 	"github.com/blevesearch/vellum/levenshtein"
@@ -128,7 +129,7 @@ func (sc *SpellCorrector) GetCorrectSpellingSuggestion(allCorrectQueryCandidates
 
 	correctQueriesProbabilities := sc.NGram.EstimateQueriesProbabilities(allCorrectQueryCandidates, 4, originalQueryTerms)
 
-	maxProb := -9999.0
+	maxProb := math.Inf(-1)
 	var correctQuery = []int{}
 	correctQueryIDX := -1
 

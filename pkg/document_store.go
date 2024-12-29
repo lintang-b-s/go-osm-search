@@ -1,13 +1,16 @@
 package pkg
 
+import (
+	"os"
+	"sync"
+)
+
 // ref: https://tangdh.life/posts/lucene/how-lucene-store-storedfields/   , https://www.youtube.com/watch?v=T5RmMNDR5XI&t=3261s
 // idk gakpaham
-// lucene & elasticsearch simpan per field dokumennya ke file di buat perblock 16kb isinya 1 field beberapa docs sekaligus
-// flush ke disknya pas memory buffer buat simpan docs penuh (16kb). flush nya di background..
-// di punyaku semua doc ukurannya statis, so simpan langsung beberapa dokumen perblock 16kb?
 
 const (
-	MAX_BUFFER_SIZE = 16 * 1024
+	MAX_BUFFER_SIZE            = 16 * 1024
+	DOCUMENT_METADATA_FILENAME = "docs_store.fdm"
 )
 
 type DiskWriterReaderI interface {
@@ -16,15 +19,15 @@ type DiskWriterReaderI interface {
 	Write32Bytes(data [32]byte)
 	Write64Bytes(data [64]byte)
 	Write128Bytes(data [128]byte)
-	ReadBytes(offset int, size int) []byte
-	Flush() (int, error)
-	ReadAt(offset int, fieldBytesSize int) error
+	ReadBytes(offset int, size int) ([]byte, error)
+	Flush(bufferSize int) (int, error)
 	ReadUVarint(bytesOffset int) (uint64, int)
 	ReadUint64(bytesOffset int) (uint64, int)
 	ReadFloat64(bytesOffset int) (float64, int)
-	Read() (int, error)
 	ResetFileSeek()
 	Paddingblock()
+	LockBuffer()
+	UnlockBuffer()
 	BufferSize() int
 	Close() error
 }
@@ -44,6 +47,7 @@ func NewDocumentStore(diskIO DiskWriterReaderI, out string) *DocumentStore {
 		OutputDir:        out,
 		BlockFirstDocID:  make([]int, 0),
 		BlockOffsets:     []int{0},
+		DocOffsetInBlock: make(map[int]int),
 	}
 	ds.BackgroundWorker = NewBackgroundWorker[int, error](1, 1, ds.Flush)
 	ds.BackgroundWorker.Start()
@@ -51,6 +55,7 @@ func NewDocumentStore(diskIO DiskWriterReaderI, out string) *DocumentStore {
 }
 
 func (d *DocumentStore) WriteDoc(node Node) {
+
 	d.DiskWriterReader.WriteUVarint(uint64(node.ID))
 	d.DiskWriterReader.Write64Bytes(node.Name)
 	d.DiskWriterReader.WriteFloat64(node.Lat)
@@ -65,59 +70,165 @@ func (d *DocumentStore) IsBufferFull() bool {
 	return d.DiskWriterReader.BufferSize() >= int(bufferMaxSize)
 }
 
+var mu sync.Mutex
+
 func (d *DocumentStore) Flush(n int) error {
-	d.DiskWriterReader.Paddingblock()
-	_, err := d.DiskWriterReader.Flush()
+	// d.DiskWriterReader.Paddingblock()
+	// mu.Lock()
+	lastOffset := d.BlockOffsets[len(d.BlockOffsets)-1]
+	d.BlockOffsets = append(d.BlockOffsets, lastOffset+MAX_BUFFER_SIZE)
+
+	_, err := d.DiskWriterReader.Flush(MAX_BUFFER_SIZE)
+	// mu.Unlock()
 	return err
 }
 
-func (d *DocumentStore) ReadDoc(offset int) (Node, int) {
+func (d *DocumentStore) ReadDoc(offset int) (Node, int, error) {
 	id, bytesWritten := d.DiskWriterReader.ReadUVarint(offset)
 	offset += bytesWritten
-	name := d.DiskWriterReader.ReadBytes(offset, 64)
+	name, err := d.DiskWriterReader.ReadBytes(offset, 64)
+	if err != nil {
+		return Node{}, offset, err
+	}
 	offset += 64
 	lat, bytesWritten := d.DiskWriterReader.ReadFloat64(offset)
 	offset += bytesWritten
 	lon, bytesWritten := d.DiskWriterReader.ReadFloat64(offset)
 	offset += bytesWritten
-	address := d.DiskWriterReader.ReadBytes(offset, 128)
+	address, err := d.DiskWriterReader.ReadBytes(offset, 128)
+	if err != nil {
+		return Node{}, offset, err
+	}
 	offset += 128
-	tipe := d.DiskWriterReader.ReadBytes(offset, 64)
+	tipe, err := d.DiskWriterReader.ReadBytes(offset, 64)
+	if err != nil {
+		return Node{}, offset, err
+	}
 	offset += 64
-	city := d.DiskWriterReader.ReadBytes(offset, 32)
+	city, err := d.DiskWriterReader.ReadBytes(offset, 32)
+	if err != nil {
+		return Node{}, offset, err
+	}
 	offset += 32
 	newNode := NewNode(int(id), string(name), lat, lon,
 		string(address), string(tipe), string(city))
-	return newNode, offset
+	return newNode, offset, nil
 }
 
 func (d *DocumentStore) WriteDocs(docs []Node) {
 	d.BlockFirstDocID = append(d.BlockFirstDocID, docs[0].ID)
+	lastDocID := 0
 	for _, doc := range docs {
 		if d.IsBufferFull() {
-			d.BackgroundWorker.TiggerProcessing(0)
+			// d.BackgroundWorker.TiggerProcessing(0)
+			d.Flush(MAX_BUFFER_SIZE)
 			d.BlockFirstDocID = append(d.BlockFirstDocID, doc.ID)
-			lastOffset := d.BlockOffsets[len(d.BlockOffsets)-1]
-			d.BlockOffsets = append(d.BlockOffsets, lastOffset+d.DiskWriterReader.BufferSize())
 		}
+		// d.DiskWriterReader.LockBuffer()
 		d.DocOffsetInBlock[doc.ID] = d.DiskWriterReader.BufferSize()
 		d.WriteDoc(doc)
+		// d.DiskWriterReader.UnlockBuffer()
+		lastDocID = doc.ID
 	}
+	d.Flush(MAX_BUFFER_SIZE)
+	d.BlockFirstDocID = append(d.BlockFirstDocID, lastDocID)
 }
 
-func (d *DocumentStore) GetDoc(docID int) Node {
+func (d *DocumentStore) GetDoc(docID int) (Node, error) {
 	compare := func(a, b int) int {
 		return a - b
 	}
 
-	blockPos := BinarySearch(d.BlockFirstDocID, docID, compare)
+	blockPos := BinarySearch[int](d.BlockFirstDocID, docID, compare)
 	if blockPos > 0 {
 		blockPos-- // return posisi offset block dari docID
 	}
 
 	blockOffset := d.BlockOffsets[blockPos]
 
-	node, _ := d.ReadDoc(blockOffset + d.DocOffsetInBlock[docID])
+	node, _, err := d.ReadDoc(blockOffset + d.DocOffsetInBlock[docID])
+	if err != nil {
+		return Node{}, err
+	}
 	d.DiskWriterReader.ResetFileSeek()
-	return node
+	return node, nil
+}
+
+func (d *DocumentStore) SaveMeta() error {
+	metaFile, err := os.OpenFile(d.OutputDir+"/"+DOCUMENT_METADATA_FILENAME, os.O_CREATE|os.O_RDWR, 0666)
+
+	if err != nil {
+		return err
+	}
+	defer metaFile.Close()
+
+	metaDiskIO := NewDiskWriterReader(make([]byte, 0), metaFile)
+	defer metaDiskIO.Close()
+
+	metaDiskIO.WriteUVarint(uint64(len(d.BlockFirstDocID)))
+	for _, docID := range d.BlockFirstDocID {
+		metaDiskIO.WriteUVarint(uint64(docID))
+	}
+	metaDiskIO.WriteUVarint(uint64(len(d.BlockOffsets)))
+	for _, offset := range d.BlockOffsets {
+		metaDiskIO.WriteUVarint(uint64(offset))
+	}
+	metaDiskIO.WriteUVarint(uint64(len(d.DocOffsetInBlock)))
+	for docID, offset := range d.DocOffsetInBlock {
+		metaDiskIO.WriteUVarint(uint64(docID))
+		metaDiskIO.WriteUVarint(uint64(offset))
+	}
+	_, err = metaDiskIO.Flush(metaDiskIO.BufferSize())
+	return err
+}
+
+func (d *DocumentStore) LoadMeta() error {
+	metaFile, err := os.OpenFile(d.OutputDir+"/"+DOCUMENT_METADATA_FILENAME, os.O_RDONLY, 0666)
+	if err != nil {
+		return err
+	}
+	defer metaFile.Close()
+
+	metaDiskIO := NewDiskWriterReader(make([]byte, 0), metaFile)
+	defer metaDiskIO.Close()
+
+	offset := 0
+	blockFirstDocIDLen, bytesWritten := metaDiskIO.ReadUVarint(0)
+	offset += bytesWritten
+	d.BlockFirstDocID = make([]int, blockFirstDocIDLen)
+	for i := 0; i < int(blockFirstDocIDLen); i++ {
+		blockIFirstDocID, bytesWritten := metaDiskIO.ReadUVarint(offset)
+		offset += bytesWritten
+		d.BlockFirstDocID[i] = int(blockIFirstDocID)
+	}
+
+	blockOffsetsLen, bytesWritten := metaDiskIO.ReadUVarint(offset)
+	offset += bytesWritten
+	d.BlockOffsets = make([]int, blockOffsetsLen)
+	for i := 0; i < int(blockOffsetsLen); i++ {
+		blockOffset, bytesWritten := metaDiskIO.ReadUVarint(offset)
+		offset += bytesWritten
+		d.BlockOffsets[i] = int(blockOffset)
+	}
+
+	docOffsetInBlockLen, bytesWritten := metaDiskIO.ReadUVarint(offset)
+	offset += bytesWritten
+	d.DocOffsetInBlock = make(map[int]int)
+	for i := 0; i < int(docOffsetInBlockLen); i++ {
+		docID, bytesWritten := metaDiskIO.ReadUVarint(offset)
+		offset += bytesWritten
+		docOffset, bytesWritten := metaDiskIO.ReadUVarint(offset)
+		offset += bytesWritten
+		d.DocOffsetInBlock[int(docID)] = int(docOffset)
+	}
+	return nil
+}
+
+func (d *DocumentStore) Close() error {
+	err := d.SaveMeta()
+	if err != nil {
+		return err
+	}
+	err = d.DiskWriterReader.Close()
+	return err
 }
