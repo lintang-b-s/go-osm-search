@@ -1,25 +1,39 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"log"
+	"os"
 	"osm-search/pkg"
+)
 
-	"github.com/dgraph-io/badger/v4"
+var (
+	outputDir = flag.String("o", "lintang", "output directory buat simpan inverted index, ngram, dll")
 )
 
 func main() {
-	db, err := badger.Open(badger.DefaultOptions("osm-searchdb"))
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer db.Close()
-	kvDB := pkg.NewKVDB(db)
 
 	ngramLM := pkg.NewNGramLanguageModel("lintang")
 	spellCorrector := pkg.NewSpellCorrector(ngramLM)
 
-	invertedIndex, err := pkg.NewDynamicIndex("lintang", 1e7, kvDB, true, spellCorrector, pkg.IndexedData{})
+	docsBuffer := make([]byte, 0, 16*1024)
+	file, err := os.OpenFile(*outputDir+"/"+"docs_store.fdx", os.O_RDWR|os.O_CREATE, 0666)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer file.Close()
+
+	documentStoreIO := pkg.NewDiskWriterReader(docsBuffer, file)
+	documentStore := pkg.NewDocumentStore(documentStoreIO, *outputDir)
+	defer documentStore.Close()
+	err = documentStore.LoadMeta()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	invertedIndex, err := pkg.NewDynamicIndex("lintang", 1e7, true, spellCorrector, pkg.IndexedData{},
+		documentStore)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -29,7 +43,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	searcher := pkg.NewSearcher(invertedIndex, kvDB, spellCorrector)
+	searcher := pkg.NewSearcher(invertedIndex, documentStore, spellCorrector)
 	err = searcher.LoadMainIndex()
 	if err != nil {
 		log.Fatal(err)
@@ -46,3 +60,13 @@ func main() {
 		fmt.Println(string(node.Tipe[:]))
 	}
 }
+
+/*
+
+db, err := badger.Open(badger.DefaultOptions("osm-searchdb"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
+	kvDB := pkg.NewKVDB(db)
+*/
