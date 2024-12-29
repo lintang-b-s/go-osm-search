@@ -14,7 +14,7 @@ const (
 )
 
 type NgramLM interface {
-	EstimateQueriesProbabilities(queries [][]int, n int) []float64
+	EstimateQueriesProbabilities(queries [][]int, n int, originalQueryTerms []int) []float64
 	PreProcessData(tokenizedDocs [][]string, countThresold int) [][]int
 	MakeCountMatrix(data [][]int)
 	SaveNGramData() error
@@ -124,9 +124,9 @@ func (sc SpellCorrector) GetCorrectQueryCandidates(allPossibleQueryTerms [][]int
 	return temp
 }
 
-func (sc *SpellCorrector) GetCorrectSpellingSuggestion(allCorrectQueryCandidates [][]int) ([]int, error) {
+func (sc *SpellCorrector) GetCorrectSpellingSuggestion(allCorrectQueryCandidates [][]int, originalQueryTerms []int) ([]int, error) {
 
-	correctQueriesProbabilities := sc.NGram.EstimateQueriesProbabilities(allCorrectQueryCandidates, 4)
+	correctQueriesProbabilities := sc.NGram.EstimateQueriesProbabilities(allCorrectQueryCandidates, 4, originalQueryTerms)
 
 	maxProb := -9999.0
 	var correctQuery = []int{}

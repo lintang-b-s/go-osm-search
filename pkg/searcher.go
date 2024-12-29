@@ -104,10 +104,14 @@ func (se *Searcher) FreeFormQuery(query string, k int) ([]Node, error) {
 
 	// {{term1,term1OneEdit}, {term2, term2Edit}, ...}
 	allPossibleQueryTerms := make([][]int, len(queryTerms))
+	originalQueryTerms := make([]int, len(queryTerms))
+	
 
 	for i, term := range queryTerms {
 		tokenizedTerm := stemmer.Stem(term)
 		isInVocab := se.TermIDMap.IsInVocabulary(tokenizedTerm)
+
+		originalQueryTerms[i] = se.TermIDMap.GetID(tokenizedTerm)
 
 		if !isInVocab {
 
@@ -128,7 +132,8 @@ func (se *Searcher) FreeFormQuery(query string, k int) ([]Node, error) {
 	}
 
 	allCorrectQueryCandidates := se.SpellCorrector.GetCorrectQueryCandidates(allPossibleQueryTerms)
-	correctQuery, err := se.SpellCorrector.GetCorrectSpellingSuggestion(allCorrectQueryCandidates)
+	correctQuery, err := se.SpellCorrector.GetCorrectSpellingSuggestion(allCorrectQueryCandidates, originalQueryTerms)
+
 	if err != nil {
 		return []Node{}, err
 	}

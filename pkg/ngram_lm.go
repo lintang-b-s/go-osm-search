@@ -11,7 +11,7 @@ const (
 	UNKNOWN_TOKEN    = "<UNK>"
 	START_TOKEN      = "<s>"
 	END_TOKEN        = "</s>"
-	EDIT_PROBABILITY = 0.5
+	EDIT_PROBABILITY = 0.03
 )
 
 type NGramLanguageModel struct {
@@ -291,14 +291,23 @@ func (lm *NGramLanguageModel) EstimateProbability(nextWord int, previousNGram []
 	return 0
 }
 
-func (lm *NGramLanguageModel) EstimateQueryProbability(query []int) float64 {
+func (lm *NGramLanguageModel) GetEditProbability(original, edited []int) float64 {
+	isSame := true
+	for i := 0; i < len(original); i++ {
+		if original[i] != edited[i] {
+			isSame = false
+		}
+	}
+	if isSame {
+		return 1 - EDIT_PROBABILITY
+	}
+	return EDIT_PROBABILITY
+}
+
+func (lm *NGramLanguageModel) EstimateQueryProbability(query []int, originalQuery []int) float64 {
 	probability := math.Log(lm.EstimateProbability(query[0], []int{}, 1))
 
-	for i := 0; i < len(query); i++ {
-		if i == 0 {
-			probability += math.Log(lm.EstimateProbability(query[i], []int{}, 1))
-		}
-
+	for i := 1; i < len(query); i++ {
 		if i == 1 {
 			bigram := lm.StupidBackoff(query[i], query[i-1:i], 2)
 			probability += math.Log(bigram)
@@ -314,14 +323,14 @@ func (lm *NGramLanguageModel) EstimateQueryProbability(query []int) float64 {
 			probability += math.Log(fourgram)
 		}
 	}
-	return probability
+	return probability + math.Log(lm.GetEditProbability(originalQuery, query))
 }
 
-func (lm *NGramLanguageModel) EstimateQueriesProbabilities(queries [][]int, n int) []float64 {
+func (lm *NGramLanguageModel) EstimateQueriesProbabilities(queries [][]int, n int, originalQuery []int) []float64 {
 
 	var sentencesProbabilities = make([]float64, 0)
 	for _, sentence := range queries {
-		probability := lm.EstimateQueryProbability(sentence)
+		probability := lm.EstimateQueryProbability(sentence, originalQuery)
 		sentencesProbabilities = append(sentencesProbabilities, probability)
 	}
 	return sentencesProbabilities
