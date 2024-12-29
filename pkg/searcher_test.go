@@ -43,7 +43,7 @@ func BenchmarkFullTextQuery(b *testing.B) {
 		"Dunia Fantasi",
 		"Stasiun",
 		"Jalan Senopati",
-		"Kebun Binatang",
+		"Kebun Banatung", // coba spell corrector 
 		"Monumen Nasional",
 		"Halim Perdana",
 		"Bandar Udara",

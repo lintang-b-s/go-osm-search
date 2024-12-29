@@ -61,7 +61,7 @@ func (db *KVDB) GetNode(id int) (Node, error) {
 }
 
 func SerializeNode(node Node) ([]byte, error) {
-	buf := make([]byte, 500) // aproksimasi 420 byte buat per node, jadi 500 byte aja
+	buf := make([]byte, 350) // aproksimasi 308 byte buat per node, jadi 350 byte aja
 	leftPos := 0
 
 	binary.LittleEndian.PutUint32(buf[leftPos:], uint32(node.ID))

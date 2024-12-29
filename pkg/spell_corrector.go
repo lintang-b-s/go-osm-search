@@ -35,7 +35,7 @@ func NewSpellCorrector(ngram NgramLM) *SpellCorrector {
 	}
 }
 
-// BuildFiniteStateTransducerSortedTerms. membuat finite state transducer dari sorted terms. Di panggil saat server dijalankan.
+// BuildFiniteStateTransducerSortedTerms. membuat finite state transducer dari sorted terms vocabulary. Di panggil saat server dijalankan.
 func (sc *SpellCorrector) BuildFiniteStateTransducerSortedTerms(sortedTerms []string) error {
 
 	var buf bytes.Buffer
@@ -64,7 +64,7 @@ func (sc *SpellCorrector) BuildFiniteStateTransducerSortedTerms(sortedTerms []st
 }
 
 func (sc *SpellCorrector) InitializeSpellCorrector(sortedTerms []string, termIDMap IDMap) error {
-	sc.TermIDMap = termIDMap 
+	sc.TermIDMap = termIDMap
 	sc.BuildFiniteStateTransducerSortedTerms(sortedTerms)
 	err := sc.NGram.LoadNGramData()
 
@@ -113,7 +113,7 @@ func (sc *SpellCorrector) GetCorrectSpellingSuggestion(mispelledWord string, pre
 
 	n := 4
 	if len(prevTokens) < 3 {
-		// bigram = [prev] [current]
+		// trigram = [prev-1,prev] [current]
 		n = len(prevTokens) + 1
 	}
 

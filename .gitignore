@@ -4,5 +4,7 @@ lintang/
 *.osm.pbf
 tmp/
 osm-searchdb/
-cobaFST/
-
+coba/
+latihanIO/
+note.txt
+*.txt

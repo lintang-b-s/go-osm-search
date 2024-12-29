@@ -3,7 +3,6 @@ package pkg
 import (
 	"container/heap"
 	"math"
-	"sync"
 
 	"github.com/RadhiFadlillah/go-sastrawi"
 )
@@ -100,10 +99,15 @@ func (se *Searcher) FreeFormQuery(query string, k int) ([]Node, error) {
 	queryTerms := sastrawi.Tokenize(query)
 
 	prevStemmedTokens := []string{}
-	for _, term := range queryTerms {
+	for i, term := range queryTerms {
 		tokenizedTerm := stemmer.Stem(term)
 		isInVocab := se.TermIDMap.IsInVocabulary(tokenizedTerm)
+		if i == 0 {
+			prevStemmedTokens = append(prevStemmedTokens, START_TOKEN)
+		}
+		
 		if !isInVocab {
+
 			correction, err := se.SpellCorrector.GetCorrectSpellingSuggestion(tokenizedTerm, prevStemmedTokens)
 			if err != nil {
 				return []Node{}, err
@@ -112,26 +116,30 @@ func (se *Searcher) FreeFormQuery(query string, k int) ([]Node, error) {
 		}
 		termID := se.TermIDMap.GetID(tokenizedTerm)
 		queryTermsID = append(queryTermsID, termID)
+
 		prevStemmedTokens = append(prevStemmedTokens, tokenizedTerm)
+
+		if i == 0 {
+			prevStemmedTokens = prevStemmedTokens[1:]
+		}
 	}
 
 	fanInFanOut := NewFanInFanOut[int, PostingsResult](len(queryTermsID))
 	fanInFanOut.GeneratePipeline(queryTermsID)
 	outs := fanInFanOut.FanOut(len(queryTermsID), se.GetPostingListCon)
 
-	var mu sync.Mutex
 	// collect all postings
 	err := fanInFanOut.FanIn(func(resChan <-chan PostingsResult) error {
-		mu.Lock()
+
 		postingsRes := <-resChan
 		err := postingsRes.GetError()
 		if err != nil {
-			mu.Unlock()
+
 			return err
 		}
 		allPostings[postingsRes.TermID] = postingsRes.Postings
 		queryWordCount[postingsRes.TermID] += 1
-		mu.Unlock()
+
 		return nil
 	}, outs...)
 
