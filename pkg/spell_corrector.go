@@ -94,16 +94,17 @@ func (sc SpellCorrector) GetWordCandidates(mispelledWord string, editDistance in
 
 	correctWordCandidates := []int{}
 	for err == nil {
+
+		key, _ := fstIt.Current()
+		correctWordCandidates = append(correctWordCandidates, sc.TermIDMap.GetID(string(key)))
+
+		err = fstIt.Next()
 		if err != nil {
 			if errors.Is(err, vellum.ErrIteratorDone) {
 				break
 			}
 			return []int{}, err
 		}
-		key, _ := fstIt.Current()
-		correctWordCandidates = append(correctWordCandidates, sc.TermIDMap.GetID(string(key)))
-
-		err = fstIt.Next()
 	}
 	return correctWordCandidates, nil
 }

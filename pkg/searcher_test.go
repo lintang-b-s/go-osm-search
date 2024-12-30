@@ -48,7 +48,6 @@ var searchQuery = []string{
 	"Dunia Fantasi",
 	"Stasiun",
 	"Kebun BiNItsng", // coba spell corrector
-	// "Kebun Binatang",
 	"Monumen Nasional",
 	"Halim Perdana",
 	"Bandar Udara",

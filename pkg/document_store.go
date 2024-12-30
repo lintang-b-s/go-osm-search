@@ -21,10 +21,9 @@ type DiskWriterReaderI interface {
 	Write128Bytes(data [128]byte)
 	ReadBytes(offset int, size int) ([]byte, error)
 	Flush(bufferSize int) (int, error)
-	ReadUVarint(bytesOffset int) (uint64, int)
-	ReadUint64(bytesOffset int) (uint64, int)
-	ReadFloat64(bytesOffset int) (float64, int)
-	ResetFileSeek()
+	ReadUVarint(int) (uint64, int, error)
+	ReadUint64(int) (uint64, int, error)
+	ReadFloat64(bytesOffset int) (float64, int, error)
 	Paddingblock()
 	LockBuffer()
 	UnlockBuffer()
@@ -84,16 +83,25 @@ func (d *DocumentStore) Flush(n int) error {
 }
 
 func (d *DocumentStore) ReadDoc(offset int) (Node, int, error) {
-	id, bytesWritten := d.DiskWriterReader.ReadUVarint(offset)
+	id, bytesWritten, err := d.DiskWriterReader.ReadUVarint(offset)
+	if err != nil {
+		return Node{}, offset, err
+	}
 	offset += bytesWritten
 	name, err := d.DiskWriterReader.ReadBytes(offset, 64)
 	if err != nil {
 		return Node{}, offset, err
 	}
 	offset += 64
-	lat, bytesWritten := d.DiskWriterReader.ReadFloat64(offset)
+	lat, bytesWritten, err := d.DiskWriterReader.ReadFloat64(offset)
+	if err != nil {
+		return Node{}, offset, err
+	}
 	offset += bytesWritten
-	lon, bytesWritten := d.DiskWriterReader.ReadFloat64(offset)
+	lon, bytesWritten, err := d.DiskWriterReader.ReadFloat64(offset)
+	if err != nil {
+		return Node{}, offset, err
+	}
 	offset += bytesWritten
 	address, err := d.DiskWriterReader.ReadBytes(offset, 128)
 	if err != nil {
@@ -150,7 +158,7 @@ func (d *DocumentStore) GetDoc(docID int) (Node, error) {
 	if err != nil {
 		return Node{}, err
 	}
-	d.DiskWriterReader.ResetFileSeek()
+
 	return node, nil
 }
 
@@ -193,31 +201,52 @@ func (d *DocumentStore) LoadMeta() error {
 	defer metaDiskIO.Close()
 
 	offset := 0
-	blockFirstDocIDLen, bytesWritten := metaDiskIO.ReadUVarint(0)
+	blockFirstDocIDLen, bytesWritten, err := metaDiskIO.ReadUVarint(0)
+	if err != nil {
+		return err
+	}
 	offset += bytesWritten
 	d.BlockFirstDocID = make([]int, blockFirstDocIDLen)
 	for i := 0; i < int(blockFirstDocIDLen); i++ {
-		blockIFirstDocID, bytesWritten := metaDiskIO.ReadUVarint(offset)
+		blockIFirstDocID, bytesWritten, err := metaDiskIO.ReadUVarint(offset)
+		if err != nil {
+			return err
+		}
 		offset += bytesWritten
 		d.BlockFirstDocID[i] = int(blockIFirstDocID)
 	}
 
-	blockOffsetsLen, bytesWritten := metaDiskIO.ReadUVarint(offset)
+	blockOffsetsLen, bytesWritten, err := metaDiskIO.ReadUVarint(offset)
+	if err != nil {
+		return err
+	}
 	offset += bytesWritten
 	d.BlockOffsets = make([]int, blockOffsetsLen)
 	for i := 0; i < int(blockOffsetsLen); i++ {
-		blockOffset, bytesWritten := metaDiskIO.ReadUVarint(offset)
+		blockOffset, bytesWritten, err := metaDiskIO.ReadUVarint(offset)
+		if err != nil {
+			return err
+		}
 		offset += bytesWritten
 		d.BlockOffsets[i] = int(blockOffset)
 	}
 
-	docOffsetInBlockLen, bytesWritten := metaDiskIO.ReadUVarint(offset)
+	docOffsetInBlockLen, bytesWritten, err := metaDiskIO.ReadUVarint(offset)
+	if err != nil {
+		return err
+	}
 	offset += bytesWritten
 	d.DocOffsetInBlock = make(map[int]int)
 	for i := 0; i < int(docOffsetInBlockLen); i++ {
-		docID, bytesWritten := metaDiskIO.ReadUVarint(offset)
+		docID, bytesWritten, err := metaDiskIO.ReadUVarint(offset)
+		if err != nil {
+			return err
+		}
 		offset += bytesWritten
-		docOffset, bytesWritten := metaDiskIO.ReadUVarint(offset)
+		docOffset, bytesWritten, err := metaDiskIO.ReadUVarint(offset)
+		if err != nil {
+			return err
+		}
 		offset += bytesWritten
 		d.DocOffsetInBlock[int(docID)] = int(docOffset)
 	}

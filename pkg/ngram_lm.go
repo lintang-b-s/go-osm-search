@@ -314,7 +314,7 @@ func (lm *NGramLanguageModel) EstimateQueryProbability(query []int, originalQuer
 
 func (lm *NGramLanguageModel) EstimateQueriesProbabilities(queries [][]int, n int, originalQuery []int) []float64 {
 
-	var sentencesProbabilities = make([]float64, 0)
+	var sentencesProbabilities = make([]float64, 0, len(queries))
 	for _, sentence := range queries {
 		probability := lm.EstimateQueryProbability(sentence, originalQuery)
 		sentencesProbabilities = append(sentencesProbabilities, probability)

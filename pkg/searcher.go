@@ -93,25 +93,27 @@ func (se *Searcher) FreeFormQuery(query string, k int) ([]Node, error) {
 		k = 10
 	}
 	documentScore := make(map[int]float64) // menyimpan skor cosine tf-idf docs \dot tf-idf query
-	allPostings := make(map[int][]int)
+
 	docsPQ := NewMaxPriorityQueue[int, float64]()
 	heap.Init(docsPQ)
 
-	queryWordCount := make(map[int]int)
-
-	queryTermsID := []int{}
-
 	queryTerms := sastrawi.Tokenize(query)
+
+	queryWordCount := make(map[int]int, len(queryTerms))
+
+	queryTermsID := make([]int, 0, len(queryTerms))
+
+	allPostings := make(map[int][]int, len(queryTerms))
 
 	// {{term1,term1OneEdit}, {term2, term2Edit}, ...}
 	allPossibleQueryTerms := make([][]int, len(queryTerms))
-	originalQueryTerms := make([]int, len(queryTerms))
+	originalQueryTerms := make([]int, 0, len(queryTerms))
 
 	for i, term := range queryTerms {
 		tokenizedTerm := stemmer.Stem(term)
 		isInVocab := se.TermIDMap.IsInVocabulary(tokenizedTerm)
 
-		originalQueryTerms[i] = se.TermIDMap.GetID(tokenizedTerm)
+		originalQueryTerms = append(originalQueryTerms, se.TermIDMap.GetID(tokenizedTerm))
 
 		if !isInVocab {
 
@@ -160,21 +162,21 @@ func (se *Searcher) FreeFormQuery(query string, k int) ([]Node, error) {
 	}
 
 	docWordCount := se.Idx.GetDocWordCount()
-
+	docsCount := float64(se.Idx.GetDocsCount())
 	docNorm := make(map[int]float64)
 	queryNorm := 0.0
 	for qTermID, postings := range allPostings {
 		// iterate semua term di query, hitung tf-idf query dan tf-idf document, accumulate skor cosine di docScore
 		tfTermQuery := float64(queryWordCount[qTermID]) / float64(len(queryWordCount))
 		termOccurences := len(postings)
-		idfTermQuery := math.Log10(float64(se.Idx.GetDocsCount())) - math.Log10(float64(termOccurences))
+		idfTermQuery := math.Log10(docsCount) - math.Log10(float64(termOccurences))
 		tfIDFTermQuery := tfTermQuery * idfTermQuery
 		for _, docID := range postings {
 			// compute tf-idf query dan document & compute cosine nya
 
 			tf := 1.0 / float64(docWordCount[docID])
 			termOccurences := len(postings)
-			idf := math.Log10(float64(se.Idx.GetDocsCount())) - math.Log10(float64(termOccurences))
+			idf := math.Log10(docsCount) - math.Log10(float64(termOccurences))
 			tfIDFTermDoc := tf * idf
 
 			documentScore[docID] += tfIDFTermDoc * tfIDFTermQuery
@@ -197,7 +199,7 @@ func (se *Searcher) FreeFormQuery(query string, k int) ([]Node, error) {
 
 	}
 
-	relevantDocs := []Node{}
+	relevantDocs := make([]Node, 0, k)
 	for i := 0; i < k; i++ {
 		if docsPQ.Len() == 0 {
 			break
@@ -222,15 +224,16 @@ func (se *Searcher) FreeFormQueryWithoutSpellCorrection(query string, k int) ([]
 		k = 10
 	}
 	documentScore := make(map[int]float64) // menyimpan skor cosine tf-idf docs \dot tf-idf query
-	allPostings := make(map[int][]int)
 	docsPQ := NewMaxPriorityQueue[int, float64]()
 	heap.Init(docsPQ)
 
-	queryWordCount := make(map[int]int)
-
-	queryTermsID := []int{}
-
 	queryTerms := sastrawi.Tokenize(query)
+
+	queryWordCount := make(map[int]int, len(queryTerms))
+
+	queryTermsID := make([]int, 0, len(queryTerms))
+
+	allPostings := make(map[int][]int, len(queryTerms))
 
 	// {{term1,term1OneEdit}, {term2, term2Edit}, ...}
 	// allPossibleQueryTerms := make([][]int, len(queryTerms))
@@ -302,7 +305,7 @@ func (se *Searcher) FreeFormQueryWithoutSpellCorrection(query string, k int) ([]
 
 	}
 
-	relevantDocs := []Node{}
+	relevantDocs := make([]Node, 0, k)
 	for i := 0; i < k; i++ {
 		if docsPQ.Len() == 0 {
 			break
