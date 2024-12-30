@@ -8,3 +8,7 @@ coba/
 latihanIO/
 note.txt
 *.txt
+*.cpu
+*.test
+prof.mem
+!learn_profiling_benchmarking.txt
