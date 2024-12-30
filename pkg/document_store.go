@@ -15,6 +15,7 @@ const (
 
 type DiskWriterReaderI interface {
 	WriteUVarint(n uint64) int
+	CheckUVarintSize(n uint64) int
 	WriteFloat64(n float64)
 	Write32Bytes(data [32]byte)
 	Write64Bytes(data [64]byte)
@@ -22,8 +23,11 @@ type DiskWriterReaderI interface {
 	ReadBytes(offset int, size int) ([]byte, error)
 	Flush(bufferSize int) (int, error)
 	ReadUVarint(int) (uint64, int, error)
+	GetIsBlockReseted() bool
 	ReadUint64(int) (uint64, int, error)
 	ReadFloat64(bytesOffset int) (float64, int, error)
+	SkipToBlock(blockPos int) error
+	GetCurrBlockPos() int
 	Paddingblock()
 	LockBuffer()
 	UnlockBuffer()
@@ -152,9 +156,21 @@ func (d *DocumentStore) GetDoc(docID int) (Node, error) {
 		blockPos-- // return posisi offset block dari docID
 	}
 
-	blockOffset := d.BlockOffsets[blockPos]
+	// blockOffset := d.BlockOffsets[blockPos]
 
-	node, _, err := d.ReadDoc(blockOffset + d.DocOffsetInBlock[docID])
+	// node, _, err := d.ReadDoc(blockOffset + d.DocOffsetInBlock[docID])
+	// if err != nil {
+	// 	return Node{}, err
+	// }
+
+	if d.DiskWriterReader.GetCurrBlockPos() != blockPos {
+		if err := d.DiskWriterReader.SkipToBlock(blockPos); err != nil {
+			return Node{}, err
+		}
+
+	}
+
+	node, _, err := d.ReadDoc(d.DocOffsetInBlock[docID])
 	if err != nil {
 		return Node{}, err
 	}
@@ -175,6 +191,7 @@ func (d *DocumentStore) SaveMeta() error {
 
 	metaDiskIO.WriteUVarint(uint64(len(d.BlockFirstDocID)))
 	for _, docID := range d.BlockFirstDocID {
+		// gakbisa kalo dibuat perblock  16kb metadatanya
 		metaDiskIO.WriteUVarint(uint64(docID))
 	}
 	metaDiskIO.WriteUVarint(uint64(len(d.BlockOffsets)))
@@ -198,6 +215,10 @@ func (d *DocumentStore) LoadMeta() error {
 	defer metaFile.Close()
 
 	metaDiskIO := NewDiskWriterReader(make([]byte, 0), metaFile)
+	err = metaDiskIO.PreloadFile()
+	if err != nil {
+		return err
+	}
 	defer metaDiskIO.Close()
 
 	offset := 0
@@ -212,6 +233,9 @@ func (d *DocumentStore) LoadMeta() error {
 		if err != nil {
 			return err
 		}
+		if metaDiskIO.GetIsBlockReseted() {
+			offset = 0
+		}
 		offset += bytesWritten
 		d.BlockFirstDocID[i] = int(blockIFirstDocID)
 	}
@@ -220,6 +244,9 @@ func (d *DocumentStore) LoadMeta() error {
 	if err != nil {
 		return err
 	}
+	if metaDiskIO.GetIsBlockReseted() {
+		offset = 0
+	}
 	offset += bytesWritten
 	d.BlockOffsets = make([]int, blockOffsetsLen)
 	for i := 0; i < int(blockOffsetsLen); i++ {
@@ -227,13 +254,20 @@ func (d *DocumentStore) LoadMeta() error {
 		if err != nil {
 			return err
 		}
+		if metaDiskIO.GetIsBlockReseted() {
+			offset = 0
+		}
 		offset += bytesWritten
 		d.BlockOffsets[i] = int(blockOffset)
 	}
 
 	docOffsetInBlockLen, bytesWritten, err := metaDiskIO.ReadUVarint(offset)
+
 	if err != nil {
 		return err
+	}
+	if metaDiskIO.GetIsBlockReseted() {
+		offset = 0
 	}
 	offset += bytesWritten
 	d.DocOffsetInBlock = make(map[int]int)
@@ -242,10 +276,16 @@ func (d *DocumentStore) LoadMeta() error {
 		if err != nil {
 			return err
 		}
+		if metaDiskIO.GetIsBlockReseted() {
+			offset = 0
+		}
 		offset += bytesWritten
 		docOffset, bytesWritten, err := metaDiskIO.ReadUVarint(offset)
 		if err != nil {
 			return err
+		}
+		if metaDiskIO.GetIsBlockReseted() {
+			offset = 0
 		}
 		offset += bytesWritten
 		d.DocOffsetInBlock[int(docID)] = int(docOffset)

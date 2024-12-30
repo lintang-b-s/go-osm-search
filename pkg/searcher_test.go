@@ -27,7 +27,7 @@ func LoadIndex() (*Searcher, *os.File, *DocumentStore) {
 	documentStoreIO := NewDiskWriterReader(docsBuffer, file)
 	documentStore := NewDocumentStore(documentStoreIO, outputDir)
 	documentStore.LoadMeta()
-
+	documentStoreIO.PreloadFile()
 	invertedIndex, err := NewDynamicIndex("lintang", 1e7, true, spellCorrector, IndexedData{}, documentStore)
 	if err != nil {
 		log.Fatal(err)
@@ -61,6 +61,7 @@ var searchQuery = []string{
 func BenchmarkFullTextQuery(b *testing.B) {
 
 	searcher, f, docStore := LoadIndex()
+
 	defer f.Close()
 	defer docStore.Close()
 	err := searcher.LoadMainIndex()
@@ -70,6 +71,7 @@ func BenchmarkFullTextQuery(b *testing.B) {
 	defer searcher.Close()
 
 	rand.Seed(time.Now().UnixNano())
+	b.ResetTimer()
 
 	for n := 0; n < b.N; n++ {
 		randomIndex := rand.Intn(len(searchQuery))
@@ -78,7 +80,7 @@ func BenchmarkFullTextQuery(b *testing.B) {
 			b.Fatal(err)
 		}
 	}
-	// 5054429 ns/op -> ganti badgerdb pake self made document store jadi 1739005 ns/op
+	//  619794 ns/op          348751 B/op       2272 allocs/op
 }
 
 func BenchmarkFullTextQueryWithoutSpellCorrector(b *testing.B) {
@@ -107,6 +109,7 @@ func BenchmarkFullTextQueryWithoutSpellCorrector(b *testing.B) {
 	defer searcher.Close()
 
 	rand.Seed(time.Now().UnixNano())
+	b.ResetTimer()
 
 	for n := 0; n < b.N; n++ {
 		randomIndex := rand.Intn(len(searchQuery))
@@ -115,5 +118,5 @@ func BenchmarkFullTextQueryWithoutSpellCorrector(b *testing.B) {
 			b.Fatal(err)
 		}
 	}
-	// 1847172 ns/op
+	//  536052 ns/op          285539 B/op       1505 allocs/op
 }
