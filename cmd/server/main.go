@@ -25,6 +25,10 @@ func main() {
 	defer file.Close()
 
 	documentStoreIO := pkg.NewDiskWriterReader(docsBuffer, file)
+	err = documentStoreIO.PreloadFile()
+	if err != nil {
+		log.Fatal(err)
+	}
 	documentStore := pkg.NewDocumentStore(documentStoreIO, *outputDir)
 	defer documentStore.Close()
 	err = documentStore.LoadMeta()

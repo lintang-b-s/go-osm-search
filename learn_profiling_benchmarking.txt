@@ -293,3 +293,39 @@ disasm [namaFungsi]
 
 optimization notes:
 - file.read di diskwriterrider.readBytes() makan runtime paling banyak...
+
+
+memory usage 138 mb kalau pake d.file.Seek()....
+
+
+
+
+result pake file.Seek():
+-6.311545258132822 106.82106819152571
+Kebun Binatang Ragunan
+zoo
+Jalan Raya Kebagusan RT 01/07 Ragunan, DKI Jakarta, 
+
+dll...
+
+goos: linux
+goarch: amd64
+pkg: osm-search/pkg
+cpu: AMD Ryzen 5 7540U w/ Radeon(TM) 740M Graphics  
+BenchmarkFullTextQuery-12                                   1814            609656 ns/op          373810 B/op     2410 allocs/op
+BenchmarkFullTextQueryWithoutSpellCorrector-12              2274            497686 ns/op          270237 B/op     1438 allocs/op
+PASS
+ok      osm-search/pkg  8.059s
+
+
+prof.cpu:
+
+640ms    317:           doc, err := se.DocStore.GetDoc(currRelDocID)
+
+
+
+result Preload bufio:
+
+
+BenchmarkFullTextQuery-12                                   2144            550372 ns/op          596897 B/op       2291 allocs/op
+BenchmarkFullTextQueryWithoutSpellCorrector-12              2521            468307 ns/op          514499 B/op       1428 allocs/op
