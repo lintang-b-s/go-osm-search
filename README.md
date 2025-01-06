@@ -2,7 +2,7 @@
 
 ## Benchmark
 
-### Fulltext query With
+### Fulltext Search Query
 
 |           BenchmarkFullTextQuery-12            | Iterations | Total ns/op  |  Total B/op | Total Allocs/op |
 | :--------------------------------------------: | ---------- | :----------: | ----------: | --------------- |

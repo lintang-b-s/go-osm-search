@@ -12,3 +12,6 @@ note.txt
 *.test
 prof.mem
 !learn_profiling_benchmarking.txt
+
+latihanSyncPool/
+latihanCompressAndBufferPool/

@@ -167,7 +167,6 @@ func (d *DocumentStore) GetDoc(docID int) (Node, error) {
 		if err := d.DiskWriterReader.SkipToBlock(blockPos); err != nil {
 			return Node{}, err
 		}
-
 	}
 
 	node, _, err := d.ReadDoc(d.DocOffsetInBlock[docID])

@@ -329,3 +329,18 @@ result Preload bufio:
 
 BenchmarkFullTextQuery-12                                   2144            550372 ns/op          596897 B/op       2291 allocs/op
 BenchmarkFullTextQueryWithoutSpellCorrector-12              2521            468307 ns/op          514499 B/op       1428 allocs/op
+BenchmarkFullTextSearchQueryWithoutDocs-12                          2797            407968 ns/op          275166 B/op       1392 allocs/op
+
+
+
+
+
+
+Tanpa FaninFanOut di collect allpostings:
+BenchmarkFullTextSearchQuery-12             2594            439743 ns/op          583277 B/op       2220 allocs/op
+BenchmarkFullTextSearchQueryWithoutDocs-12          3871            278734 ns/op          266187 B/op       1338 allocs/op
+
+
+tanpa priority queue (sort array aj):
+
+BenchmarkFullTextSearchQuery-12                     2916            390398 ns/op          542419 B/op        976 allocs/op
