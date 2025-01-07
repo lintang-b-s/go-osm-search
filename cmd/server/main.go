@@ -5,9 +5,10 @@ import (
 	"flag"
 	"fmt"
 	"log"
-	"os"
 	"osm-search/pkg"
 	"sync"
+
+	bolt "go.etcd.io/bbolt"
 )
 
 var (
@@ -65,27 +66,16 @@ func main() {
 	ngramLM := pkg.NewNGramLanguageModel("lintang")
 	spellCorrector := pkg.NewSpellCorrector(ngramLM)
 
-	docsBuffer := make([]byte, 0, 16*1024)
-	file, err := os.OpenFile(*outputDir+"/"+"docs_store.fdx", os.O_RDWR|os.O_CREATE, 0666)
+	db, err := bolt.Open("docs_store.db", 0600, nil)
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer file.Close()
+	defer db.Close()
 
-	documentStoreIO := pkg.NewDiskWriterReader(docsBuffer, file)
-	err = documentStoreIO.PreloadFile()
-	if err != nil {
-		log.Fatal(err)
-	}
-	documentStore := pkg.NewDocumentStore(documentStoreIO, *outputDir)
-	defer documentStore.Close()
-	err = documentStore.LoadMeta()
-	if err != nil {
-		log.Fatal(err)
-	}
+	bboltKV := pkg.NewKVDB(db)
 
 	invertedIndex, err := pkg.NewDynamicIndex("lintang", 1e7, true, spellCorrector, pkg.IndexedData{},
-		documentStore)
+		bboltKV)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -95,7 +85,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	searcher := pkg.NewSearcher(invertedIndex, documentStore, spellCorrector)
+	searcher := pkg.NewSearcher(invertedIndex, bboltKV, spellCorrector)
 	err = searcher.LoadMainIndex()
 	if err != nil {
 		log.Fatal(err)
@@ -106,7 +96,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	nodes2, err := searcher.FreeFormQuery("Monummen Nasional", 15)
+	nodes2, err := searcher.FreeFormQuery("Duniq Fsntssi", 15)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -116,7 +106,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	nodes4, err := searcher.FreeFormQuery("Stasiun Gambur", 15)
+	nodes4, err := searcher.FreeFormQuery("Stasiyn Gambur", 15)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -133,13 +123,3 @@ func main() {
 		fmt.Println(string(node.Tipe[:]))
 	}
 }
-
-/*
-
-db, err := badger.Open(badger.DefaultOptions("osm-searchdb"))
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer db.Close()
-	kvDB := pkg.NewKVDB(db)
-*/

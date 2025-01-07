@@ -2,6 +2,7 @@ package pkg
 
 import (
 	"encoding/binary"
+	"fmt"
 	"math/rand"
 )
 
@@ -37,7 +38,7 @@ func NewSkipLists() SkipLists {
 
 	for i := 0; i < sl.maxLevel; i++ {
 		// sl.header.forward[i] = sl.header
-		sl.header.forward[i] = nil ///sl.header//nil
+		sl.header.forward[i] = nil ///sl.header
 	}
 
 	return sl
@@ -104,7 +105,7 @@ func (sl *SkipLists) Erase(num int) *SkipListsnode {
 		}
 
 		for sl.level > 0 {
-			if sl.header.forward[sl.level] == sl.header {
+			if sl.header.forward[sl.level] == nil {
 				sl.level--
 			} else {
 				break
@@ -124,42 +125,52 @@ func (sl *SkipLists) randomLevel() int {
 	return min(newLevel, sl.maxLevel)
 }
 
+/*
+Serialize. serialize skip lists mjd byte array dengan susunan berikut:
+
+| NumLevel | startOffsetLevel-NumLevel ,startOffsetLevel-NumLevel-1, startOffsetLevel-NumLevel-2,... | lists level-NumLevel , lists-NumLevel-1, lists-NumLevel-2, ...|
+
+isi dari lists level-i:
+|HeaderKey, DownLevelOffsetHeaderKey,UpLevelOffsetHeaderKey| key1, downLevelKey1, upLevelKey1 |  key2, downLevelKey2, upLevelKey2 | ...... |
+*/
 func (sl *SkipLists) Serialize() []byte {
 	bb := []byte{}
 
-	intBuf := make([]byte, 4)
+	intBuf := make([]byte, 4) // buffer temporary buat simpan integer
 
 	binary.LittleEndian.PutUint32(intBuf, uint32(sl.level))
 	bb = append(bb, intBuf...)
 
-	levelBuf := make([][]byte, sl.level+1)
-	prevLevelOffset := 4 + 4*(sl.level+1) // 4 for level, 4*sl.level buat offset setiap level // offset lists level sl.level
+	levelBuf := make([][]byte, sl.level+1) // menyimpan byte array setiap level
+	prevLevelOffset := 4 + 4*(sl.level+1)  // 4 for level, 4*sl.level buat offset setiap level // offset lists level sl.level
 
-	itemOffsetLevelMap := make(map[int]map[int]int, sl.level+1)
+	itemOffsetLevelMap := make(map[int]map[int]int, sl.level+1) // offset setiap list item relatif terhadap byte array bb
 
-	insideLevelOffsetMap := make(map[int]map[int]int, sl.level+1)
+	insideLevelOffsetMap := make(map[int]map[int]int, sl.level+1) // offset setiap list item relatif terhadap setiap level
 
 	for i := sl.level; i >= 0; i-- {
 
 		binary.LittleEndian.PutUint32(intBuf, uint32(prevLevelOffset))
-		bb = append(bb, intBuf...)
+		bb = append(bb, intBuf...) // save offset start item list level i relatif terhadap byte array bb
 
-		x := sl.header.forward[i]
-		buf := []byte{}
+		x := sl.header.forward[i] // start dari next item setelah header
+		buf := []byte{}           // buat save byte array items di level i.
 
-		insideOffset := 0
+		insideOffset := 0 // offset setiap item di level i relatif terhadap list level i
 
 		if _, ok := itemOffsetLevelMap[i]; !ok {
 			itemOffsetLevelMap[i] = make(map[int]int)
 		}
-		itemOffsetLevelMap[i][HEADER_KEY] = prevLevelOffset + insideOffset
+
+		itemOffsetLevelMap[i][HEADER_KEY] = prevLevelOffset + insideOffset // save posisi header di level i relatif terhadap byte array bb
 
 		if _, ok := insideLevelOffsetMap[i]; !ok {
 			insideLevelOffsetMap[i] = make(map[int]int)
 		}
-		insideLevelOffsetMap[i][HEADER_KEY] = insideOffset
 
-		binary.LittleEndian.PutUint32(intBuf, uint32(HEADER_KEY))
+		insideLevelOffsetMap[i][HEADER_KEY] = insideOffset // save posisi header di level i relatif terhadap byte array lists level i
+
+		binary.LittleEndian.PutUint32(intBuf, uint32(HEADER_KEY)) // save header key
 		buf = append(buf, intBuf...)
 		insideOffset += 4
 
@@ -174,11 +185,11 @@ func (sl *SkipLists) Serialize() []byte {
 		// iterate item lists level i.
 		for x != nil {
 
-			itemOffsetLevelMap[i][x.key] = prevLevelOffset + insideOffset
+			itemOffsetLevelMap[i][x.key] = prevLevelOffset + insideOffset // save posisi current item di level i relatif terhadap byte array bb
 
-			insideLevelOffsetMap[i][x.key] = insideOffset
+			insideLevelOffsetMap[i][x.key] = insideOffset // save posisi current item di level i relatif terhadap byte array lists level i
 
-			binary.LittleEndian.PutUint32(intBuf, uint32(x.key))
+			binary.LittleEndian.PutUint32(intBuf, uint32(x.key)) // save current item key dilevel i
 			buf = append(buf, intBuf...)
 			insideOffset += 4
 
@@ -193,7 +204,7 @@ func (sl *SkipLists) Serialize() []byte {
 			x = x.forward[i]
 		}
 
-		binary.LittleEndian.PutUint32(intBuf, uint32(HEADER_KEY-1)) // anggap ini nil
+		binary.LittleEndian.PutUint32(intBuf, uint32(HEADER_KEY-1)) // anggap ini nil (latest item di level i)
 		buf = append(buf, intBuf...)
 		insideOffset += 4
 
@@ -204,17 +215,19 @@ func (sl *SkipLists) Serialize() []byte {
 	}
 
 	for i := sl.level; i >= 0; i-- {
+		// update posisi offset upper level & down level pointer setiap item di setiap level.
 		x := sl.header //   header di level i
 
 		for x != nil {
 			if _, ok := itemOffsetLevelMap[i-1][x.key]; i > 0 && ok {
-
+				//  update down level pointer current item di  level i.
 				keyPos := insideLevelOffsetMap[i][x.key] // offset x.key di dalam level i
 				binary.LittleEndian.PutUint32(intBuf, uint32(itemOffsetLevelMap[i-1][x.key]))
 				copy(levelBuf[i][keyPos+4:], intBuf)
 			}
 			if _, ok := itemOffsetLevelMap[i+1][x.key]; ok && i < sl.level {
-				keyPos := insideLevelOffsetMap[i][x.key]                                      // offset x.key di dalam level i                                    // key position di level i
+				//  update uppper level pointer current item di  level i.
+				keyPos := insideLevelOffsetMap[i][x.key]                                      // offset x.key di dalam level i
 				binary.LittleEndian.PutUint32(intBuf, uint32(itemOffsetLevelMap[i+1][x.key])) // x.key position di level i+1
 				copy(levelBuf[i][keyPos+8:], intBuf)
 			}
@@ -223,6 +236,7 @@ func (sl *SkipLists) Serialize() []byte {
 	}
 
 	for i := sl.level; i >= 0; i-- {
+		// append byte array setiap level ke bb.
 		buf := levelBuf[i]
 
 		bb = append(bb, buf...)
@@ -232,8 +246,7 @@ func (sl *SkipLists) Serialize() []byte {
 }
 
 type SkipListsReader struct {
-	bb []byte
-
+	bb    []byte
 	level int
 }
 
@@ -255,14 +268,6 @@ level 0= 3->6->7->9->12->17->19->21->25->26
 bytes per item  = [4byte for key, 4 byte for downlevel offset, 4 byte for uplevel offset] = 12 byte per item
 
 bytes
-level 2= 8		  ->16				  ->24
-level 1= 8	      ->16	  ->24		  ->32
-level 0= 8->16->24->32->40->48->56->64->72->80
-
-search(12) bytes offset:
-8 (level2) -> 16 (level2) -> 16 level(1) -> 32 kevel(0) -> 40 level(0)
-
-bytes
 level 2= 12		   ->24				    ->36
 level 1= 12	       ->24	   ->36		    ->48
 level 0= 12->24->36->48->60->72->84->96->108->120
@@ -271,45 +276,44 @@ level 0= 12->24->36->48->60->72->84->96->108->120
 // Search. search di serialized skip lists.
 func (slr *SkipListsReader) Search(target int) int {
 
-	levelOffset := 4 + 4*(slr.level+1)
+	levelOffset := 4 + 4*(slr.level+1) // offset dari start item lists level teratas
 	startLevelOffsetOffset := 4
 
 	for i := slr.level; i >= 0; i-- {
 		nextLevelOffset := len(slr.bb)
 		if i != 0 {
-			nextLevelOffset = int(binary.LittleEndian.Uint32(slr.bb[startLevelOffsetOffset+4:]))
+			nextLevelOffset = int(binary.LittleEndian.Uint32(slr.bb[startLevelOffsetOffset+4:])) // offset dari next level lists relatif terhadap byte array bb
 		}
 
-		nextInt := int(binary.LittleEndian.Uint32(slr.bb[int(levelOffset)+12 : int(levelOffset)+16]))
-		for int(levelOffset+16) <= len(slr.bb[:nextLevelOffset]) && nextInt < target {
-
+		nextKey := int(binary.LittleEndian.Uint32(slr.bb[int(levelOffset)+12 : int(levelOffset)+16]))
+		for int(levelOffset+16) <= len(slr.bb[:nextLevelOffset]) && nextKey < target {
 			levelOffset += 12
-			nextInt = int(binary.LittleEndian.Uint32(slr.bb[int(levelOffset)+12 : int(levelOffset)+16]))
-
+			nextKey = int(binary.LittleEndian.Uint32(slr.bb[int(levelOffset)+12 : int(levelOffset)+16]))
 		}
 
 		if i != 0 {
+			// move ke down level pointer
 			if levelOffset+4 == nextLevelOffset {
+				// target > last item di level i -> levelOffset point ke HEADER_KEY-1/nil. -> moveBack levelOffset ke last item di level i
 				levelOffset -= 12
 			}
 
-			levelOffset = int(binary.LittleEndian.Uint32(slr.bb[levelOffset+4:])) // di HEADER_KEY, downlevel  offset nya salah
+			levelOffset = int(binary.LittleEndian.Uint32(slr.bb[levelOffset+4:])) //  downlevel  offset
 
 		}
 		startLevelOffsetOffset += 4
 
 	}
 
-	bbOffset := int(levelOffset)
-
-	x := int(binary.LittleEndian.Uint32(slr.bb[bbOffset+12:]))
+	x := int(binary.LittleEndian.Uint32(slr.bb[levelOffset+12:]))
 	if x == target {
 		return x
 	}
 	return -1
 }
 
-func FastPostlingListsIntersection(a, b SkipListsReader) []int {
+// https://nlp.stanford.edu/IR-book/html/htmledition/faster-postings-list-intersection-via-skip-pointers-1.html
+func FastPostingListsIntersection(a, b SkipListsReader) []int {
 
 	answer := []int{}
 	zeroLevelOffsetA := int(binary.LittleEndian.Uint32(a.bb[(4 + 4*(a.level)):])) // zero level lists offset dari a
@@ -329,7 +333,6 @@ func FastPostlingListsIntersection(a, b SkipListsReader) []int {
 		} else if p1 < p2 {
 
 			if zeroLevelOffsetSkipPointer, hasSkip := hasSkipAndItsSkipLessThanB(a, zeroLevelOffsetA, p2); hasSkip {
-				// zeroLevelOffsetSkipPointer, hasSkip := hasSkipAndItsSkipLessThanB(a, zeroLevelOffsetA, p2)
 
 				for hasSkip {
 					zeroLevelOffsetA = (zeroLevelOffsetSkipPointer)
@@ -344,7 +347,6 @@ func FastPostlingListsIntersection(a, b SkipListsReader) []int {
 		} else {
 
 			if zeroLevelOffsetSkipPointer, hasSkip := hasSkipAndItsSkipLessThanB(b, zeroLevelOffsetB, p1); hasSkip {
-				// zeroLevelOffsetSkipPointer, hasSkip := hasSkipAndItsSkipLessThanB(b, zeroLevelOffsetB, p1)
 
 				for hasSkip {
 					zeroLevelOffsetB = (zeroLevelOffsetSkipPointer)
@@ -367,16 +369,14 @@ func FastPostlingListsIntersection(a, b SkipListsReader) []int {
 	b = 15
 
 a:
-level2  5		  10			 15				20
+level2  5		  				 15				20
 level1	5		  10			 15				20
 level0	5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20
 
-a[aOffset:] = 5 -> return offset level0 dari skip pointer 10
+a[aOffset:] = 5 -> return offset level0 dari skip pointer 15
 */
 
 func hasSkipAndItsSkipLessThanB(a SkipListsReader, aOffset int, b int) (int, bool) {
-
-	// zeroLevelOffset := int(binary.LittleEndian.Uint32(a.bb[4+4*(a.level):]))
 
 	aUpLevelOffset := int(binary.LittleEndian.Uint32(a.bb[aOffset+8:])) // +8 buffer offset pada upper level (level 1)
 	if aUpLevelOffset == 0 {
@@ -388,7 +388,7 @@ func hasSkipAndItsSkipLessThanB(a SkipListsReader, aOffset int, b int) (int, boo
 	skipPointerMaxLevel := -1
 
 	for i := 1; i < a.level && aUpLevelOffset != 0; i++ {
-		// check di upper skip pointer is less than b. aUpLevelOffset == 0 -> dont have upper level item
+		// check di upper level skip pointer is less than b. aUpLevelOffset == 0 -> dont have upper level item
 
 		aSkipPointer := int(binary.LittleEndian.Uint32(a.bb[aUpLevelOffset+12 : aUpLevelOffset+16])) // +12 skip pointer dari a di upper level i.
 		if int(aUpLevelOffset+12) <= len(a.bb) && aSkipPointer != HEADER_KEY-1 && aSkipPointer <= b {
@@ -413,6 +413,26 @@ func hasSkipAndItsSkipLessThanB(a SkipListsReader, aOffset int, b int) (int, boo
 	}
 
 	return -1, false
+}
+
+func (slr *SkipListsReader) GetAllItems() ([]int, error) {
+	if len(slr.bb) == 0 {
+		return []int{}, fmt.Errorf("nil skiplistreader")
+	}
+
+	zeroLevelOffset := binary.LittleEndian.Uint32(slr.bb[4+4*(slr.level):]) // offset dari start item lists level 0
+
+	levelZeroLists := []int{}
+
+	item := binary.LittleEndian.Uint32(slr.bb[zeroLevelOffset+12:])
+	for item != HEADER_KEY-1 {
+		//  HEADER_KEY-1  == nil pointer di akhir list level 0
+		levelZeroLists = append(levelZeroLists, int(item))
+		zeroLevelOffset += 12
+		item = binary.LittleEndian.Uint32(slr.bb[zeroLevelOffset+12:])
+	}
+
+	return levelZeroLists, nil
 }
 
 func min(a, b int) int {
@@ -442,36 +462,36 @@ func PostingListIntersection(aBuf, bBuf []byte) []int {
 	return result
 }
 
-// yang ini bener
-// func hasSkipAndItsSkipLessThanB(a SkipListsReader, aOffset int, b int) (int, bool) {
+/*
+example insert:
 
-// 	// zeroLevelOffset := int(binary.LittleEndian.Uint32(a.bb[4+4*(a.level):]))
+level2: 7	9		13
+level1: 7	9		13
+level0: 7 8 9 11 12 13
+insert 10
 
-// 	aUpLevelOffset := int(binary.LittleEndian.Uint32(a.bb[aOffset+8:])) // +8 buffer offset pada upper level (level 1)
-// 	if aUpLevelOffset == 0 {
-// 		// a[offset:] dont have upper level pointer
-// 		return -1, false
-// 	}
-// 	for i := 1; i < a.level && aUpLevelOffset != 0; i++ {
-// 		// check di upper skip pointer is less than b. if yes -> return zeroLeveloffset , boolean hasSkip
+i=2
+x = header
+7<10 -> yes
+x = 7
+9<10 -> yes
+x=9
+13<10->no
+update[2]=9
 
-// 		aSkipPointer := int(binary.LittleEndian.Uint32(a.bb[aUpLevelOffset+12 : aUpLevelOffset+16])) // +12 skip pointer dari a di upper level i.
-// 		if int(aUpLevelOffset+12) <= len(a.bb) && aSkipPointer != HEADER_KEY-1 && aSkipPointer <= b {
-// 			// if a[Offset:] has skip pointer & aSkipPointer <= b -> return level0 offset dari aSkipPointer
+i=1
+13<10-> no
+x=9
+update[1]=9
 
-// 			// skipPointerDownLevelOffset := int(aUpLevelOffset + 12) // benar
-// 			aUpLevelOffset += 12 // aSkipPointer
+i=0
+11<10 -> no
+update[0] = 9
 
-// 			for j := i; j > 0; j-- {
-// 				aUpLevelOffset = int(binary.LittleEndian.Uint32(a.bb[aUpLevelOffset+4:])) // +4 byte = offset pada downlevel skip pointer a.
-// 			}
-// 			// bbOffset := int(aUpLevelOffset)
-// 			// return bbOffset, true
-// 			return aUpLevelOffset, true
-// 		}
+newLevel = 2
 
-// 		aUpLevelOffset = int(binary.LittleEndian.Uint32(a.bb[aUpLevelOffset+8:])) // +8 buffer =  offset pada upper level i.
-// 	}
-
-// 	return -1, false
-// }
+result:
+level2: 7	9 10	13
+level1: 7	9 10	13
+level0: 7 8 9 10 11 12 13
+*/

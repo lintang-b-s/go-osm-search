@@ -2,33 +2,33 @@ package pkg
 
 import (
 	"log"
-	"os"
+	"regexp"
 	"testing"
 	"time"
 
 	"math/rand"
+
+	"github.com/stretchr/testify/assert"
+	bolt "go.etcd.io/bbolt"
 )
 
 const (
 	outputDir = "lintang"
 )
 
-func LoadIndex() (*Searcher, *os.File, *DocumentStore) {
+func LoadIndex() (*Searcher, *bolt.DB) {
 
 	ngramLM := NewNGramLanguageModel("lintang")
 	spellCorrector := NewSpellCorrector(ngramLM)
 
-	docsBuffer := make([]byte, 0, 16*1024)
-	file, err := os.OpenFile(outputDir+"/"+"docs_store.fdx", os.O_RDWR|os.O_CREATE, 0666)
+	db, err := bolt.Open("docs_store.db", 0600, nil)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	documentStoreIO := NewDiskWriterReader(docsBuffer, file)
-	documentStore := NewDocumentStore(documentStoreIO, outputDir)
-	documentStore.LoadMeta()
-	documentStoreIO.PreloadFile()
-	invertedIndex, err := NewDynamicIndex("lintang", 1e7, true, spellCorrector, IndexedData{}, documentStore)
+	bboltKV := NewKVDB(db)
+
+	invertedIndex, err := NewDynamicIndex("lintang", 1e7, true, spellCorrector, IndexedData{}, bboltKV)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -38,8 +38,60 @@ func LoadIndex() (*Searcher, *os.File, *DocumentStore) {
 		log.Fatal(err)
 	}
 
-	searcher := NewSearcher(invertedIndex, documentStore, spellCorrector)
-	return searcher, file, documentStore
+	searcher := NewSearcher(invertedIndex, bboltKV, spellCorrector)
+	return searcher, db
+}
+
+func TestFullTextSearch(t *testing.T) {
+	searcher, db := LoadIndex()
+	defer db.Close()
+	err := searcher.LoadMainIndex()
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer searcher.Close()
+	reg := regexp.MustCompile(`[^\w\s]+`)
+	t.Run("Test full text query without spell correction", func(t *testing.T) {
+		relevantDocs, err := searcher.FreeFormQuery("Duniq Fsntssi", 15)
+		if err != nil {
+			t.Error(err)
+		}
+
+		mostRelDoc := reg.ReplaceAllString(string(relevantDocs[0].Name[:]), "") + " " + reg.ReplaceAllString(string(relevantDocs[0].Address[:]), "") + " " +
+			reg.ReplaceAllString(string(relevantDocs[0].City[:]), "") + " " + reg.ReplaceAllString(string(relevantDocs[0].Tipe[:]), "")
+		assert.Contains(t, mostRelDoc, "Dunia Fantasi")
+	})
+
+	t.Run("Test full text query with spell correction", func(t *testing.T) {
+		relevantDocs, err := searcher.FreeFormQuery("Duniu Fsntaso", 15)
+		if err != nil {
+			t.Error(err)
+		}
+
+		mostRelDoc := reg.ReplaceAllString(string(relevantDocs[0].Name[:]), "") + " " + reg.ReplaceAllString(string(relevantDocs[0].Address[:]), "") + " " +
+			reg.ReplaceAllString(string(relevantDocs[0].City[:]), "") + " " + reg.ReplaceAllString(string(relevantDocs[0].Tipe[:]), "")
+		assert.Contains(t, mostRelDoc, "Dunia Fantasi")
+	})
+
+}
+
+func TestAutocomplete(t *testing.T) {
+	searcher, db := LoadIndex()
+	defer db.Close()
+	err := searcher.LoadMainIndex()
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer searcher.Close()
+
+	rand.Seed(time.Now().UnixNano())
+
+	relevantDocs, err := searcher.Autocomplete("Monumen Nasi")
+	if err != nil {
+		t.Error(err)
+	}
+	mostRelDoc := string(relevantDocs[0].Name[:])
+	assert.Contains(t, mostRelDoc, "Monumen Nasional")
 }
 
 var searchQuery = []string{
@@ -58,12 +110,11 @@ var searchQuery = []string{
 }
 
 // go test -bench=./...
+// BenchmarkFullTextSearchQuery-12    	    2930	    360077 ns/op	  413571 B/op	    1516 allocs/op
 func BenchmarkFullTextSearchQuery(b *testing.B) {
 
-	searcher, f, docStore := LoadIndex()
-
-	defer f.Close()
-	defer docStore.Close()
+	searcher, db := LoadIndex()
+	defer db.Close()
 	err := searcher.LoadMainIndex()
 	if err != nil {
 		log.Fatal(err)
@@ -80,28 +131,52 @@ func BenchmarkFullTextSearchQuery(b *testing.B) {
 			b.Fatal(err)
 		}
 	}
-	//  619794 ns/op          348751 B/op       2272 allocs/op
+
+}
+
+var autoCompleteQuery = []string{
+	"Taman An",
+	"Universitas In",
+	"Dunia Fan",
+	"Stasi",
+	"Kebun Bin",
+	"Monumen Nasio",
+	"Halim Perd",
+	"Bandar Uda",
+	"Tam",
+	"Buaya Lub",
+	"Mall",
+	"TPU Tan",
+}
+
+// BenchmarkAutocomplete-12    	    3816	    288859 ns/op	  246140 B/op	     819 allocs/op
+func BenchmarkAutocomplete(b *testing.B) {
+
+	searcher, db := LoadIndex()
+	defer db.Close()
+	err := searcher.LoadMainIndex()
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer searcher.Close()
+
+	rand.Seed(time.Now().UnixNano())
+	b.ResetTimer()
+
+	for n := 0; n < b.N; n++ {
+		randomIndex := rand.Intn(len(autoCompleteQuery))
+		_, err := searcher.Autocomplete(autoCompleteQuery[randomIndex])
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+
 }
 
 func BenchmarkFullTextSearchQueryWithoutDocs(b *testing.B) {
-	var searchQuery = []string{
-		"Taman Anggrek",
-		"Universitas Indonesia",
-		"Dunia Fantasi",
-		"Stasiun",
-		"Kebun Binatang",
-		"Monumen Nasional",
-		"Halim Perdana",
-		"Bandar Udara",
-		"Taman",
-		"Buaya Lubang",
-		"Mall",
-		"TPU Tanah",
-	}
 
-	searcher, f, docStore := LoadIndex()
-	defer f.Close()
-	defer docStore.Close()
+	searcher, db := LoadIndex()
+	defer db.Close()
 	err := searcher.LoadMainIndex()
 	if err != nil {
 		log.Fatal(err)
@@ -118,14 +193,12 @@ func BenchmarkFullTextSearchQueryWithoutDocs(b *testing.B) {
 			b.Fatal(err)
 		}
 	}
-	//  536052 ns/op          285539 B/op       1505 allocs/op
+	//BenchmarkFullTextSearchQueryWithoutDocs-12    	    4718	    260868 ns/op	  323354 B/op	     232 allocs/op
 }
 
 func BenchmarkGetPostingList(b *testing.B) {
-	searcher, f, docStore := LoadIndex()
-
-	defer f.Close()
-	defer docStore.Close()
+	searcher, db := LoadIndex()
+	defer db.Close()
 	err := searcher.LoadMainIndex()
 	if err != nil {
 		log.Fatal(err)

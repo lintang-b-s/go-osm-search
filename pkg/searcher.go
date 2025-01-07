@@ -2,6 +2,7 @@ package pkg
 
 import (
 	"container/heap"
+	"fmt"
 	"math"
 	"sort"
 
@@ -17,7 +18,7 @@ type DynamicIndexer interface {
 }
 
 type SearcherDocStore interface {
-	GetDoc(int) (Node, error)
+	GetDoc(docID int) (Node, error)
 }
 
 type Searcher struct {
@@ -150,38 +151,41 @@ func (se *Searcher) FreeFormQuery(query string, k int) ([]Node, error) {
 		queryWordCount[termID] += 1
 	}
 
-	docWordCount := se.Idx.GetDocWordCount() // docs ada 200k
 	docsCount := float64(se.Idx.GetDocsCount())
 	docNorm := make(map[int]float64)
 	queryNorm := 0.0
 	for qTermID, postings := range allPostings {
 		// iterate semua term di query, hitung tf-idf query dan tf-idf document, accumulate skor cosine di docScore
-		tfTermQuery := float64(queryWordCount[qTermID]) / float64(len(queryWordCount))
-		idfTermQuery := math.Log10(docsCount) - math.Log10(float64(len(postings)))
-		tfIDFTermQuery := tfTermQuery * idfTermQuery
+		// https://web.stanford.edu/~jurafsky/slp3/14.pdf
+
+		termCountInDoc := make(map[int]int)
 		for _, docID := range postings {
-			// compute tf-idf query dan document & compute cosine nya
-
-			tf := 1.0 / float64(docWordCount[docID])
-
-			tfIDFTermDoc := tf * idfTermQuery
-
-			documentScore[docID] += tfIDFTermDoc * tfIDFTermQuery
-
-			docNorm[docID] += tfIDFTermDoc * tfIDFTermDoc
+			termCountInDoc[docID]++ // conunt(t,d)
 		}
+
+		tfTermQuery := 1 + math.Log10(float64(queryWordCount[qTermID]))                  //  1 + log(count(t,q))
+		idfTermQuery := math.Log10(docsCount) - math.Log10(float64(len(termCountInDoc))) // log(N/df_t)
+		tfIDFTermQuery := tfTermQuery * idfTermQuery
+
+		for docID, termCount := range termCountInDoc {
+			tf := 1 + math.Log10(float64(termCount)) //  //  1 + log(count(t,d))
+
+			tfIDFTermDoc := tf * idfTermQuery //tfidf docID
+
+			documentScore[docID] += tfIDFTermDoc * tfIDFTermQuery // summation tfidfDoc*tfIDfquery over query terms
+
+			docNorm[docID] += tfIDFTermDoc * tfIDFTermDoc // document Norm
+		}
+
 		queryNorm += tfIDFTermQuery * tfIDFTermQuery
 	}
 
 	queryNorm = math.Sqrt(queryNorm)
-	for docID, norm := range docNorm {
-		docNorm[docID] = math.Sqrt(norm)
-	}
 
 	docWithScores := make([]DocWithScore, 0, len(documentScore))
 	// normalize dengan cara dibagi dengan norm vector query & document
 	for docID, score := range documentScore {
-		documentScore[docID] = score / (queryNorm * docNorm[docID])
+		documentScore[docID] = score / (queryNorm * math.Sqrt(docNorm[docID]))
 		docWithScores = append(docWithScores, DocWithScore{DocID: docID, Score: documentScore[docID]})
 	}
 
@@ -205,7 +209,231 @@ func (se *Searcher) FreeFormQuery(query string, k int) ([]Node, error) {
 	return relevantDocs, nil
 }
 
-// pakai faninfanout malah tambah lemot
+func (se *Searcher) Autocomplete(query string) ([]Node, error) {
+
+	queryTerms := sastrawi.Tokenize(query)
+
+	// {{term1,term1OneEdit}, {term2, term2Edit}, ...}
+	allPossibleQueryTerms := make([][]int, len(queryTerms))
+	originalQueryTerms := make([]int, 0, len(queryTerms))
+
+	for i, term := range queryTerms {
+		tokenizedTerm := stemmer.Stem(term)
+		// isInVocab := se.TermIDMap.IsInVocabulary(tokenizedTerm)
+
+		originalQueryTerms = append(originalQueryTerms, se.TermIDMap.GetID(tokenizedTerm))
+
+		if i == len(queryTerms)-1 {
+
+			matchedWord, err := se.SpellCorrector.GetMatchedWordBasedOnPrefix(tokenizedTerm)
+			if err != nil {
+				return []Node{}, err
+			}
+
+			allPossibleQueryTerms[i] = append(allPossibleQueryTerms[i], matchedWord...)
+
+		} else {
+			termID := se.TermIDMap.GetID(tokenizedTerm)
+			allPossibleQueryTerms[i] = []int{termID}
+		}
+	}
+
+	allCorrectQueryCandidates := se.SpellCorrector.GetCorrectQueryCandidates(allPossibleQueryTerms)
+	matchedQueries, err := se.SpellCorrector.GetMatchedWordsAutocomplete(allCorrectQueryCandidates, originalQueryTerms)
+
+	if err != nil {
+		return []Node{}, err
+	}
+
+	relDocIDs := []int{}
+	for _, queryTerms := range matchedQueries {
+
+		tokens := make([]int, 0, len(queryTerms)-1)
+		for j, termID := range queryTerms {
+			tokens = append(tokens, termID)
+			if j != len(queryTerms)-1 {
+				tokens = append(tokens, -1) // AND
+			}
+		}
+
+		// shunting Yard
+
+		rpnDeque := NewDeque(shuntingYardRPN(tokens))
+		docIDsRes, err := se.processQuery(rpnDeque)
+		if err != nil {
+			return []Node{}, err
+		}
+		relDocIDs = append(relDocIDs, docIDsRes...)
+	}
+
+	if len(relDocIDs) >= 10 {
+		relDocIDs = relDocIDs[:10]
+	}
+
+	relevantDocs := make([]Node, 0, len(relDocIDs))
+
+	for i := 0; i < len(relDocIDs); i++ {
+
+		doc, err := se.DocStore.GetDoc(relDocIDs[i])
+		if err != nil {
+			return []Node{}, err
+		}
+		relevantDocs = append(relevantDocs, doc)
+	}
+
+	return relevantDocs, nil
+}
+
+type Deque struct {
+	items []int
+}
+
+func NewDeque(items []int) Deque {
+	return Deque{items}
+}
+
+func (d *Deque) GetSize() int {
+	return len(d.items)
+}
+
+func (d *Deque) PushFront(item int) {
+	d.items = append([]int{item}, d.items...)
+}
+
+func (d *Deque) PushBack(item int) {
+	d.items = append(d.items, item)
+}
+
+func (d *Deque) PopFront() (int, bool) {
+	if len(d.items) == 0 {
+		return 0, false
+	}
+	frontElement := d.items[0]
+	d.items = d.items[1:]
+	return frontElement, true
+}
+
+func (d *Deque) PopBack() (int, bool) {
+	if len(d.items) == 0 {
+		return 0, false
+	}
+	rearElement := d.items[len(d.items)-1]
+	d.items = d.items[:len(d.items)-1]
+	return rearElement, true
+}
+
+func shuntingYardRPN(tokens []int) []int {
+	precedence := make(map[int]int)
+	precedence[-1] = 2 // AND
+	precedence[-2] = 0 // (
+	precedence[-3] = 0 // )
+	precedence[-4] = 1 // OR
+	precedence[-5] = 3 // NOT
+
+	output := make([]int, 0, len(tokens))
+	stack := []int{}
+
+	for _, token := range tokens {
+		if token == -2 {
+			stack = append(stack, -2)
+		} else if token == -3 {
+			// pop
+			n := len(stack) - 1
+			operator := stack[n]
+			stack = stack[:n]
+
+			for operator != -2 {
+				output = append(output, operator)
+				// pop
+				n = len(stack) - 1
+				operator = stack[n]
+				stack = stack[:n]
+			}
+		} else if _, ok := precedence[token]; ok {
+			if len(stack) != 0 {
+				n := len(stack) - 1
+				operator := stack[n]
+
+				for len(stack) != 0 && precedence[token] < precedence[operator] {
+					output = append(output, operator)
+					n = len(stack) - 1
+					stack = stack[:n]
+					if len(stack) != 0 {
+						n = len(stack) - 1
+						operator = stack[n]
+					}
+				}
+			}
+
+			stack = append(stack, token)
+		} else {
+			// term
+			output = append(output, token)
+		}
+	}
+
+	for len(stack) != 0 {
+		n := len(stack) - 1
+		token := stack[n]
+		stack = stack[:n]
+		output = append(output, token)
+	}
+	return output
+}
+
+// processQuery. process query -> return hasil boolean query (AND/OR/NOT) berupa posting lists (docIDs)
+func (se *Searcher) processQuery(rpnDeque Deque) ([]int, error) {
+	operator := map[int]struct{}{
+		-1: struct{}{},
+		-5: struct{}{},
+		-4: struct{}{},
+	}
+	postingListStack := []SkipListsReader{}
+	for rpnDeque.GetSize() != 0 {
+		token, valid := rpnDeque.PopFront()
+		if !valid {
+			return []int{}, fmt.Errorf("rpn deque size is 0")
+		}
+
+		if _, ok := operator[token]; !ok {
+			postingList, err := se.MainIndex.GetPostingListSkipList(token)
+			if err != nil {
+				return []int{}, fmt.Errorf("error when get posting list skip list: %w", err)
+			}
+			postingListStack = append(postingListStack, NewSkipListsReader(postingList))
+		} else {
+
+			if token == -1 {
+				// AND
+				right := postingListStack[len(postingListStack)-1]
+				postingListStack = postingListStack[:len(postingListStack)-1]
+				left := postingListStack[len(postingListStack)-1]
+				postingListStack = postingListStack[:len(postingListStack)-1]
+
+				postingListIntersection := FastPostingListsIntersection(left, right)
+
+				resultSkipList := NewSkipLists()
+				for _, docID := range postingListIntersection {
+					resultSkipList.Insert(docID)
+				}
+
+				postingListStack = append(postingListStack, NewSkipListsReader(resultSkipList.Serialize()))
+			} else if token == -4 {
+				// OR
+				// NOT IMPLEMENTED YET
+			} else {
+				// NOT
+				// NOT IMPLEMENTED YET
+			}
+		}
+	}
+
+	docIDsResult, err := postingListStack[len(postingListStack)-1].GetAllItems()
+	if err != nil {
+		return []int{}, err
+	}
+	return docIDsResult, nil
+}
 
 func (se *Searcher) FreeFormQueryWithoutDocs(query string, k int) ([]int, error) {
 	if k == 0 {
@@ -270,40 +498,41 @@ func (se *Searcher) FreeFormQueryWithoutDocs(query string, k int) ([]int, error)
 		queryWordCount[termID] += 1
 	}
 
-	docWordCount := se.Idx.GetDocWordCount()
 	docsCount := float64(se.Idx.GetDocsCount())
 	docNorm := make(map[int]float64)
 	queryNorm := 0.0
 	for qTermID, postings := range allPostings {
 		// iterate semua term di query, hitung tf-idf query dan tf-idf document, accumulate skor cosine di docScore
-		tfTermQuery := float64(queryWordCount[qTermID]) / float64(len(queryWordCount))
-		termOccurences := len(postings)
-		idfTermQuery := math.Log10(docsCount) - math.Log10(float64(termOccurences))
-		tfIDFTermQuery := tfTermQuery * idfTermQuery
+		// https://web.stanford.edu/~jurafsky/slp3/14.pdf
+
+		termCountInDoc := make(map[int]int)
 		for _, docID := range postings {
-			// compute tf-idf query dan document & compute cosine nya
-
-			tf := 1.0 / float64(docWordCount[docID])
-
-			idf := math.Log10(docsCount) - math.Log10(float64(termOccurences))
-			tfIDFTermDoc := tf * idf
-
-			documentScore[docID] += tfIDFTermDoc * tfIDFTermQuery
-
-			docNorm[docID] += tfIDFTermDoc * tfIDFTermDoc
+			termCountInDoc[docID]++ // conunt(t,d)
 		}
+
+		tfTermQuery := 1 + math.Log10(float64(queryWordCount[qTermID]))                  //  1 + log(count(t,q))
+		idfTermQuery := math.Log10(docsCount) - math.Log10(float64(len(termCountInDoc))) // log(N/df_t)
+		tfIDFTermQuery := tfTermQuery * idfTermQuery
+
+		for docID, termCount := range termCountInDoc {
+			tf := 1 + math.Log10(float64(termCount)) //  //  1 + log(count(t,d))
+
+			tfIDFTermDoc := tf * idfTermQuery //tfidf docID
+
+			documentScore[docID] += tfIDFTermDoc * tfIDFTermQuery // summation tfidfDoc*tfIDfquery over query terms
+
+			docNorm[docID] += tfIDFTermDoc * tfIDFTermDoc // document Norm
+		}
+
 		queryNorm += tfIDFTermQuery * tfIDFTermQuery
 	}
 
 	queryNorm = math.Sqrt(queryNorm)
-	for docID, norm := range docNorm {
-		docNorm[docID] = math.Sqrt(norm)
-	}
 
 	docWithScores := make([]DocWithScore, 0, len(documentScore))
 	// normalize dengan cara dibagi dengan norm vector query & document
 	for docID, score := range documentScore {
-		documentScore[docID] = score / (queryNorm * docNorm[docID])
+		documentScore[docID] = score / (queryNorm * math.Sqrt(docNorm[docID]))
 		docWithScores = append(docWithScores, DocWithScore{DocID: docID, Score: documentScore[docID]})
 	}
 
@@ -324,5 +553,3 @@ func (se *Searcher) FreeFormQueryWithoutDocs(query string, k int) ([]int, error)
 
 	return relevantDocs, nil
 }
-
-// pake pq sendiri tambah lemot

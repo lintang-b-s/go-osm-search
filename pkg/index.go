@@ -3,6 +3,7 @@ package pkg
 import (
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"iter"
 	"math"
 	"os"
@@ -11,7 +12,7 @@ import (
 type InvertedIndex struct {
 	IndexName        string
 	DirName          string
-	PostingMetadata  map[int][]int // termID -> [startPositionInIndexFile, len(postingList), lengthInBytesOfPostingLists]
+	PostingMetadata  map[int][5]int // termID -> [startPositionInIndexFile, len(postingList), lengthInBytesOfPostingLists]
 	IndexFilePath    string
 	MetadataFilePath string
 	Terms            []int
@@ -25,7 +26,7 @@ func NewInvertedIndex(index_name, directoryName string) *InvertedIndex {
 	return &InvertedIndex{
 		IndexName:        index_name,
 		DirName:          directoryName,
-		PostingMetadata:  make(map[int][]int),
+		PostingMetadata:  make(map[int][5]int),
 		IndexFilePath:    directoryName + "/" + index_name + ".index",
 		MetadataFilePath: directoryName + "/" + index_name + ".metadata",
 		Terms:            []int{},
@@ -79,7 +80,7 @@ func (Idx *InvertedIndex) Close() error {
 			return err
 		}
 
-		metadataBufferSize := len(metadataBuf)
+		metadataBufferSize := len(metadataBuf) 
 
 		bufferSizeBuf := make([]byte, 100)
 		binary.LittleEndian.PutUint64(bufferSizeBuf[:], math.Float64bits(float64(metadataBufferSize)))
@@ -117,7 +118,7 @@ func (Idx *InvertedIndex) OpenReader() error {
 	if err != nil {
 		return err
 	}
-	approxBufferSize := int(math.Float64frombits((binary.LittleEndian.Uint64(buf))))
+	approxBufferSize := int(math.Float64frombits(binary.LittleEndian.Uint64(buf)))
 
 	buf = make([]byte, approxBufferSize)
 	_, err = metadataFile.Read(buf)
@@ -145,6 +146,21 @@ func (Idx *InvertedIndex) GetPostingList(termID int) ([]int, error) {
 	return postingList, nil
 }
 
+func (Idx *InvertedIndex) GetPostingListSkipList(termID int) ([]byte, error) {
+	postingMetadata, ok := Idx.PostingMetadata[termID]
+	if !ok {
+		return []byte{}, errors.New("termID not found")
+	}
+	startPositionInIndexFile := int64(postingMetadata[3])
+	Idx.IndexFile.Seek(startPositionInIndexFile, 0)
+	buf := make([]byte, postingMetadata[4])
+	_, err := Idx.IndexFile.Read(buf)
+	if err != nil {
+		return []byte{}, err
+	}
+	return buf, nil
+}
+
 func (Idx *InvertedIndex) AppendPostingList(termID int, postingList []int) error {
 	encodedPostingList := EncodePostingList(postingList)
 	startPositionInIndexFile, err := Idx.IndexFile.Seek(0, 2)
@@ -155,39 +171,83 @@ func (Idx *InvertedIndex) AppendPostingList(termID int, postingList []int) error
 	if err != nil {
 		return err
 	}
+
+	// add serialized skip list
+	postingSkipList := NewSkipLists()
+	for _, docID := range postingList {
+		postingSkipList.Insert(docID)
+	}
+	postingSkipListBuf := postingSkipList.Serialize()
+
+	startPositionInIndexFileSkipList, err := Idx.IndexFile.Seek(0, 2)
+	if err != nil {
+		return err
+	}
+	lengthInBytesOfPostingListSkipList, err := Idx.IndexFile.Write(postingSkipListBuf)
+	if err != nil {
+		return err
+	}
+
 	Idx.Terms = append(Idx.Terms, termID)
-	Idx.PostingMetadata[termID] = []int{int(startPositionInIndexFile), len(postingList), lengthInBytesOfPostingList}
+
+	Idx.PostingMetadata[termID] = [5]int{int(startPositionInIndexFile), len(postingList),
+		lengthInBytesOfPostingList, int(startPositionInIndexFileSkipList), lengthInBytesOfPostingListSkipList}
+
 	return nil
 }
 
 type IndexIteratorItem struct {
-	TermID   int
-	TermSize int
+	termID      int
+	termSize    int
+	postingList []int
 }
 
-func NewIndexIteratorItem(termID int, termSize int) IndexIteratorItem {
+func NewIndexIteratorItem(termID int, termSize int, postingList []int) IndexIteratorItem {
 	return IndexIteratorItem{
-		TermID:   termID,
-		TermSize: termSize,
+		termID:      termID,
+		termSize:    termSize,
+		postingList: postingList,
 	}
 }
 
-func (Idx *InvertedIndex) IterateInvertedIndex() iter.Seq2[IndexIteratorItem, []int] {
-	return func(yield func(IndexIteratorItem, []int) bool) {
-		for Idx.CurrTermPosition < len(Idx.Terms) {
-			termID := Idx.Terms[Idx.CurrTermPosition]
-			Idx.CurrTermPosition += 1
-			startPosition, _, lengthInBytes := Idx.PostingMetadata[termID][0], Idx.PostingMetadata[termID][1], Idx.PostingMetadata[termID][2]
-			Idx.IndexFile.Seek(int64(startPosition), 0)
+func (tem *IndexIteratorItem) GetTermID() int {
+	return tem.termID
+}
+
+func (tem *IndexIteratorItem) GetTermSize() int {
+	return tem.termSize
+}
+
+func (tem *IndexIteratorItem) GetPostingList() []int {
+	return tem.postingList
+}
+
+type InvertedIndexIterator struct {
+	invertedIndex *InvertedIndex
+}
+
+func NewInvertedIndexIterator(idx *InvertedIndex) *InvertedIndexIterator {
+	return &InvertedIndexIterator{invertedIndex: idx}
+}
+
+func (it *InvertedIndexIterator) IterateInvertedIndex() iter.Seq2[IndexIteratorItem, error] {
+	return func(yield func(IndexIteratorItem, error) bool) {
+		for it.invertedIndex.CurrTermPosition < len(it.invertedIndex.Terms) {
+			termID := it.invertedIndex.Terms[it.invertedIndex.CurrTermPosition]
+			it.invertedIndex.CurrTermPosition += 1
+			startPosition, _, lengthInBytes := it.invertedIndex.PostingMetadata[termID][0], it.invertedIndex.PostingMetadata[termID][1], it.invertedIndex.PostingMetadata[termID][2]
+			it.invertedIndex.IndexFile.Seek(int64(startPosition), 0)
 			buf := make([]byte, lengthInBytes)
-			_, err := Idx.IndexFile.Read(buf)
+			_, err := it.invertedIndex.IndexFile.Read(buf)
 			if err != nil {
+				yield(NewIndexIteratorItem(-1, -1, []int{}), fmt.Errorf("error when iterating inverted index: %w", err))
 				return
 			}
-			postingList := DecodePostingList(buf)
-			item := NewIndexIteratorItem(termID, len(Idx.Terms)+1)
 
-			if !yield(item, postingList) {
+			postingList := DecodePostingList(buf)
+			item := NewIndexIteratorItem(termID, len(it.invertedIndex.Terms)+1, postingList)
+
+			if !yield(item, nil) {
 				return
 			}
 		}
@@ -213,7 +273,7 @@ func (Idx *InvertedIndex) ExitAndRemove() error {
 func (Idx *InvertedIndex) GetAproximateMetadataBufferSize() int {
 	allLen := 4 * 3 // 4 byte* 3
 	termsSize := 4 * len(Idx.Terms)
-	postingMetadata := 4 * 4 * len(Idx.PostingMetadata)
+	postingMetadata := 4 * 6 * len(Idx.PostingMetadata)
 	docTermCountDict := 4 * 3 * len(Idx.DocTermCountDict)
 	return allLen + termsSize + postingMetadata + docTermCountDict + 2
 }
@@ -247,6 +307,8 @@ func (Idx *InvertedIndex) SerializeMetadata() []byte {
 		startPositionInIndexFile := val[0]    // 4 byte
 		lenPostingList := val[1]              // 4 byte
 		lengthInBytesOfPostingLists := val[2] // 4 byte
+		startSkipList := val[3]
+		lengthInBytesSkipList := val[4]
 
 		binary.LittleEndian.PutUint32(buf[leftPos:], uint32(lengthInBytesOfPostingLists))
 		leftPos += 4
@@ -255,6 +317,12 @@ func (Idx *InvertedIndex) SerializeMetadata() []byte {
 		leftPos += 4
 
 		binary.LittleEndian.PutUint32(buf[leftPos:], uint32(startPositionInIndexFile))
+		leftPos += 4
+
+		binary.LittleEndian.PutUint32(buf[leftPos:], uint32(startSkipList))
+		leftPos += 4
+
+		binary.LittleEndian.PutUint32(buf[leftPos:], uint32(lengthInBytesSkipList))
 		leftPos += 4
 	}
 
@@ -271,7 +339,7 @@ func (Idx *InvertedIndex) SerializeMetadata() []byte {
 	return buf
 }
 
-// DeserializeMetadata. 
+// DeserializeMetadata.
 func (Idx *InvertedIndex) DeserializeMetadata(buf []byte) {
 	leftPos := 0
 
@@ -285,7 +353,7 @@ func (Idx *InvertedIndex) DeserializeMetadata(buf []byte) {
 	leftPos += 4
 
 	Idx.Terms = make([]int, termCount)
-	Idx.PostingMetadata = make(map[int][]int)
+	Idx.PostingMetadata = make(map[int][5]int)
 	Idx.DocTermCountDict = make(map[int]int)
 
 	for i := 0; i < termCount; i++ {
@@ -309,7 +377,14 @@ func (Idx *InvertedIndex) DeserializeMetadata(buf []byte) {
 		startPositionInIndexFile := int(binary.LittleEndian.Uint32(buf[leftPos:]))
 		leftPos += 4
 
-		Idx.PostingMetadata[term] = []int{startPositionInIndexFile, lenPostingList, lengthInBytesOfPostingLists}
+		startSkipList := int(binary.LittleEndian.Uint32(buf[leftPos:]))
+		leftPos += 4
+
+		lengthInBytesSkipList := int(binary.LittleEndian.Uint32(buf[leftPos:]))
+		leftPos += 4
+
+		Idx.PostingMetadata[term] = [5]int{startPositionInIndexFile, lenPostingList, lengthInBytesOfPostingLists,
+			startSkipList, lengthInBytesSkipList}
 	}
 
 	for i := 0; i < docTermCountDictCount; i++ {

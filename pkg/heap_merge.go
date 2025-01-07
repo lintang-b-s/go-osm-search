@@ -2,6 +2,7 @@ package pkg
 
 import (
 	"container/heap"
+	"fmt"
 	"iter"
 )
 
@@ -17,22 +18,47 @@ func NewHeapMergeOutput(termID int, postings []int) heapMergeOutput {
 	}
 }
 
-func heapMergeKArray(indexes []InvertedIndex) iter.Seq[heapMergeOutput] {
-	return func(yield func(heapMergeOutput) bool) {
+type MergeKArrayIterator struct {
+	err               error
+	indexes           []*InvertedIndex
+	nextIndexIterator []func() (IndexIteratorItem, error, bool)
+}
+
+func NewMergeKArrayIterator(indexes []*InvertedIndex) *MergeKArrayIterator {
+	return &MergeKArrayIterator{
+		indexes:           indexes,
+		err:               nil,
+		nextIndexIterator: make([]func() (IndexIteratorItem, error, bool), len(indexes)),
+	}
+}
+
+func (it *MergeKArrayIterator) mergeKArray() iter.Seq2[heapMergeOutput, error] {
+	return func(yield func(heapMergeOutput, error) bool) {
 		pq := NewMinPriorityQueue[heapMergeItem, int]()
 		heap.Init(pq)
 
-		for i, index := range indexes {
-			indexIterator := index.IterateInvertedIndex()
+		for i, index := range it.indexes {
+			indexIterator := NewInvertedIndexIterator(index).IterateInvertedIndex()
 
 			next, stop := iter.Pull2(indexIterator)
-			item, postingList, _ := next()
-			termID, termSize := item.TermID, item.TermSize
+			defer stop()
+			it.nextIndexIterator[i] = next
 
-			currHeapMergeItem := NewHeapMergeItem(termID, []int{i, 0, termSize}, postingList)
+			item, err, valid := next()
+			if !valid {
+				continue
+			}
+
+			if err != nil {
+				yield(NewHeapMergeOutput(-1, []int{}),  fmt.Errorf("error when merge posting lists: %w", err))
+				return
+			}
+			termID, termSize := item.GetTermID(), item.GetTermSize()
+
+			currHeapMergeItem := NewHeapMergeItem(termID, []int{i, 0, termSize}, item.GetPostingList())
 			pqItem := NewPriorityQueueNode[heapMergeItem](termID, currHeapMergeItem)
 			heap.Push(pq, pqItem)
-			stop()
+
 		}
 
 		for pq.Len() > 0 {
@@ -45,23 +71,26 @@ func heapMergeKArray(indexes []InvertedIndex) iter.Seq[heapMergeOutput] {
 
 			currOutput := NewHeapMergeOutput(termID, postingList)
 
-			if !yield(currOutput) {
+			if !yield(currOutput, nil) {
 				return
 			}
 
 			if (insideIndex + 1) < termSize {
-				indexIterator := indexes[arrIndex].IterateInvertedIndex()
-				next, stop := iter.Pull2(indexIterator)
-				item, postingList, _ := next()
-				termID, termSize := item.TermID, item.TermSize
 
-				currHeapMergeItem := NewHeapMergeItem(termID, []int{arrIndex, insideIndex + 1, termSize}, postingList)
+				item, err, valid := it.nextIndexIterator[arrIndex]()
+				if !valid {
+					continue
+				}
+				if err != nil {
+					yield(NewHeapMergeOutput(-1, []int{}), fmt.Errorf("error when merge posting lists: %w", err))
+					return
+				}
+				termID, termSize := item.GetTermID(), item.GetTermSize()
+
+				currHeapMergeItem := NewHeapMergeItem(termID, []int{arrIndex, insideIndex + 1, termSize}, item.GetPostingList())
 				pqItem := NewPriorityQueueNode[heapMergeItem](termID, currHeapMergeItem)
 				heap.Push(pq, pqItem)
-				stop()
 			}
-
 		}
 	}
-
 }

@@ -3,8 +3,9 @@ package main
 import (
 	"flag"
 	"log"
-	"os"
 	"osm-search/pkg"
+
+	bolt "go.etcd.io/bbolt"
 )
 
 var (
@@ -20,22 +21,28 @@ func main() {
 		log.Fatal(err)
 	}
 
-	docsBuffer := make([]byte, 0, 16*1024)
-	file, err := os.OpenFile(*outputDir+"/"+"docs_store.fdx", os.O_RDWR|os.O_CREATE, 0666)
+	db, err := bolt.Open("docs_store.db", 0600, nil)
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer file.Close()
+	defer db.Close()
 
-	documentStoreIO := pkg.NewDiskWriterReader(docsBuffer, file)
-	documentStore := pkg.NewDocumentStore(documentStoreIO, *outputDir)
+	err = db.Update(func(tx *bolt.Tx) error {
+		_, err := tx.CreateBucketIfNotExists([]byte(pkg.BBOLTDB_BUCKET))
+		return err
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	bboltKV := pkg.NewKVDB(db)
 
 	ngramLM := pkg.NewNGramLanguageModel(*outputDir)
 	spellCorrectorBuilder := pkg.NewSpellCorrector(ngramLM)
 
 	indexedData := pkg.NewIndexedData(ways, onylySearchNodes, nodeMap, tagIDMap)
 	invertedIndex, _ := pkg.NewDynamicIndex(*outputDir, 1e7, false, spellCorrectorBuilder,
-		indexedData, documentStore)
+		indexedData, bboltKV)
 
 	// indexing
 	var errChan = make(chan error, 1)
@@ -57,19 +64,5 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	err = documentStore.Close()
-	if err != nil {
-		log.Fatal(err)
-	}
+
 }
-
-/*
-
-	db, err := badger.Open(badger.DefaultOptions("osm-searchdb"))
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer db.Close()
-	kvDB := pkg.NewKVDB(db)
-
-*/

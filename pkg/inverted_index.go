@@ -3,7 +3,9 @@ package pkg
 import (
 	"bytes"
 	"encoding/gob"
+	"fmt"
 	"os"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -18,10 +20,16 @@ type SpellCorrectorI interface {
 	GetWordCandidates(mispelledWord string, editDistance int) ([]int, error)
 	GetCorrectQueryCandidates(allPossibleQueryTerms [][]int) [][]int
 	GetCorrectSpellingSuggestion(allCorrectQueryCandidates [][]int, originalQueryTermIDs []int) ([]int, error)
+	GetMatchedWordBasedOnPrefix(prefixWord string) ([]int, error)
+	GetMatchedWordsAutocomplete(allQueryCandidates [][]int, originalQueryTerms []int) ([][]int, error)
 }
 
 type DocumentStoreI interface {
 	WriteDocs(docs []Node)
+}
+
+type BboltDBI interface {
+	SaveDocs(nodes []Node) error
 }
 
 // https://nlp.stanford.edu/IR-book/pdf/04const.pdf (4.3 Single-pass in-memory indexing)
@@ -34,9 +42,9 @@ type DynamicIndex struct {
 	OutputDir                 string
 	DocsCount                 int
 	// KV                        InvertedIDXDB
-	SpellCorrectorBuilder     SpellCorrectorI
-	IndexedData               IndexedData
-	DocumentStore             DocumentStoreI
+	SpellCorrectorBuilder SpellCorrectorI
+	IndexedData           IndexedData
+	DocumentStore         BboltDBI //DocumentStoreI
 }
 
 type IndexedData struct {
@@ -56,11 +64,11 @@ func NewIndexedData(ways []OSMWay, nodes []OSMNode, ctr nodeMapContainer, tagIDM
 }
 
 type InvertedIDXDB interface {
-	SaveNodes(nodes []Node) error
+	SaveDocs(nodes []Node) error
 }
 
 func NewDynamicIndex(outputDir string, maxPostingListSize int,
-	server bool, spell SpellCorrectorI, indexedData IndexedData, docStore DocumentStoreI) (*DynamicIndex, error) {
+	server bool, spell SpellCorrectorI, indexedData IndexedData, boltDB BboltDBI) (*DynamicIndex, error) {
 	idx := &DynamicIndex{
 		TermIDMap:                 NewIDMap(),
 		IntermediateIndices:       []string{},
@@ -70,9 +78,9 @@ func NewDynamicIndex(outputDir string, maxPostingListSize int,
 		OutputDir:                 outputDir,
 		DocsCount:                 0,
 		// KV:                        kv,
-		SpellCorrectorBuilder:     spell,
-		IndexedData:               indexedData,
-		DocumentStore:             docStore,
+		SpellCorrectorBuilder: spell,
+		IndexedData:           indexedData,
+		DocumentStore:         boltDB,
 	}
 	if server {
 		err := idx.LoadMeta()
@@ -108,7 +116,7 @@ func (Idx *DynamicIndex) SpimiBatchIndex() error {
 
 	nodeBoundingBox := make(map[string]BoundingBox)
 
-	for _, way := range Idx.IndexedData.Ways { // ways yang makan banyak memory
+	for _, way := range Idx.IndexedData.Ways {
 		lat := make([]float64, len(way.NodeIDs))
 		lon := make([]float64, len(way.NodeIDs))
 		for i := 0; i < len(way.NodeIDs); i++ {
@@ -147,8 +155,9 @@ func (Idx *DynamicIndex) SpimiBatchIndex() error {
 			if err != nil {
 				return err
 			}
-			// err = Idx.KV.SaveNodes(searchNodes)
-			Idx.DocumentStore.WriteDocs(searchNodes)
+			// err = Idx.KV.SaveDocs(searchNodes)
+			// Idx.DocumentStore.WriteDocs(searchNodes)
+			err = Idx.DocumentStore.SaveDocs(searchNodes)
 			if err != nil {
 				return err
 			}
@@ -180,8 +189,8 @@ func (Idx *DynamicIndex) SpimiBatchIndex() error {
 			if err != nil {
 				return err
 			}
-			// err = Idx.KV.SaveNodes(searchNodes)
-			Idx.DocumentStore.WriteDocs(searchNodes)
+			// err = Idx.KV.SaveDocs(searchNodes)
+			err = Idx.DocumentStore.SaveDocs(searchNodes)
 			if err != nil {
 				return err
 			}
@@ -196,22 +205,22 @@ func (Idx *DynamicIndex) SpimiBatchIndex() error {
 	if err != nil {
 		return err
 	}
-	// err = Idx.KV.SaveNodes(searchNodes)
-	Idx.DocumentStore.WriteDocs(searchNodes)
+	// err = Idx.KV.SaveDocs(searchNodes)
+	err = Idx.DocumentStore.SaveDocs(searchNodes)
 	if err != nil {
 		return err
 	}
 	bar.Add(1)
 
 	mergedIndex := NewInvertedIndex("merged_index", Idx.OutputDir)
-	indices := []InvertedIndex{}
+	indices := []*InvertedIndex{}
 	for _, indexID := range Idx.IntermediateIndices {
 		index := NewInvertedIndex(indexID, Idx.OutputDir)
 		err := index.OpenReader()
 		if err != nil {
 			return err
 		}
-		indices = append(indices, *index)
+		indices = append(indices, index)
 	}
 	mergedIndex.OpenWriter()
 
@@ -265,11 +274,11 @@ func (Idx *DynamicIndex) SpimiIndex(nodes []Node) error {
 	Idx.SpimiInvert(nodes, &block)
 
 	mergedIndex := NewInvertedIndex("merged_index", Idx.OutputDir)
-	indices := []InvertedIndex{}
+	indices := []*InvertedIndex{}
 	for _, indexID := range Idx.IntermediateIndices {
 		index := NewInvertedIndex(indexID, Idx.OutputDir)
 		index.OpenReader()
-		indices = append(indices, *index)
+		indices = append(indices, index)
 	}
 	mergedIndex.OpenWriter()
 
@@ -283,9 +292,13 @@ func (Idx *DynamicIndex) SpimiIndex(nodes []Node) error {
 	return nil
 }
 
-func (Idx *DynamicIndex) Merge(indices []InvertedIndex, mergedIndex *InvertedIndex) error {
+func (Idx *DynamicIndex) Merge(indices []*InvertedIndex, mergedIndex *InvertedIndex) error {
 	lastTerm, lastPosting := -1, []int{}
-	for output := range heapMergeKArray(indices) {
+	mergeKArrayIterator := NewMergeKArrayIterator(indices)
+	for output, err := range mergeKArrayIterator.mergeKArray() {
+		if err != nil {
+			return fmt.Errorf("error when merge posting lists: %w", err)
+		}
 		currTerm, currPostings := output.TermID, output.Postings
 
 		if currTerm != lastTerm {
@@ -293,7 +306,7 @@ func (Idx *DynamicIndex) Merge(indices []InvertedIndex, mergedIndex *InvertedInd
 				sort.Ints(lastPosting)
 				err := mergedIndex.AppendPostingList(lastTerm, lastPosting)
 				if err != nil {
-					return err
+					return fmt.Errorf("error when merge posting lists: %w", err)
 				}
 			}
 			lastTerm, lastPosting = currTerm, currPostings
@@ -388,7 +401,10 @@ func (Idx *DynamicIndex) SpimiInvert(nodes []Node, block *int) error {
 
 func (Idx *DynamicIndex) SpimiParseOSMNode(node Node) [][]int {
 	termDocPairs := [][]int{}
-	soup := string(node.Name[:]) + " " + string(node.Tipe[:]) + " " + string(node.Address[:])
+	reg := regexp.MustCompile(`[^\w\s]+`)
+
+	soup := reg.ReplaceAllString(string(node.Name[:]), "") + " " + reg.ReplaceAllString(string(node.Address[:]), "") + " " +
+		reg.ReplaceAllString(string(node.City[:]), "") + " " + reg.ReplaceAllString(string(node.Tipe[:]), "")
 	if soup == "" {
 		return termDocPairs
 	}
@@ -479,8 +495,11 @@ func (Idx *DynamicIndex) BuildSpellCorrectorAndNgram() error {
 
 	tokenizedDocs := [][]string{}
 	for _, node := range searchNodes {
-		soup := string(node.Name[:]) + " " + string(node.Tipe[:]) + " " + string(node.Address[:])
-		// tokenizedDocs = append(tokenizedDocs, sastrawi.Tokenize(soup))
+		reg := regexp.MustCompile(`[^\w\s]+`)
+
+		soup := reg.ReplaceAllString(string(node.Name[:]), "") + " " + reg.ReplaceAllString(string(node.Address[:]), "") + " " +
+			reg.ReplaceAllString(string(node.City[:]), "") + " " + reg.ReplaceAllString(string(node.Tipe[:]), "")
+
 		tokenized := sastrawi.Tokenize(soup)
 		stemmedTokens := []string{}
 		for _, token := range tokenized {

@@ -4,9 +4,9 @@
 
 ### Fulltext Search Query
 
-|           BenchmarkFullTextQuery-12            | Iterations | Total ns/op  |  Total B/op | Total Allocs/op |
-| :--------------------------------------------: | ---------- | :----------: | ----------: | --------------- |
-|           BenchmarkFullTextQuery-12            | 2144       | 550372 ns/op | 596897 B/op | 2291            |
-| BenchmarkFullTextQueryWithoutSpellCorrector-12 | 2521       | 468307 ns/op | 514499 B/op | 1428 allocs/op  |
+|          BenchmarkName          | Iterations | Total ns/op  |  Total B/op | Total Allocs/op |
+| :-----------------------------: | ---------- | :----------: | ----------: | --------------- |
+| BenchmarkFullTextSearchQuery-12 | 2930       | 360077 ns/op | 413571 B/op | 1516 allocs/op  |
+|    BenchmarkAutocomplete-12     | 3816       | 288859 ns/op | 246140 B/op | 819 allocs/op   |
 
 Very slow hahah

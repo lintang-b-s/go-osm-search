@@ -296,7 +296,9 @@ func (lm *NGramLanguageModel) EstimateQueryProbability(query []int, originalQuer
 	for i := 1; i < len(query); i++ {
 		if i == 1 {
 			bigram := lm.StupidBackoff(query[i], query[i-1:i], 2)
+
 			probability += math.Log(bigram)
+
 		}
 
 		if i == 2 {
@@ -309,6 +311,7 @@ func (lm *NGramLanguageModel) EstimateQueryProbability(query []int, originalQuer
 			probability += math.Log(fourgram)
 		}
 	}
+
 	return probability
 }
 
@@ -326,8 +329,10 @@ func (lm *NGramLanguageModel) StupidBackoff(nextWord int, prevNgrams []int, n in
 	newProb := 0.0
 	lambda := 1.0
 	for ; n > 0; n-- {
+
 		newProb = lambda * lm.EstimateProbability(nextWord, prevNgrams, n)
-		if newProb != 0 {
+
+		if newProb != 0 || (newProb == 0 && n == 1) {
 			break
 		}
 		prevNgrams = prevNgrams[1:]

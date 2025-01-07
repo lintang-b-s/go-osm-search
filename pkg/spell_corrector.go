@@ -3,10 +3,15 @@ package pkg
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"math"
+	"sort"
+
+	rege "regexp"
 
 	"github.com/blevesearch/vellum"
 	"github.com/blevesearch/vellum/levenshtein"
+	"github.com/blevesearch/vellum/regexp"
 )
 
 const (
@@ -80,6 +85,7 @@ func (sc *SpellCorrector) Preprocessdata(tokenizedDocs [][]string) {
 
 }
 
+// https://docs.google.com/presentation/d/1Z7OYvKc5dHAXiVdMpk69uulpIT6A7FGfohjHx8fmHBU/edit#slide=id.p
 func (sc SpellCorrector) GetWordCandidates(mispelledWord string, editDistance int) ([]int, error) {
 	lv, err := levenshtein.NewLevenshteinAutomatonBuilder(uint8(editDistance), false) // harus false
 	if err != nil {
@@ -142,4 +148,75 @@ func (sc *SpellCorrector) GetCorrectSpellingSuggestion(allCorrectQueryCandidates
 	}
 	correctQuery = append(correctQuery, allCorrectQueryCandidates[correctQueryIDX]...)
 	return correctQuery, nil
+}
+
+// section autocomplete
+// https://www.elastic.co/blog/you-complete-me
+// GetMatchedWordBasedOnPrefix. return all matched word di term dictionary yang match dengan prefixWord.
+func (sc SpellCorrector) GetMatchedWordBasedOnPrefix(prefixWord string) ([]int, error) {
+
+	prefixReg := fmt.Sprintf(`%s.*`, rege.QuoteMeta(prefixWord))
+	regAutomaton, err := regexp.New(prefixReg)
+	if err != nil {
+		return []int{}, fmt.Errorf("error when initializing regex automaton: %w", err)
+	}
+	fstIt, err := sc.CorpusTermsFST.Search(regAutomaton, nil, nil)
+	if err != nil {
+		return []int{}, fmt.Errorf("error when executing regex automaton: %w", err)
+	}
+	// searcher, err :=sc.CorpusTermsFST.Iterator()
+	matchedWordCandidates := []int{}
+	for err == nil {
+
+		key, _ := fstIt.Current()
+		matchedWordCandidates = append(matchedWordCandidates, sc.TermIDMap.GetID(string(key)))
+
+		err = fstIt.Next()
+		if err != nil {
+			if errors.Is(err, vellum.ErrIteratorDone) {
+				break
+			}
+			return []int{}, err
+		}
+	}
+	return matchedWordCandidates, nil
+}
+
+type QueryCandidatesWithProb struct {
+	IDx  int
+	Prob float64
+}
+
+func NewQueryCandidatesWithProb(idx int, prob float64) QueryCandidatesWithProb {
+	return QueryCandidatesWithProb{
+		IDx:  idx,
+		Prob: prob,
+	}
+}
+
+func (sc *SpellCorrector) GetMatchedWordsAutocomplete(allQueryCandidates [][]int, originalQueryTerms []int) ([][]int, error) {
+
+	queryCandidatesProbabilities := sc.NGram.EstimateQueriesProbabilities(allQueryCandidates, 4, originalQueryTerms)
+
+	queryCandidates := make([]QueryCandidatesWithProb, 0, len(queryCandidatesProbabilities))
+
+	for idx, prob := range queryCandidatesProbabilities {
+		queryCandidates = append(queryCandidates, NewQueryCandidatesWithProb(idx, prob))
+	}
+
+	sort.Slice(queryCandidates, func(i, j int) bool {
+		return queryCandidates[i].Prob > queryCandidates[j].Prob
+	})
+
+	matchedQuery := [][]int{}
+
+	for _, qcan := range queryCandidates {
+		matchedQuery = append(matchedQuery, allQueryCandidates[qcan.IDx])
+	}
+
+	if len(matchedQuery) >= 5 {
+		return matchedQuery[:5], nil
+	}
+
+	return matchedQuery, nil
 }

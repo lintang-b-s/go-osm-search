@@ -60,12 +60,12 @@ func NewDocumentStore(diskIO DiskWriterReaderI, out string) *DocumentStore {
 func (d *DocumentStore) WriteDoc(node Node) {
 
 	d.DiskWriterReader.WriteUVarint(uint64(node.ID))
-	d.DiskWriterReader.Write64Bytes(node.Name)
-	d.DiskWriterReader.WriteFloat64(node.Lat)
-	d.DiskWriterReader.WriteFloat64(node.Lon)
-	d.DiskWriterReader.Write128Bytes(node.Address)
-	d.DiskWriterReader.Write64Bytes(node.Tipe)
-	d.DiskWriterReader.Write32Bytes(node.City)
+	// d.DiskWriterReader.Write64Bytes(node.Name)
+	// d.DiskWriterReader.WriteFloat64(node.Lat)
+	// d.DiskWriterReader.WriteFloat64(node.Lon)
+	// d.DiskWriterReader.Write128Bytes(node.Address)
+	// d.DiskWriterReader.Write64Bytes(node.Tipe)
+	// d.DiskWriterReader.Write32Bytes(node.City)
 }
 
 func (d *DocumentStore) IsBufferFull() bool {
