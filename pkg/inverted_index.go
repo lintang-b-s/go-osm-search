@@ -5,7 +5,6 @@ import (
 	"encoding/gob"
 	"fmt"
 	"os"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -401,10 +400,9 @@ func (Idx *DynamicIndex) SpimiInvert(nodes []Node, block *int) error {
 
 func (Idx *DynamicIndex) SpimiParseOSMNode(node Node) [][]int {
 	termDocPairs := [][]int{}
-	reg := regexp.MustCompile(`[^\w\s]+`)
 
-	soup := reg.ReplaceAllString(string(node.Name[:]), "") + " " + reg.ReplaceAllString(string(node.Address[:]), "") + " " +
-		reg.ReplaceAllString(string(node.City[:]), "") + " " + reg.ReplaceAllString(string(node.Tipe[:]), "")
+	soup := node.Name + " " + node.Address + " " +
+		node.City + " " + node.Tipe
 	if soup == "" {
 		return termDocPairs
 	}
@@ -495,10 +493,9 @@ func (Idx *DynamicIndex) BuildSpellCorrectorAndNgram() error {
 
 	tokenizedDocs := [][]string{}
 	for _, node := range searchNodes {
-		reg := regexp.MustCompile(`[^\w\s]+`)
 
-		soup := reg.ReplaceAllString(string(node.Name[:]), "") + " " + reg.ReplaceAllString(string(node.Address[:]), "") + " " +
-			reg.ReplaceAllString(string(node.City[:]), "") + " " + reg.ReplaceAllString(string(node.Tipe[:]), "")
+		soup := node.Name + " " + node.Address + " " +
+			node.City + " " + node.Tipe
 
 		tokenized := sastrawi.Tokenize(soup)
 		stemmedTokens := []string{}

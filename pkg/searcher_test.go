@@ -2,7 +2,6 @@ package pkg
 
 import (
 	"log"
-	"regexp"
 	"testing"
 	"time"
 
@@ -50,15 +49,14 @@ func TestFullTextSearch(t *testing.T) {
 		log.Fatal(err)
 	}
 	defer searcher.Close()
-	reg := regexp.MustCompile(`[^\w\s]+`)
 	t.Run("Test full text query without spell correction", func(t *testing.T) {
 		relevantDocs, err := searcher.FreeFormQuery("Duniq Fsntssi", 15)
 		if err != nil {
 			t.Error(err)
 		}
 
-		mostRelDoc := reg.ReplaceAllString(string(relevantDocs[0].Name[:]), "") + " " + reg.ReplaceAllString(string(relevantDocs[0].Address[:]), "") + " " +
-			reg.ReplaceAllString(string(relevantDocs[0].City[:]), "") + " " + reg.ReplaceAllString(string(relevantDocs[0].Tipe[:]), "")
+		mostRelDoc := relevantDocs[0].Name + " " + relevantDocs[0].Address + " " +
+			relevantDocs[0].City + " " + relevantDocs[0].Tipe
 		assert.Contains(t, mostRelDoc, "Dunia Fantasi")
 	})
 
@@ -68,8 +66,8 @@ func TestFullTextSearch(t *testing.T) {
 			t.Error(err)
 		}
 
-		mostRelDoc := reg.ReplaceAllString(string(relevantDocs[0].Name[:]), "") + " " + reg.ReplaceAllString(string(relevantDocs[0].Address[:]), "") + " " +
-			reg.ReplaceAllString(string(relevantDocs[0].City[:]), "") + " " + reg.ReplaceAllString(string(relevantDocs[0].Tipe[:]), "")
+		mostRelDoc := relevantDocs[0].Name + " " + relevantDocs[0].Address + " " +
+			relevantDocs[0].City + " " + relevantDocs[0].Tipe
 		assert.Contains(t, mostRelDoc, "Dunia Fantasi")
 	})
 
