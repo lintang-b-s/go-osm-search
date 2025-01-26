@@ -101,7 +101,8 @@ func NewDynamicIndex(outputDir string, maxPostingListSize int,
 func (Idx *DynamicIndex) SpimiBatchIndex() error {
 	searchNodes := []datastructure.Node{}
 	nodeIDX := 0
-	bar := progressbar.NewOptions(6,
+	fmt.Println("")
+	bar := progressbar.NewOptions(5,
 		progressbar.OptionSetWriter(ansi.NewAnsiStdout()),
 		progressbar.OptionEnableColorCodes(true),
 		progressbar.OptionShowBytes(true),
@@ -114,7 +115,9 @@ func (Idx *DynamicIndex) SpimiBatchIndex() error {
 			BarStart:      "[",
 			BarEnd:        "]",
 		}))
+	fmt.Println("")
 	bar.Add(1)
+	fmt.Println("")
 	block := 0
 
 	nodeBoundingBox := make(map[string]geo.BoundingBox)
@@ -158,8 +161,8 @@ func (Idx *DynamicIndex) SpimiBatchIndex() error {
 			if err != nil {
 				return err
 			}
-			// err = Idx.KV.SaveDocs(searchNodes)
-			// Idx.DocumentStore.WriteDocs(searchNodes)
+		
+			
 			err = Idx.DocumentStore.SaveDocs(searchNodes)
 			if err != nil {
 				return err
@@ -192,7 +195,6 @@ func (Idx *DynamicIndex) SpimiBatchIndex() error {
 			if err != nil {
 				return err
 			}
-			// err = Idx.KV.SaveDocs(searchNodes)
 			err = Idx.DocumentStore.SaveDocs(searchNodes)
 			if err != nil {
 				return err
@@ -208,7 +210,7 @@ func (Idx *DynamicIndex) SpimiBatchIndex() error {
 	if err != nil {
 		return err
 	}
-	// err = Idx.KV.SaveDocs(searchNodes)
+
 	err = Idx.DocumentStore.SaveDocs(searchNodes)
 	if err != nil {
 		return err
@@ -431,6 +433,22 @@ func (Idx *DynamicIndex) SpimiParseOSMNodes(nodes []datastructure.Node) [][]int 
 }
 
 func (Idx *DynamicIndex) BuildSpellCorrectorAndNgram() error {
+	fmt.Println("")
+	bar := progressbar.NewOptions(5,
+		progressbar.OptionSetWriter(ansi.NewAnsiStdout()),
+		progressbar.OptionEnableColorCodes(true),
+		progressbar.OptionShowBytes(true),
+		progressbar.OptionSetWidth(15),
+		progressbar.OptionSetDescription("[cyan][2/2]Building Ngram..."),
+		progressbar.OptionSetTheme(progressbar.Theme{
+			Saucer:        "[green]=[reset]",
+			SaucerHead:    "[green]>[reset]",
+			SaucerPadding: " ",
+			BarStart:      "[",
+			BarEnd:        "]",
+		}))
+	fmt.Println("")
+	bar.Add(1)
 	searchNodes := []datastructure.Node{}
 	nodeIDX := 0
 
@@ -469,8 +487,8 @@ func (Idx *DynamicIndex) BuildSpellCorrectorAndNgram() error {
 		searchNodes = append(searchNodes, datastructure.NewNode(nodeIDX, name, centerLat,
 			centerLon, address, tipe, city))
 		nodeIDX++
-
 	}
+	bar.Add(1)
 
 	for _, node := range Idx.IndexedData.Nodes {
 		tagStringMap := make(map[string]string)
@@ -492,6 +510,7 @@ func (Idx *DynamicIndex) BuildSpellCorrectorAndNgram() error {
 		nodeIDX++
 
 	}
+	bar.Add(1)
 
 	Idx.DocsCount = nodeIDX
 
@@ -509,7 +528,10 @@ func (Idx *DynamicIndex) BuildSpellCorrectorAndNgram() error {
 		}
 		tokenizedDocs = append(tokenizedDocs, stemmedTokens)
 	}
+	bar.Add(1)
 	Idx.SpellCorrectorBuilder.Preprocessdata(tokenizedDocs)
+	bar.Add(1)
+	fmt.Println("")
 	return nil
 }
 
@@ -541,10 +563,19 @@ func (Idx *DynamicIndex) SaveMeta() error {
 		return err
 	}
 
-	metadataFile, err := os.OpenFile(Idx.WorkingDir+"/"+Idx.OutputDir+"/"+"meta.metadata", os.O_RDWR|os.O_CREATE, 0666)
-	if err != nil {
-		return err
+	var metadataFile *os.File
+	if Idx.WorkingDir != "/" {
+		metadataFile, err = os.OpenFile(Idx.WorkingDir+"/"+Idx.OutputDir+"/"+"meta.metadata", os.O_RDWR|os.O_CREATE, 0666)
+		if err != nil {
+			return err
+		}
+	} else {
+		metadataFile, err = os.OpenFile(Idx.OutputDir+"/"+"meta.metadata", os.O_RDWR|os.O_CREATE, 0666)
+		if err != nil {
+			return err
+		}
 	}
+
 	defer metadataFile.Close()
 	err = metadataFile.Truncate(0)
 	if err != nil {
@@ -557,11 +588,20 @@ func (Idx *DynamicIndex) SaveMeta() error {
 }
 
 func (Idx *DynamicIndex) LoadMeta() error {
-
-	metadataFile, err := os.OpenFile(Idx.WorkingDir+"/"+Idx.OutputDir+"/"+"meta.metadata", os.O_RDWR|os.O_CREATE, 0666)
-	if err != nil {
-		return err
+	var metadataFile *os.File
+	var err error
+	if Idx.WorkingDir != "/" {
+		metadataFile, err = os.OpenFile(Idx.WorkingDir+"/"+Idx.OutputDir+"/"+"meta.metadata", os.O_RDWR|os.O_CREATE, 0666)
+		if err != nil {
+			return err
+		}
+	} else {
+		metadataFile, err = os.OpenFile(Idx.OutputDir+"/"+"meta.metadata", os.O_RDWR|os.O_CREATE, 0666)
+		if err != nil {
+			return err
+		}
 	}
+
 	defer metadataFile.Close()
 	buf := make([]byte, 1024*1024*40)
 	metadataFile.Read(buf)

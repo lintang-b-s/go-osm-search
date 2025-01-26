@@ -28,6 +28,7 @@ Note: The indexing process takes 3-5 minutes, please wait. you can also replace 
 | BenchmarkFullTextSearchQuery-12 | 2930       | 360077 ns/op | 413571 B/op | 1516 allocs/op  |
 |    BenchmarkAutocomplete-12     | 3816       | 288859 ns/op | 246140 B/op | 819 allocs/op   |
 
-Very slow. but this project is much faster than nominatim when I compare the load test results using k6 on my laptop :).
+Very slow hahah. search operation is much faster than Nominatim :).
+
 
 

@@ -208,6 +208,9 @@ func (se *Searcher) FreeFormQuery(query string, k int) ([]datastructure.Node, er
 			break
 		}
 
+		if docWithScores[i].DocID > 1200000 {
+			fmt.Println("tes")
+		}
 		doc, err := se.DocStore.GetDoc(docWithScores[i].DocID)
 		if err != nil {
 			return []datastructure.Node{}, err

@@ -28,7 +28,7 @@ func (s *Server) Use(
 ) (*Server, error) {
 	viper.SetDefault("API_PORT", 6060)
 
-	viper.SetDefault("API_TIMEOUT", "10s")
+	viper.SetDefault("API_TIMEOUT", "1000s")
 
 	config := http_server.Config{
 		Port:    viper.GetInt("API_PORT"),

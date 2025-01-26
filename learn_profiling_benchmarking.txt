@@ -344,3 +344,18 @@ BenchmarkFullTextSearchQueryWithoutDocs-12          3871            278734 ns/op
 tanpa priority queue (sort array aj):
 
 BenchmarkFullTextSearchQuery-12                     2916            390398 ns/op          542419 B/op        976 allocs/op
+
+
+
+
+bandingin load test sama nominatim pakai k6.
+osm-search lokal:
+511 rps, p95 1.2ms
+
+nominatim docker: 
+300 rps, p95 900ms
+
+osm-search docker:
+531 rps, p95 1.55ms
+
+

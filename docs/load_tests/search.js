@@ -9,7 +9,7 @@ export const options = {
 
 export default () => {
   const reqBody = {
-  "query": "Dunia Fantasi",
+  "query": "Kebun Binatang Ragunan",
     "top_k": 10
   };
 

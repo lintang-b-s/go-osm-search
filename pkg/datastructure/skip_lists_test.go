@@ -2,7 +2,6 @@ package datastructure
 
 import (
 	"fmt"
-	"osm-search/pkg/compress"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -272,31 +271,6 @@ func BenchmarkPostingListIntersection(b *testing.B) {
 	for n := 0; n < b.N; n++ {
 
 		FastPostingListsIntersection(reader1, reader2)
-
-	}
-}
-
-// BenchmarkPostingListIntersection2-12    	      50	  22463468 ns/op	96673566 B/op	     109 allocs/op
-func BenchmarkPostingListIntersection2(b *testing.B) {
-	list1 := []int{}
-	for i := 1; i <= 1000000; i++ {
-
-		list1 = append(list1, 1*i)
-	}
-
-	list2 := []int{}
-	for i := 1; i <= 1000000; i++ {
-
-		list2 = append(list2, 3*i)
-	}
-
-	lBuf1 := compress.EncodePostingList(list1)
-	lBuf2 := compress.EncodePostingList(list2)
-
-	b.ResetTimer()
-
-	for n := 0; n < b.N; n++ {
-		PostingListIntersection(lBuf1, lBuf2)
 
 	}
 }

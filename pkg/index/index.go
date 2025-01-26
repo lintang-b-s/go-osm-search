@@ -8,13 +8,12 @@ import (
 	"math"
 	"os"
 	"osm-search/pkg/compress"
-	"osm-search/pkg/datastructure"
 )
 
 type InvertedIndex struct {
 	IndexName        string
 	DirName          string
-	PostingMetadata  map[int][5]int // termID -> [startPositionInIndexFile, len(postingList), lengthInBytesOfPostingLists]
+	PostingMetadata  map[int][3]int // termID -> [startPositionInIndexFile, len(postingList), lengthInBytesOfPostingLists]
 	IndexFilePath    string
 	MetadataFilePath string
 	Terms            []int
@@ -26,12 +25,19 @@ type InvertedIndex struct {
 
 func NewInvertedIndex(index_name, directoryName, workingDir string) *InvertedIndex {
 
+	indexFilePath := directoryName + "/" + index_name + ".index"
+	metadataFilePath := directoryName + "/" + index_name + ".metadata"
+	if workingDir != "/" {
+		indexFilePath = workingDir + "/" + directoryName + "/" + index_name + ".index"
+		metadataFilePath = workingDir + "/" + directoryName + "/" + index_name + ".metadata"
+	}
+
 	return &InvertedIndex{
 		IndexName:        index_name,
 		DirName:          directoryName,
-		PostingMetadata:  make(map[int][5]int),
-		IndexFilePath:    workingDir + "/" + directoryName + "/" + index_name + ".index",
-		MetadataFilePath: workingDir + "/" + directoryName + "/" + index_name + ".metadata",
+		PostingMetadata:  make(map[int][3]int),
+		IndexFilePath:    indexFilePath,
+		MetadataFilePath: metadataFilePath,
 		Terms:            []int{},
 		DocTermCountDict: make(map[int]int),
 		CurrTermPosition: 0,
@@ -77,10 +83,16 @@ func (Idx *InvertedIndex) Close() error {
 			return err
 		}
 
-		bufferSizeFile, err := os.OpenFile(pwd+"/"+Idx.DirName+"/"+Idx.IndexName+"_size.metadata", os.O_RDWR|os.O_CREATE, 0666)
+		var bufferSizeFile *os.File
+		if pwd != "/" {
+			bufferSizeFile, err = os.OpenFile(pwd+"/"+Idx.DirName+"/"+Idx.IndexName+"_size.metadata", os.O_RDWR|os.O_CREATE, 0666)
+		} else {
+			bufferSizeFile, err = os.OpenFile(Idx.DirName+"/"+Idx.IndexName+"_size.metadata", os.O_RDWR|os.O_CREATE, 0666)
+		}
 		if err != nil {
 			return err
 		}
+
 		defer bufferSizeFile.Close()
 
 		err = bufferSizeFile.Truncate(0)
@@ -120,7 +132,13 @@ func (Idx *InvertedIndex) OpenReader() error {
 		return err
 	}
 
-	bufferSizeFile, err := os.OpenFile(pwd+"/"+Idx.DirName+"/"+Idx.IndexName+"_size.metadata", os.O_RDONLY|os.O_CREATE, 0666)
+	var bufferSizeFile *os.File
+	if pwd != "/" {
+		bufferSizeFile, err = os.OpenFile(pwd+"/"+Idx.DirName+"/"+Idx.IndexName+"_size.metadata", os.O_RDONLY|os.O_CREATE, 0666)
+	} else {
+		bufferSizeFile, err = os.OpenFile(Idx.DirName+"/"+Idx.IndexName+"_size.metadata", os.O_RDONLY|os.O_CREATE, 0666)
+	}
+
 	if err != nil {
 		return err
 	}
@@ -156,22 +174,8 @@ func (Idx *InvertedIndex) GetPostingList(termID int) ([]int, error) {
 		return []int{}, err
 	}
 	postingList := compress.DecodePostingList(buf)
-	return postingList, nil
-}
 
-func (Idx *InvertedIndex) GetPostingListSkipList(termID int) ([]byte, error) {
-	postingMetadata, ok := Idx.PostingMetadata[termID]
-	if !ok {
-		return []byte{}, errors.New("termID not found")
-	}
-	startPositionInIndexFile := int64(postingMetadata[3])
-	Idx.IndexFile.Seek(startPositionInIndexFile, 0)
-	buf := make([]byte, postingMetadata[4])
-	_, err := Idx.IndexFile.Read(buf)
-	if err != nil {
-		return []byte{}, err
-	}
-	return buf, nil
+	return postingList, nil
 }
 
 func (Idx *InvertedIndex) AppendPostingList(termID int, postingList []int) error {
@@ -185,26 +189,10 @@ func (Idx *InvertedIndex) AppendPostingList(termID int, postingList []int) error
 		return err
 	}
 
-	// add serialized skip list
-	postingSkipList := datastructure.NewSkipLists()
-	for _, docID := range postingList {
-		postingSkipList.Insert(docID)
-	}
-	postingSkipListBuf := postingSkipList.Serialize()
-
-	startPositionInIndexFileSkipList, err := Idx.IndexFile.Seek(0, 2)
-	if err != nil {
-		return err
-	}
-	lengthInBytesOfPostingListSkipList, err := Idx.IndexFile.Write(postingSkipListBuf)
-	if err != nil {
-		return err
-	}
-
 	Idx.Terms = append(Idx.Terms, termID)
 
-	Idx.PostingMetadata[termID] = [5]int{int(startPositionInIndexFile), len(postingList),
-		lengthInBytesOfPostingList, int(startPositionInIndexFileSkipList), lengthInBytesOfPostingListSkipList}
+	Idx.PostingMetadata[termID] = [3]int{int(startPositionInIndexFile), len(postingList),
+		lengthInBytesOfPostingList}
 
 	return nil
 }
@@ -320,8 +308,6 @@ func (Idx *InvertedIndex) SerializeMetadata() []byte {
 		startPositionInIndexFile := val[0]    // 4 byte
 		lenPostingList := val[1]              // 4 byte
 		lengthInBytesOfPostingLists := val[2] // 4 byte
-		startSkipList := val[3]
-		lengthInBytesSkipList := val[4]
 
 		binary.LittleEndian.PutUint32(buf[leftPos:], uint32(lengthInBytesOfPostingLists))
 		leftPos += 4
@@ -332,11 +318,6 @@ func (Idx *InvertedIndex) SerializeMetadata() []byte {
 		binary.LittleEndian.PutUint32(buf[leftPos:], uint32(startPositionInIndexFile))
 		leftPos += 4
 
-		binary.LittleEndian.PutUint32(buf[leftPos:], uint32(startSkipList))
-		leftPos += 4
-
-		binary.LittleEndian.PutUint32(buf[leftPos:], uint32(lengthInBytesSkipList))
-		leftPos += 4
 	}
 
 	for docID, termCount := range Idx.DocTermCountDict {
@@ -366,7 +347,7 @@ func (Idx *InvertedIndex) DeserializeMetadata(buf []byte) {
 	leftPos += 4
 
 	Idx.Terms = make([]int, termCount)
-	Idx.PostingMetadata = make(map[int][5]int)
+	Idx.PostingMetadata = make(map[int][3]int)
 	Idx.DocTermCountDict = make(map[int]int)
 
 	for i := 0; i < termCount; i++ {
@@ -390,14 +371,7 @@ func (Idx *InvertedIndex) DeserializeMetadata(buf []byte) {
 		startPositionInIndexFile := int(binary.LittleEndian.Uint32(buf[leftPos:]))
 		leftPos += 4
 
-		startSkipList := int(binary.LittleEndian.Uint32(buf[leftPos:]))
-		leftPos += 4
-
-		lengthInBytesSkipList := int(binary.LittleEndian.Uint32(buf[leftPos:]))
-		leftPos += 4
-
-		Idx.PostingMetadata[term] = [5]int{startPositionInIndexFile, lenPostingList, lengthInBytesOfPostingLists,
-			startSkipList, lengthInBytesSkipList}
+		Idx.PostingMetadata[term] = [3]int{startPositionInIndexFile, lenPostingList, lengthInBytesOfPostingLists}
 	}
 
 	for i := 0; i < docTermCountDictCount; i++ {
@@ -409,17 +383,5 @@ func (Idx *InvertedIndex) DeserializeMetadata(buf []byte) {
 		leftPos += 4
 
 		Idx.DocTermCountDict[docID] = termCount
-	}
-}
-
-type SaveMetadata struct {
-	PostingMeta  map[int][]int
-	Terms        []int
-	DocWordCount map[int]int
-}
-
-func NewSaveMetadata(postings map[int][]int, docWordCount map[int]int, terms []int) SaveMetadata {
-	return SaveMetadata{
-		postings, terms, docWordCount,
 	}
 }

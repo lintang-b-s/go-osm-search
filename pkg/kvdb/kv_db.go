@@ -3,6 +3,7 @@ package kvdb
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
 	"math"
 	"osm-search/pkg/datastructure"
 	"strconv"
@@ -51,9 +52,16 @@ func (db *KVDB) Set(node datastructure.Node) error {
 }
 
 func (db *KVDB) GetDoc(id int) (node datastructure.Node, err error) {
+	if id > 1200000 {
+		fmt.Print("tes")
+	}
 	db.db.View(func(tx *bbolt.Tx) error {
 		b := tx.Bucket([]byte(BBOLTDB_BUCKET))
 		nodeBytes := b.Get([]byte(strconv.Itoa(id)))
+		if nodeBytes == nil {
+			err = fmt.Errorf("document with docID: %d not found", id)
+			return nil
+		}
 		node, err = DeserializeNode(nodeBytes)
 		return nil
 	})

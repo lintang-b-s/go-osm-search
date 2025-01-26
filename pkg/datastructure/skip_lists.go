@@ -4,7 +4,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math/rand"
-	"osm-search/pkg/compress"
 )
 
 const (
@@ -442,26 +441,6 @@ func min(a, b int) int {
 		return a
 	}
 	return b
-}
-
-func PostingListIntersection(aBuf, bBuf []byte) []int {
-	a := compress.DecodePostingList(aBuf)
-	b := compress.DecodePostingList(bBuf)
-	idx1, idx2 := 0, 0
-	result := []int{}
-
-	for idx1 < len(a) && idx2 < len(b) {
-		if a[idx1] < b[idx2] {
-			idx1++
-		} else if b[idx2] < a[idx1] {
-			idx2++
-		} else {
-			result = append(result, a[idx1])
-			idx1++
-			idx2++
-		}
-	}
-	return result
 }
 
 func PostingListIntersection2(a, b []int) []int {
