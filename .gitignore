@@ -16,3 +16,6 @@ prof.mem
 latihanSyncPool/
 latihanCompressAndBufferPool/
 *.db
+
+bin/
+docs/load_tests/

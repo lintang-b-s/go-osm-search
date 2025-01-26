@@ -10,6 +10,20 @@
       "request": "launch",
       "mode": "debug",
       "program": "${file}"
-    }
+    },
+    {
+      "name": "Launch osm-search Indexing",
+      "type": "go",
+      "request": "launch",
+      "mode": "debug",
+      "program": "${workspaceFolder}/cmd/indexing"
+    },
+    {
+      "name": "Launch osm-search  Server",
+      "type": "go",
+      "request": "launch",
+      "mode": "debug",
+      "program": "${workspaceFolder}/cmd/server"
+    },
   ]
 }

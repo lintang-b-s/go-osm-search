@@ -1,6 +1,14 @@
 package pkg
 
-import "sort"
+import (
+	"sort"
+
+	"github.com/RadhiFadlillah/go-sastrawi"
+)
+
+var dictionary = sastrawi.DefaultDictionary()
+
+var Stemmer = sastrawi.NewStemmer(dictionary)
 
 type IDMap struct {
 	StrToID    map[string]int

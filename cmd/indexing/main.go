@@ -1,68 +1,99 @@
 package main
 
 import (
+	"context"
 	"flag"
-	"log"
-	"osm-search/pkg"
+	"os"
+	"osm-search/pkg/geo"
+	"osm-search/pkg/index"
+	"osm-search/pkg/kvdb"
+	"osm-search/pkg/searcher"
 
 	bolt "go.etcd.io/bbolt"
 )
 
 var (
-	listenAddr = flag.String("listenaddr", ":5000", "server listen address")
-	mapFile    = flag.String("f", "jabodetabek_big.osm.pbf", "openstreeetmap file")
-	outputDir  = flag.String("o", "lintang", "output directory buat simpan inverted index, ngram, dll")
+	mapFile   = flag.String("f", "jabodetabek_big.osm.pbf", "openstreeetmap file")
+	outputDir = flag.String("o", "lintang", "output directory buat simpan inverted index, ngram, dll")
 )
 
 func main() {
 	flag.Parse()
-	ways, onylySearchNodes, nodeMap, tagIDMap, err := pkg.ParseOSM(*mapFile)
+
+	if _, err := os.Stat(*outputDir); os.IsNotExist(err) {
+		os.Mkdir(*outputDir, 0755)
+	}
+
+	ways, onylySearchNodes, nodeMap, tagIDMap, err := geo.ParseOSM(*mapFile)
 	if err != nil {
-		log.Fatal(err)
+		panic(err)
 	}
 
 	db, err := bolt.Open("docs_store.db", 0600, nil)
 	if err != nil {
-		log.Fatal(err)
+		panic(err)
 	}
 	defer db.Close()
 
 	err = db.Update(func(tx *bolt.Tx) error {
-		_, err := tx.CreateBucketIfNotExists([]byte(pkg.BBOLTDB_BUCKET))
+		_, err := tx.CreateBucketIfNotExists([]byte(kvdb.BBOLTDB_BUCKET))
 		return err
 	})
 	if err != nil {
-		log.Fatal(err)
+		panic(err)
 	}
 
-	bboltKV := pkg.NewKVDB(db)
+	bboltKV := kvdb.NewKVDB(db)
 
-	ngramLM := pkg.NewNGramLanguageModel(*outputDir)
-	spellCorrectorBuilder := pkg.NewSpellCorrector(ngramLM)
+	ngramLM := searcher.NewNGramLanguageModel(*outputDir)
+	spellCorrectorBuilder := searcher.NewSpellCorrector(ngramLM)
 
-	indexedData := pkg.NewIndexedData(ways, onylySearchNodes, nodeMap, tagIDMap)
-	invertedIndex, _ := pkg.NewDynamicIndex(*outputDir, 1e7, false, spellCorrectorBuilder,
+	indexedData := index.NewIndexedData(ways, onylySearchNodes, nodeMap, tagIDMap)
+	invertedIndex, _ := index.NewDynamicIndex(*outputDir, 1e7, false, spellCorrectorBuilder,
 		indexedData, bboltKV)
 
 	// indexing
-	var errChan = make(chan error, 1)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	buildSpellCorrector := func() error {
+		var errChan = make(chan error, 1)
+
+		go func() {
+			errChan <- invertedIndex.BuildSpellCorrectorAndNgram()
+		}()
+
+		select {
+		case <-ctx.Done():
+			<-errChan
+			return nil
+		case err = <-errChan:
+			return err
+		}
+	}
+
+	c := make(chan error, 1)
 	go func() {
-		errChan <- invertedIndex.BuildSpellCorrectorAndNgram()
-		close(errChan)
+		c <- buildSpellCorrector()
 	}()
 
 	err = invertedIndex.SpimiBatchIndex()
 	if err != nil {
-		log.Fatal(err)
+		panic(err)
 	}
 
-	if err = <-errChan; err != nil {
-		log.Fatal(err)
+	cleanup := func() {
+		err = invertedIndex.Close()
+		if err != nil {
+			panic(err)
+		}
 	}
 
-	err = invertedIndex.Close()
-	if err != nil {
-		log.Fatal(err)
+	if err = <-c; err != nil {
+		cleanup()
+		panic(err)
 	}
+
+	cleanup()
 
 }
