@@ -18,7 +18,7 @@ type DynamicIndexer interface {
 	GetOutputDir() string
 	GetDocWordCount() map[int]int
 	GetDocsCount() int
-	GetTermIDMap() pkg.IDMap
+	GetTermIDMap() *pkg.IDMap
 	BuildVocabulary()
 }
 
@@ -30,7 +30,7 @@ type Searcher struct {
 	Idx            DynamicIndexer
 	MainIndex      *index.InvertedIndex
 	SpellCorrector index.SpellCorrectorI
-	TermIDMap      pkg.IDMap
+	TermIDMap      *pkg.IDMap
 	DocStore       SearcherDocStore
 }
 
@@ -127,6 +127,7 @@ func (se *Searcher) FreeFormQuery(query string, k int) ([]datastructure.Node, er
 
 		if !isInVocab {
 
+			// bisa dibuat concurrent
 			correctionOne, err := se.SpellCorrector.GetWordCandidates(tokenizedTerm, 1)
 			if err != nil {
 				return []datastructure.Node{}, err
@@ -153,6 +154,7 @@ func (se *Searcher) FreeFormQuery(query string, k int) ([]datastructure.Node, er
 	queryTermsID = append(queryTermsID, correctQuery...)
 
 	for _, termID := range queryTermsID {
+		// bisa dibuat concurrent
 		postings, err := se.MainIndex.GetPostingList(termID)
 		if err != nil {
 			return []datastructure.Node{}, err
@@ -208,9 +210,6 @@ func (se *Searcher) FreeFormQuery(query string, k int) ([]datastructure.Node, er
 			break
 		}
 
-		if docWithScores[i].DocID > 1200000 {
-			fmt.Println("tes")
-		}
 		doc, err := se.DocStore.GetDoc(docWithScores[i].DocID)
 		if err != nil {
 			return []datastructure.Node{}, err
@@ -271,7 +270,6 @@ func (se *Searcher) Autocomplete(query string) ([]datastructure.Node, error) {
 		}
 
 		// shunting Yard
-
 		rpnDeque := NewDeque(shuntingYardRPN(tokens))
 		docIDsRes, err := se.processQuery(rpnDeque)
 		if err != nil {
@@ -424,7 +422,7 @@ func (se *Searcher) processQuery(rpnDeque Deque) ([]int, error) {
 				left := postingListStack[len(postingListStack)-1]
 				postingListStack = postingListStack[:len(postingListStack)-1]
 
-				postingListIntersection := datastructure.PostingListIntersection2(left, right)
+				postingListIntersection := PostingListIntersection2(left, right)
 
 				postingListStack = append(postingListStack, postingListIntersection)
 			} else if token == -4 {
@@ -559,4 +557,23 @@ func (se *Searcher) FreeFormQueryWithoutDocs(query string, k int) ([]int, error)
 	}
 
 	return relevantDocs, nil
+}
+
+func PostingListIntersection2(a, b []int) []int {
+
+	idx1, idx2 := 0, 0
+	result := []int{}
+
+	for idx1 < len(a) && idx2 < len(b) {
+		if a[idx1] < b[idx2] {
+			idx1++
+		} else if b[idx2] < a[idx1] {
+			idx2++
+		} else {
+			result = append(result, a[idx1])
+			idx1++
+			idx2++
+		}
+	}
+	return result
 }

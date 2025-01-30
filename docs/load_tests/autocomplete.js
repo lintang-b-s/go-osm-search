@@ -3,8 +3,8 @@ import http from "k6/http";
 import { sleep, check } from "k6";
 export const options = {
   stages: [
-    { duration: "1m", target: 800 }, // ramp up
-    { duration: "30s", target: 800 }, // peak
+    { duration: "1m", target: 2000 }, // ramp up
+    { duration: "30s", target: 2000 }, // peak
   ],
 };
 

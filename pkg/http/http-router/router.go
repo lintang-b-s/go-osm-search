@@ -3,6 +3,7 @@ package http_router
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"osm-search/pkg/http/http-router/controllers"
 	router_helper "osm-search/pkg/http/http-router/router-helper"
 	http_server "osm-search/pkg/http/server"
@@ -11,6 +12,11 @@ import (
 	"github.com/justinas/alice"
 	"github.com/rs/cors"
 	"go.uber.org/zap"
+
+	_ "osm-search/cmd/server/docs"
+
+	_ "github.com/swaggo/http-swagger"
+	httpSwagger "github.com/swaggo/http-swagger"
 )
 
 type API struct {
@@ -42,6 +48,8 @@ func (api *API) Run(
 
 	})
 
+	router.GET("/doc/:any", swaggerHandler)
+
 	group := router_helper.NewRouteGroup(router, "/api")
 
 	searcherRoutes := controllers.New(searchService, log)
@@ -60,4 +68,8 @@ func (api *API) Run(
 	}
 
 	return nil
+}
+
+func swaggerHandler(res http.ResponseWriter, req *http.Request, p httprouter.Params) {
+	httpSwagger.WrapHandler(res, req)
 }

@@ -1,638 +1,388 @@
 package index
 
 import (
-	"bytes"
-	"encoding/gob"
+	"encoding/binary"
+	"errors"
 	"fmt"
+	"iter"
+	"math"
 	"os"
-	"osm-search/pkg"
-	"osm-search/pkg/datastructure"
-	"osm-search/pkg/geo"
-	"sort"
-	"strconv"
-	"strings"
-
-	"github.com/RadhiFadlillah/go-sastrawi"
-	"github.com/k0kubun/go-ansi"
-	"github.com/schollz/progressbar/v3"
+	"osm-search/pkg/compress"
 )
 
-type SpellCorrectorI interface {
-	Preprocessdata(tokenizedDocs [][]string)
-	GetWordCandidates(mispelledWord string, editDistance int) ([]int, error)
-	GetCorrectQueryCandidates(allPossibleQueryTerms [][]int) [][]int
-	GetCorrectSpellingSuggestion(allCorrectQueryCandidates [][]int, originalQueryTermIDs []int) ([]int, error)
-	GetMatchedWordBasedOnPrefix(prefixWord string) ([]int, error)
-	GetMatchedWordsAutocomplete(allQueryCandidates [][]int, originalQueryTerms []int) ([][]int, error)
+type InvertedIndex struct {
+	IndexName        string
+	DirName          string
+	PostingMetadata  map[int][3]int // termID -> [startPositionInIndexFile, len(postingList), lengthInBytesOfPostingLists]
+	IndexFilePath    string
+	MetadataFilePath string
+	Terms            []int
+	IndexFile        *os.File
+	DocTermCountDict map[int]int // docID -> termCount (jumlah term di dalam document)
+
+	CurrTermPosition int
 }
 
-type DocumentStoreI interface {
-	WriteDocs(docs []datastructure.Node)
-}
+func NewInvertedIndex(index_name, directoryName, workingDir string) *InvertedIndex {
 
-type BboltDBI interface {
-	SaveDocs(nodes []datastructure.Node) error
-}
+	indexFilePath := directoryName + "/" + index_name + ".index"
+	metadataFilePath := directoryName + "/" + index_name + ".metadata"
+	if workingDir != "/" {
+		indexFilePath = workingDir + "/" + directoryName + "/" + index_name + ".index"
+		metadataFilePath = workingDir + "/" + directoryName + "/" + index_name + ".metadata"
+	}
 
-// https://nlp.stanford.edu/IR-book/pdf/04const.pdf (4.3 Single-pass in-memory indexing)
-type DynamicIndex struct {
-	TermIDMap                 pkg.IDMap
-	WorkingDir                string
-	IntermediateIndices       []string
-	InMemoryIndices           map[int][]int
-	MaxDynamicPostingListSize int
-	DocWordCount              map[int]int
-	OutputDir                 string
-	DocsCount                 int
-	SpellCorrectorBuilder     SpellCorrectorI
-	IndexedData               IndexedData
-	DocumentStore             BboltDBI //DocumentStoreI
-}
-
-type IndexedData struct {
-	Ways     []geo.OSMWay
-	Nodes    []geo.OSMNode
-	Ctr      geo.NodeMapContainer
-	TagIDMap pkg.IDMap
-}
-
-func NewIndexedData(ways []geo.OSMWay, nodes []geo.OSMNode, ctr geo.NodeMapContainer, tagIDMap pkg.IDMap) IndexedData {
-	return IndexedData{
-		Ways:     ways,
-		Nodes:    nodes,
-		Ctr:      ctr,
-		TagIDMap: tagIDMap,
+	return &InvertedIndex{
+		IndexName:        index_name,
+		DirName:          directoryName,
+		PostingMetadata:  make(map[int][3]int),
+		IndexFilePath:    indexFilePath,
+		MetadataFilePath: metadataFilePath,
+		Terms:            []int{},
+		DocTermCountDict: make(map[int]int),
+		CurrTermPosition: 0,
 	}
 }
 
-type InvertedIDXDB interface {
-	SaveDocs(nodes []datastructure.Node) error
+func (Idx *InvertedIndex) OpenWriter() error {
+	file, err := os.OpenFile(Idx.IndexFilePath, os.O_RDWR|os.O_CREATE, 0666)
+	if err != nil {
+		return err
+	}
+	Idx.IndexFile = file
+	return nil
 }
 
-func NewDynamicIndex(outputDir string, maxPostingListSize int,
-	server bool, spell SpellCorrectorI, indexedData IndexedData, boltDB BboltDBI) (*DynamicIndex, error) {
+func (Idx *InvertedIndex) Close() error {
+	if Idx.IndexFile != nil {
+		err := Idx.IndexFile.Close()
+		if err != nil {
+			return err
+		}
+
+		metadataFile, err := os.OpenFile(Idx.MetadataFilePath, os.O_RDWR|os.O_CREATE, 0666)
+		if err != nil {
+			return err
+		}
+		defer metadataFile.Close()
+
+		err = metadataFile.Truncate(0)
+		if err != nil {
+			return err
+		}
+
+		metadataBuf := Idx.SerializeMetadata()
+
+		_, err = metadataFile.Write(metadataBuf)
+		if err != nil {
+			return err
+		}
+
+		pwd, err := os.Getwd()
+		if err != nil {
+			return err
+		}
+
+		var bufferSizeFile *os.File
+		if pwd != "/" {
+			bufferSizeFile, err = os.OpenFile(pwd+"/"+Idx.DirName+"/"+Idx.IndexName+"_size.metadata", os.O_RDWR|os.O_CREATE, 0666)
+		} else {
+			bufferSizeFile, err = os.OpenFile(Idx.DirName+"/"+Idx.IndexName+"_size.metadata", os.O_RDWR|os.O_CREATE, 0666)
+		}
+		if err != nil {
+			return err
+		}
+
+		defer bufferSizeFile.Close()
+
+		err = bufferSizeFile.Truncate(0)
+		if err != nil {
+			return err
+		}
+
+		metadataBufferSize := len(metadataBuf)
+
+		bufferSizeBuf := make([]byte, 100)
+		binary.LittleEndian.PutUint64(bufferSizeBuf[:], math.Float64bits(float64(metadataBufferSize)))
+
+		_, err = bufferSizeFile.Write(bufferSizeBuf)
+		if err != nil {
+			return err
+		}
+
+	}
+	return nil
+}
+
+func (Idx *InvertedIndex) OpenReader() error {
+	file, err := os.OpenFile(Idx.IndexFilePath, os.O_RDONLY|os.O_CREATE, 0666)
+	if err != nil {
+		return err
+	}
+	Idx.IndexFile = file
+
+	metadataFile, err := os.OpenFile(Idx.MetadataFilePath, os.O_RDONLY|os.O_CREATE, 0666)
+	if err != nil {
+		return err
+	}
+	defer metadataFile.Close()
+
 	pwd, err := os.Getwd()
 	if err != nil {
-		return &DynamicIndex{}, err
-	}
-	idx := &DynamicIndex{
-		TermIDMap:                 pkg.NewIDMap(),
-		IntermediateIndices:       []string{},
-		WorkingDir:                pwd,
-		InMemoryIndices:           make(map[int][]int),
-		MaxDynamicPostingListSize: maxPostingListSize,
-		DocWordCount:              make(map[int]int),
-		OutputDir:                 outputDir,
-		DocsCount:                 0,
-		SpellCorrectorBuilder:     spell,
-		IndexedData:               indexedData,
-		DocumentStore:             boltDB,
-	}
-	if server {
-		err := idx.LoadMeta()
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	return idx, nil
-}
-
-func (Idx *DynamicIndex) SpimiBatchIndex() error {
-	searchNodes := []datastructure.Node{}
-	nodeIDX := 0
-	fmt.Println("")
-	bar := progressbar.NewOptions(5,
-		progressbar.OptionSetWriter(ansi.NewAnsiStdout()),
-		progressbar.OptionEnableColorCodes(true),
-		progressbar.OptionShowBytes(true),
-		progressbar.OptionSetWidth(15),
-		progressbar.OptionSetDescription("[cyan][2/2]Indexing osm objects..."),
-		progressbar.OptionSetTheme(progressbar.Theme{
-			Saucer:        "[green]=[reset]",
-			SaucerHead:    "[green]>[reset]",
-			SaucerPadding: " ",
-			BarStart:      "[",
-			BarEnd:        "]",
-		}))
-	fmt.Println("")
-	bar.Add(1)
-	fmt.Println("")
-	block := 0
-
-	nodeBoundingBox := make(map[string]geo.BoundingBox)
-
-	for _, way := range Idx.IndexedData.Ways {
-		lat := make([]float64, len(way.NodeIDs))
-		lon := make([]float64, len(way.NodeIDs))
-		for i := 0; i < len(way.NodeIDs); i++ {
-			node := way.NodeIDs[i]
-			nodeLat := Idx.IndexedData.Ctr.GetNode(node).Lat
-			nodeLon := Idx.IndexedData.Ctr.GetNode(node).Lon
-			lat[i] = nodeLat
-			lon[i] = nodeLon
-		}
-
-		centerLat, centerLon, err := geo.CenterOfPolygonLatLon(lat, lon)
-		if err != nil {
-			return err
-		}
-		tagStringMap := make(map[string]string)
-		for k, v := range way.TagMap {
-			tagStringMap[Idx.IndexedData.TagIDMap.GetStr(k)] = Idx.IndexedData.TagIDMap.GetStr(v)
-
-		}
-
-		name, address, tipe, city := geo.GetNameAddressTypeFromOSMWay(tagStringMap)
-
-		if IsWayDuplicateCheck(strings.ToLower(name), lat, lon, nodeBoundingBox) {
-			// cek duplikat kalo sebelumnya ada way dengan nama sama dan posisi sama dengan way ini.
-			continue
-		}
-
-		nodeBoundingBox[strings.ToLower(name)] = geo.NewBoundingBox(lat, lon)
-
-		searchNodes = append(searchNodes, datastructure.NewNode(nodeIDX, name, centerLat,
-			centerLon, address, tipe, city))
-		nodeIDX++
-
-		if len(searchNodes) == 200000 {
-			err := Idx.SpimiInvert(searchNodes, &block)
-			if err != nil {
-				return err
-			}
-		
-			
-			err = Idx.DocumentStore.SaveDocs(searchNodes)
-			if err != nil {
-				return err
-			}
-			searchNodes = []datastructure.Node{}
-		}
-	}
-	bar.Add(1)
-
-	for _, node := range Idx.IndexedData.Nodes {
-		tagStringMap := make(map[string]string)
-		for k, v := range node.TagMap {
-			tagStringMap[Idx.IndexedData.TagIDMap.GetStr(k)] = Idx.IndexedData.TagIDMap.GetStr(v)
-		}
-		name, address, tipe, city := geo.GetNameAddressTypeFromOSNode(tagStringMap)
-		if name == "" {
-			continue
-		}
-
-		if IsNodeDuplicateCheck(strings.ToLower(name), node.Lat, node.Lon, nodeBoundingBox) {
-			// cek duplikat kalo sebelumnya ada way dengan nama sama dan posisi sama dengan node ini. gak usah set bounding box buat node.
-			continue
-		}
-
-		searchNodes = append(searchNodes, datastructure.NewNode(nodeIDX, name, node.Lat,
-			node.Lon, address, tipe, city))
-		nodeIDX++
-		if len(searchNodes) == 200000 {
-			err := Idx.SpimiInvert(searchNodes, &block)
-			if err != nil {
-				return err
-			}
-			err = Idx.DocumentStore.SaveDocs(searchNodes)
-			if err != nil {
-				return err
-			}
-			searchNodes = []datastructure.Node{}
-		}
-	}
-
-	Idx.DocsCount = nodeIDX
-
-	bar.Add(1)
-	err := Idx.SpimiInvert(searchNodes, &block)
-	if err != nil {
 		return err
 	}
 
-	err = Idx.DocumentStore.SaveDocs(searchNodes)
-	if err != nil {
-		return err
-	}
-	bar.Add(1)
-
-	mergedIndex := NewInvertedIndex("merged_index", Idx.OutputDir, Idx.WorkingDir)
-	indices := []*InvertedIndex{}
-	for _, indexID := range Idx.IntermediateIndices {
-		index := NewInvertedIndex(indexID, Idx.OutputDir, Idx.WorkingDir)
-		err := index.OpenReader()
-		if err != nil {
-			return err
-		}
-		indices = append(indices, index)
-	}
-	mergedIndex.OpenWriter()
-
-	err = Idx.Merge(indices, mergedIndex)
-	if err != nil {
-		return err
-	}
-	for _, index := range indices {
-		err := index.Close()
-		if err != nil {
-			return err
-		}
-	}
-	err = mergedIndex.Close()
-	if err != nil {
-		return err
-	}
-	bar.Add(1)
-	return nil
-}
-
-func IsWayDuplicateCheck(name string, lats, lons []float64, nodeBoundingBox map[string]geo.BoundingBox) bool {
-	prevBB, ok := nodeBoundingBox[name]
-
-	if !ok {
-		return false
-	}
-	contain := prevBB.PointsContains(lats, lons)
-
-	if !contain {
-		// perbesar bounding box nya karena namanya sama tapi mungkin bb sebelumnya lebih kecil & gak contain bb ini.
-		nodeBoundingBox[name] = geo.NewBoundingBox(lats, lons)
-	}
-
-	currWayBB := geo.NewBoundingBox(lats, lons)
-	inverseContain := currWayBB.PointsContains(prevBB.GetMin(), prevBB.GetMax()) // cek sebaliknya (cuur osm way Bounding Box contain previous same name bounding box)
-	return contain || inverseContain
-}
-
-func IsNodeDuplicateCheck(name string, lats, lon float64, nodeBoundingBox map[string]geo.BoundingBox) bool {
-	prevBB, ok := nodeBoundingBox[name]
-	if !ok {
-		return false
-	}
-	contain := prevBB.Contains(lats, lon)
-	return contain
-}
-
-func (Idx *DynamicIndex) SpimiIndex(nodes []datastructure.Node) error {
-	block := 0
-	Idx.SpimiInvert(nodes, &block)
-
-	mergedIndex := NewInvertedIndex("merged_index", Idx.OutputDir, Idx.WorkingDir)
-	indices := []*InvertedIndex{}
-	for _, indexID := range Idx.IntermediateIndices {
-		index := NewInvertedIndex(indexID, Idx.OutputDir, Idx.WorkingDir)
-		index.OpenReader()
-		indices = append(indices, index)
-	}
-	mergedIndex.OpenWriter()
-
-	err := Idx.Merge(indices, mergedIndex)
-	if err != nil {
-		return err
-	}
-	for _, index := range indices {
-		index.Close()
-	}
-	return nil
-}
-
-func (Idx *DynamicIndex) Merge(indices []*InvertedIndex, mergedIndex *InvertedIndex) error {
-	lastTerm, lastPosting := -1, []int{}
-	mergeKArrayIterator := NewMergeKArrayIterator(indices)
-	for output, err := range mergeKArrayIterator.mergeKArray() {
-		if err != nil {
-			return fmt.Errorf("error when merge posting lists: %w", err)
-		}
-		currTerm, currPostings := output.TermID, output.Postings
-
-		if currTerm != lastTerm {
-			if lastTerm != -1 {
-				sort.Ints(lastPosting)
-				err := mergedIndex.AppendPostingList(lastTerm, lastPosting)
-				if err != nil {
-					return fmt.Errorf("error when merge posting lists: %w", err)
-				}
-			}
-			lastTerm, lastPosting = currTerm, currPostings
-		} else {
-			lastPosting = append(lastPosting, currPostings...)
-		}
-
-	}
-
-	if lastTerm != -1 {
-		sort.Ints(lastPosting)
-		err := mergedIndex.AppendPostingList(lastTerm, lastPosting)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// https://nlp.stanford.edu/IR-book/pdf/04const.pdf (Figure 4.4 Spimi-invert)
-func (Idx *DynamicIndex) SpimiInvert(nodes []datastructure.Node, block *int) error {
-	postingSize := 0
-
-	termToPostingMap := make(map[int][]int)
-	tokenStreams := Idx.SpimiParseOSMNodes(nodes) // [pair of termID and nodeID]
-
-	var postingList []int
-	for _, termDocPair := range tokenStreams {
-
-		if len(tokenStreams) == 0 {
-			continue
-		}
-		termID, nodeID := termDocPair[0], termDocPair[1]
-		if _, ok := termToPostingMap[termID]; ok {
-			postingList = termToPostingMap[termID]
-		} else {
-			postingList = []int{}
-			termToPostingMap[termID] = postingList
-		}
-		postingList = append(postingList, nodeID)
-		termToPostingMap[termID] = postingList
-		postingSize += 1
-
-		if postingSize >= Idx.MaxDynamicPostingListSize {
-			postingSize = 0
-			terms := []int{}
-			for termID, _ := range termToPostingMap {
-				terms = append(terms, termID)
-			}
-			sort.Ints(terms)
-			indexID := "index_" + strconv.Itoa(*block)
-			index := NewInvertedIndex(indexID, Idx.OutputDir, Idx.WorkingDir)
-			err := index.OpenWriter()
-			if err != nil {
-				return err
-			}
-			Idx.IntermediateIndices = append(Idx.IntermediateIndices, indexID)
-			for term := range terms {
-
-				sort.Ints(termToPostingMap[term])
-				index.AppendPostingList(term, termToPostingMap[term])
-			}
-			*block += 1
-			termToPostingMap = make(map[int][]int)
-			index.Close()
-		}
-	}
-
-	terms := []int{}
-	for termID, _ := range termToPostingMap {
-		terms = append(terms, termID)
-	}
-	sort.Ints(terms)
-	indexID := "index_" + strconv.Itoa(*block)
-	index := NewInvertedIndex(indexID, Idx.OutputDir, Idx.WorkingDir)
-	err := index.OpenWriter()
-	if err != nil {
-		return err
-	}
-	Idx.IntermediateIndices = append(Idx.IntermediateIndices, indexID)
-	for _, term := range terms {
-		sort.Ints(termToPostingMap[term])
-		index.AppendPostingList(term, termToPostingMap[term])
-	}
-	*block += 1
-	err = index.Close()
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-func (Idx *DynamicIndex) SpimiParseOSMNode(node datastructure.Node) [][]int {
-	termDocPairs := [][]int{}
-
-	soup := node.Name + " " + node.Address + " " +
-		node.City + " " + node.Tipe
-	if soup == "" {
-		return termDocPairs
-	}
-
-	words := sastrawi.Tokenize(soup)
-	Idx.DocWordCount[node.ID] = len(words)
-	for _, word := range words {
-		tokenizedWord := pkg.Stemmer.Stem(word)
-		termID := Idx.TermIDMap.GetID(tokenizedWord)
-		pair := []int{termID, node.ID}
-		termDocPairs = append(termDocPairs, pair)
-	}
-	return termDocPairs
-}
-
-func (Idx *DynamicIndex) SpimiParseOSMNodes(nodes []datastructure.Node) [][]int {
-	termDocPairs := [][]int{}
-	for _, node := range nodes {
-		termDocPairs = append(termDocPairs, Idx.SpimiParseOSMNode(node)...)
-	}
-	return termDocPairs
-}
-
-func (Idx *DynamicIndex) BuildSpellCorrectorAndNgram() error {
-	fmt.Println("")
-	bar := progressbar.NewOptions(5,
-		progressbar.OptionSetWriter(ansi.NewAnsiStdout()),
-		progressbar.OptionEnableColorCodes(true),
-		progressbar.OptionShowBytes(true),
-		progressbar.OptionSetWidth(15),
-		progressbar.OptionSetDescription("[cyan][2/2]Building Ngram..."),
-		progressbar.OptionSetTheme(progressbar.Theme{
-			Saucer:        "[green]=[reset]",
-			SaucerHead:    "[green]>[reset]",
-			SaucerPadding: " ",
-			BarStart:      "[",
-			BarEnd:        "]",
-		}))
-	fmt.Println("")
-	bar.Add(1)
-	searchNodes := []datastructure.Node{}
-	nodeIDX := 0
-
-	nodeBoundingBox := make(map[string]geo.BoundingBox)
-
-	for _, way := range Idx.IndexedData.Ways {
-		lat := make([]float64, len(way.NodeIDs))
-		lon := make([]float64, len(way.NodeIDs))
-		for i := 0; i < len(way.NodeIDs); i++ {
-			node := way.NodeIDs[i]
-			nodeLat := Idx.IndexedData.Ctr.GetNode(node).Lat
-			nodeLon := Idx.IndexedData.Ctr.GetNode(node).Lon
-			lat[i] = nodeLat
-			lon[i] = nodeLon
-		}
-
-		centerLat, centerLon, err := geo.CenterOfPolygonLatLon(lat, lon)
-		if err != nil {
-			return err
-		}
-		tagStringMap := make(map[string]string)
-		for k, v := range way.TagMap {
-			tagStringMap[Idx.IndexedData.TagIDMap.GetStr(k)] = Idx.IndexedData.TagIDMap.GetStr(v)
-
-		}
-
-		name, address, tipe, city := geo.GetNameAddressTypeFromOSMWay(tagStringMap)
-
-		if IsWayDuplicateCheck(strings.ToLower(name), lat, lon, nodeBoundingBox) {
-			// cek duplikat kalo sebelumnya ada way dengan nama sama dan posisi sama dengan way ini.
-			continue
-		}
-
-		nodeBoundingBox[strings.ToLower(name)] = geo.NewBoundingBox(lat, lon)
-
-		searchNodes = append(searchNodes, datastructure.NewNode(nodeIDX, name, centerLat,
-			centerLon, address, tipe, city))
-		nodeIDX++
-	}
-	bar.Add(1)
-
-	for _, node := range Idx.IndexedData.Nodes {
-		tagStringMap := make(map[string]string)
-		for k, v := range node.TagMap {
-			tagStringMap[Idx.IndexedData.TagIDMap.GetStr(k)] = Idx.IndexedData.TagIDMap.GetStr(v)
-		}
-		name, address, tipe, city := geo.GetNameAddressTypeFromOSNode(tagStringMap)
-		if name == "" {
-			continue
-		}
-
-		if IsNodeDuplicateCheck(strings.ToLower(name), node.Lat, node.Lon, nodeBoundingBox) {
-			// cek duplikat kalo sebelumnya ada way dengan nama sama dan posisi sama dengan node ini. gak usah set bounding box buat node.
-			continue
-		}
-
-		searchNodes = append(searchNodes, datastructure.NewNode(nodeIDX, name, node.Lat,
-			node.Lon, address, tipe, city))
-		nodeIDX++
-
-	}
-	bar.Add(1)
-
-	Idx.DocsCount = nodeIDX
-
-	tokenizedDocs := [][]string{}
-	for _, node := range searchNodes {
-
-		soup := node.Name + " " + node.Address + " " +
-			node.City + " " + node.Tipe
-
-		tokenized := sastrawi.Tokenize(soup)
-		stemmedTokens := []string{}
-		for _, token := range tokenized {
-			stemmedToken := pkg.Stemmer.Stem(token)
-			stemmedTokens = append(stemmedTokens, stemmedToken)
-		}
-		tokenizedDocs = append(tokenizedDocs, stemmedTokens)
-	}
-	bar.Add(1)
-	Idx.SpellCorrectorBuilder.Preprocessdata(tokenizedDocs)
-	bar.Add(1)
-	fmt.Println("")
-	return nil
-}
-
-type SpimiIndexMetadata struct {
-	TermIDMap    pkg.IDMap
-	DocWordCount map[int]int
-	DocsCount    int
-}
-
-func NewSpimiIndexMetadata(termIDMap pkg.IDMap, docWordCount map[int]int, docsCount int) SpimiIndexMetadata {
-	return SpimiIndexMetadata{
-		TermIDMap:    termIDMap,
-		DocWordCount: docWordCount,
-		DocsCount:    docsCount,
-	}
-}
-func (Idx *DynamicIndex) Close() error {
-	err := Idx.SaveMeta()
-	return err
-}
-
-func (Idx *DynamicIndex) SaveMeta() error {
-	// save to disk
-	SpimiMeta := NewSpimiIndexMetadata(Idx.TermIDMap, Idx.DocWordCount, Idx.DocsCount)
-	buf := new(bytes.Buffer)
-	enc := gob.NewEncoder(buf)
-	err := enc.Encode(SpimiMeta)
-	if err != nil {
-		return err
-	}
-
-	var metadataFile *os.File
-	if Idx.WorkingDir != "/" {
-		metadataFile, err = os.OpenFile(Idx.WorkingDir+"/"+Idx.OutputDir+"/"+"meta.metadata", os.O_RDWR|os.O_CREATE, 0666)
-		if err != nil {
-			return err
-		}
+	var bufferSizeFile *os.File
+	if pwd != "/" {
+		bufferSizeFile, err = os.OpenFile(pwd+"/"+Idx.DirName+"/"+Idx.IndexName+"_size.metadata", os.O_RDONLY|os.O_CREATE, 0666)
 	} else {
-		metadataFile, err = os.OpenFile(Idx.OutputDir+"/"+"meta.metadata", os.O_RDWR|os.O_CREATE, 0666)
-		if err != nil {
-			return err
-		}
+		bufferSizeFile, err = os.OpenFile(Idx.DirName+"/"+Idx.IndexName+"_size.metadata", os.O_RDONLY|os.O_CREATE, 0666)
 	}
 
-	defer metadataFile.Close()
-	err = metadataFile.Truncate(0)
 	if err != nil {
 		return err
 	}
+	defer bufferSizeFile.Close()
 
-	_, err = metadataFile.Write(buf.Bytes())
-
-	return err
-}
-
-func (Idx *DynamicIndex) LoadMeta() error {
-	var metadataFile *os.File
-	var err error
-	if Idx.WorkingDir != "/" {
-		metadataFile, err = os.OpenFile(Idx.WorkingDir+"/"+Idx.OutputDir+"/"+"meta.metadata", os.O_RDWR|os.O_CREATE, 0666)
-		if err != nil {
-			return err
-		}
-	} else {
-		metadataFile, err = os.OpenFile(Idx.OutputDir+"/"+"meta.metadata", os.O_RDWR|os.O_CREATE, 0666)
-		if err != nil {
-			return err
-		}
-	}
-
-	defer metadataFile.Close()
-	buf := make([]byte, 1024*1024*40)
-	metadataFile.Read(buf)
-	save := SpimiIndexMetadata{}
-	dec := gob.NewDecoder(bytes.NewReader(buf))
-	err = dec.Decode(&save)
+	buf := make([]byte, 100)
+	_, err = bufferSizeFile.Read(buf)
 	if err != nil {
 		return err
 	}
-	Idx.TermIDMap = save.TermIDMap
-	Idx.DocWordCount = save.DocWordCount
-	Idx.DocsCount = save.DocsCount
+	approxBufferSize := int(math.Float64frombits(binary.LittleEndian.Uint64(buf)))
+
+	buf = make([]byte, approxBufferSize)
+	_, err = metadataFile.Read(buf)
+	if err != nil {
+		return err
+	}
+	Idx.DeserializeMetadata(buf)
+
 	return nil
 }
 
-func (Idx *DynamicIndex) GetOutputDir() string {
-	return Idx.OutputDir
+func (Idx *InvertedIndex) GetPostingList(termID int) ([]int, error) {
+	postingMetadata, ok := Idx.PostingMetadata[termID]
+	if !ok {
+		return []int{}, errors.New("termID not found")
+	}
+	startPositionInIndexFile := int64(postingMetadata[0])
+	Idx.IndexFile.Seek(startPositionInIndexFile, 0)
+	buf := make([]byte, postingMetadata[2])
+	_, err := Idx.IndexFile.Read(buf)
+	if err != nil {
+		return []int{}, err
+	}
+	postingList := compress.DecodePostingList(buf)
+
+	return postingList, nil
 }
 
-func (Idx *DynamicIndex) GetDocWordCount() map[int]int {
-	return Idx.DocWordCount
+func (Idx *InvertedIndex) AppendPostingList(termID int, postingList []int) error {
+	encodedPostingList := compress.EncodePostingList(postingList)
+	startPositionInIndexFile, err := Idx.IndexFile.Seek(0, 2)
+	if err != nil {
+		return err
+	}
+	lengthInBytesOfPostingList, err := Idx.IndexFile.Write(encodedPostingList)
+	if err != nil {
+		return err
+	}
+
+	Idx.Terms = append(Idx.Terms, termID)
+
+	Idx.PostingMetadata[termID] = [3]int{int(startPositionInIndexFile), len(postingList),
+		lengthInBytesOfPostingList}
+
+	return nil
 }
 
-func (Idx *DynamicIndex) GetDocsCount() int {
-	return Idx.DocsCount
+type IndexIteratorItem struct {
+	termID      int
+	termSize    int
+	postingList []int
 }
 
-func (Idx *DynamicIndex) GetTermIDMap() pkg.IDMap {
-	return Idx.TermIDMap
+func NewIndexIteratorItem(termID int, termSize int, postingList []int) IndexIteratorItem {
+	return IndexIteratorItem{
+		termID:      termID,
+		termSize:    termSize,
+		postingList: postingList,
+	}
 }
 
-func (Idx *DynamicIndex) BuildVocabulary() {
-	Idx.TermIDMap.BuildVocabulary()
+func (tem *IndexIteratorItem) GetTermID() int {
+	return tem.termID
+}
+
+func (tem *IndexIteratorItem) GetTermSize() int {
+	return tem.termSize
+}
+
+func (tem *IndexIteratorItem) GetPostingList() []int {
+	return tem.postingList
+}
+
+type InvertedIndexIterator struct {
+	invertedIndex *InvertedIndex
+}
+
+func NewInvertedIndexIterator(idx *InvertedIndex) *InvertedIndexIterator {
+	return &InvertedIndexIterator{invertedIndex: idx}
+}
+
+// IterateInvertedIndex. iterate inverted index sorted by termID. yield termID and postinglists. O(N) where N is total number of terms in inverted index.
+func (it *InvertedIndexIterator) IterateInvertedIndex() iter.Seq2[IndexIteratorItem, error] {
+	return func(yield func(IndexIteratorItem, error) bool) {
+		for it.invertedIndex.CurrTermPosition < len(it.invertedIndex.Terms) {
+			termID := it.invertedIndex.Terms[it.invertedIndex.CurrTermPosition]
+			it.invertedIndex.CurrTermPosition += 1
+			startPosition, _, lengthInBytes := it.invertedIndex.PostingMetadata[termID][0], it.invertedIndex.PostingMetadata[termID][1], it.invertedIndex.PostingMetadata[termID][2]
+			it.invertedIndex.IndexFile.Seek(int64(startPosition), 0)
+			buf := make([]byte, lengthInBytes)
+			_, err := it.invertedIndex.IndexFile.Read(buf)
+			if err != nil {
+				yield(NewIndexIteratorItem(-1, -1, []int{}), fmt.Errorf("error when iterating inverted index: %w", err))
+				return
+			}
+
+			postingList := compress.DecodePostingList(buf)
+			item := NewIndexIteratorItem(termID, len(it.invertedIndex.Terms)+1, postingList)
+
+			if !yield(item, nil) {
+				return
+			}
+		}
+	}
+}
+
+func (Idx *InvertedIndex) ExitAndRemove() error {
+	err := Idx.Close()
+	if err != nil {
+		return err
+	}
+	err = os.Remove(Idx.IndexFilePath)
+	if err != nil {
+		return err
+	}
+	err = os.Remove(Idx.MetadataFilePath)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (Idx *InvertedIndex) GetAproximateMetadataBufferSize() int {
+	allLen := 4 * 3 // 4 byte* 3
+	termsSize := 4 * len(Idx.Terms)
+	postingMetadata := 4 * 6 * len(Idx.PostingMetadata)
+	docTermCountDict := 4 * 3 * len(Idx.DocTermCountDict)
+	return allLen + termsSize + postingMetadata + docTermCountDict + 2
+}
+
+func (Idx *InvertedIndex) SerializeMetadata() []byte {
+	approxBufferSize := Idx.GetAproximateMetadataBufferSize()
+	buf := make([]byte, approxBufferSize)
+	leftPos := 0
+
+	binary.LittleEndian.PutUint32(buf[leftPos:], uint32(len(Idx.Terms)))
+	leftPos += 4 // 32 bit
+
+	binary.LittleEndian.PutUint32(buf[leftPos:], uint32(len(Idx.PostingMetadata)))
+	leftPos += 4 // 32 bit
+
+	binary.LittleEndian.PutUint32(buf[leftPos:], uint32(len(Idx.DocTermCountDict)))
+	leftPos += 4 // 32 bit
+
+	for _, term := range Idx.Terms {
+		// kita pakai uint32bit untuk menyimpan term
+
+		binary.LittleEndian.PutUint32(buf[leftPos:], uint32(term))
+		leftPos += 4 // 32 bit
+	}
+
+	for term, val := range Idx.PostingMetadata {
+
+		binary.LittleEndian.PutUint32(buf[leftPos:], uint32(term))
+		leftPos += 4 // 32 bit
+
+		startPositionInIndexFile := val[0]    // 4 byte
+		lenPostingList := val[1]              // 4 byte
+		lengthInBytesOfPostingLists := val[2] // 4 byte
+
+		binary.LittleEndian.PutUint32(buf[leftPos:], uint32(lengthInBytesOfPostingLists))
+		leftPos += 4
+
+		binary.LittleEndian.PutUint32(buf[leftPos:], uint32(lenPostingList))
+		leftPos += 4
+
+		binary.LittleEndian.PutUint32(buf[leftPos:], uint32(startPositionInIndexFile))
+		leftPos += 4
+
+	}
+
+	for docID, termCount := range Idx.DocTermCountDict {
+		// docID = 4 byte, termCount = 4 byte
+
+		binary.LittleEndian.PutUint32(buf[leftPos:], uint32(docID))
+		leftPos += 4 // 32 bit
+
+		binary.LittleEndian.PutUint32(buf[leftPos:], uint32(termCount))
+		leftPos += 4 // 32 bit
+	}
+
+	return buf
+}
+
+// DeserializeMetadata.
+func (Idx *InvertedIndex) DeserializeMetadata(buf []byte) {
+	leftPos := 0
+
+	termCount := int(binary.LittleEndian.Uint32(buf[0:4]))
+	leftPos += 4
+
+	PostingMetadatacount := int(binary.LittleEndian.Uint32(buf[4:8]))
+	leftPos += 4
+
+	docTermCountDictCount := int(binary.LittleEndian.Uint32(buf[8:12]))
+	leftPos += 4
+
+	Idx.Terms = make([]int, termCount)
+	Idx.PostingMetadata = make(map[int][3]int)
+	Idx.DocTermCountDict = make(map[int]int)
+
+	for i := 0; i < termCount; i++ {
+
+		term := int(binary.LittleEndian.Uint32(buf[leftPos:]))
+		leftPos += 4
+		Idx.Terms[i] = term
+	}
+
+	for i := 0; i < PostingMetadatacount; i++ {
+
+		term := int(binary.LittleEndian.Uint32(buf[leftPos:]))
+		leftPos += 4
+
+		lengthInBytesOfPostingLists := int(binary.LittleEndian.Uint32(buf[leftPos:]))
+		leftPos += 4
+
+		lenPostingList := int(binary.LittleEndian.Uint32(buf[leftPos:]))
+		leftPos += 4
+
+		startPositionInIndexFile := int(binary.LittleEndian.Uint32(buf[leftPos:]))
+		leftPos += 4
+
+		Idx.PostingMetadata[term] = [3]int{startPositionInIndexFile, lenPostingList, lengthInBytesOfPostingLists}
+	}
+
+	for i := 0; i < docTermCountDictCount; i++ {
+
+		docID := int(binary.LittleEndian.Uint32(buf[leftPos:]))
+		leftPos += 4
+
+		termCount := int(binary.LittleEndian.Uint32(buf[leftPos:]))
+		leftPos += 4
+
+		Idx.DocTermCountDict[docID] = termCount
+	}
 }

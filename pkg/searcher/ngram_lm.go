@@ -3,9 +3,11 @@ package searcher
 import (
 	"bytes"
 	"encoding/gob"
+	"fmt"
 	"math"
 	"os"
 	"osm-search/pkg"
+	"sync"
 )
 
 const (
@@ -15,11 +17,11 @@ const (
 )
 
 type NGramLanguageModel struct {
-	Vocabulary []int
-	WordCounts map[int]int
-	TermIDMap  pkg.IDMap
+	vocabulary []int
+	wordCounts map[int]int
+	termIDMap  *pkg.IDMap
 	Data       NGramData
-	OutputDir  string
+	outputDir  string
 }
 
 type NGramData struct {
@@ -32,38 +34,41 @@ type NGramData struct {
 
 func NewNGramLanguageModel(outDir string) *NGramLanguageModel {
 	return &NGramLanguageModel{
-		Vocabulary: make([]int, 0),
-		WordCounts: make(map[int]int),
-		TermIDMap:  pkg.NewIDMap(),
-		OutputDir:  outDir,
+		vocabulary: make([]int, 0),
+		wordCounts: make(map[int]int),
+		outputDir:  outDir,
 	}
 }
 
-func (lm *NGramLanguageModel) AddWord(word int) {
-	lm.WordCounts[word]++
-	if _, ok := lm.WordCounts[word]; !ok {
-		lm.Vocabulary = append(lm.Vocabulary, word)
+func (lm *NGramLanguageModel) SetTermIDMap(termIDMap *pkg.IDMap) {
+	lm.termIDMap = termIDMap
+}
+
+func (lm *NGramLanguageModel) addWord(word int) {
+	lm.wordCounts[word]++
+	if _, ok := lm.wordCounts[word]; !ok {
+		lm.vocabulary = append(lm.vocabulary, word)
 	}
 }
 
-// CountWords. menghitung frekuensi setiap kata dalam corpus
-func (lm *NGramLanguageModel) CountWords(tokenizedDocs [][]string) {
+// countWords. menghitung frekuensi setiap kata dalam corpus
+func (lm *NGramLanguageModel) countWords(tokenizedDocs [][]string) {
 	for _, doc := range tokenizedDocs {
 
 		for _, word := range doc {
-			wordID := lm.TermIDMap.GetID(word)
-			lm.AddWord(wordID)
+			wordID := lm.termIDMap.GetID(word)
+			lm.addWord(wordID)
 		}
 	}
 }
 
 /*
-GetWordsWithNPlusFreq. return kata-kata yang memiliki frekuensi lebih dari countThresold. kata yang kurang dari thresold jadi <UNK>
+getWordsWithNPlusFreq. return kata-kata yang memiliki frekuensi lebih dari countThresold. kata yang kurang dari thresold jadi <UNK>
 */
-func (lm *NGramLanguageModel) GetWordsWithNPlusFreq(tokenizedDocs [][]string, countThresold int) []int {
-	lm.CountWords(tokenizedDocs)
+func (lm *NGramLanguageModel) getWordsWithNPlusFreq(tokenizedDocs [][]string, countThresold int) []int {
+	lm.countWords(tokenizedDocs)
 	closedWords := make([]int, 0)
-	for word, count := range lm.WordCounts {
+	for word, count := range lm.wordCounts {
 		if count >= countThresold {
 			closedWords = append(closedWords, word)
 		}
@@ -71,11 +76,11 @@ func (lm *NGramLanguageModel) GetWordsWithNPlusFreq(tokenizedDocs [][]string, co
 	return closedWords
 }
 
-// ReplaceOOVWordsWithUNK. mengganti kata-kata yang frequensinya < 2 dengan <UNK>
-func (lm *NGramLanguageModel) ReplaceOOVWordsWithUNK(tokenizedDocs [][]string, vocabulary []int) [][]int {
+// replaceOOVWordsWithUNK. mengganti kata-kata yang frequensinya < 2 dengan <UNK>
+func (lm *NGramLanguageModel) replaceOOVWordsWithUNK(tokenizedDocs [][]string, vocabulary []int) [][]int {
 	replacedTokenizedDocs := [][]int{}
 
-	unknownTokenID := lm.TermIDMap.GetID(UNKNOWN_TOKEN)
+	unknownTokenID := lm.termIDMap.GetID(UNKNOWN_TOKEN)
 	vocabSet := make(map[int]bool)
 	for _, word := range vocabulary {
 		vocabSet[word] = true
@@ -84,7 +89,7 @@ func (lm *NGramLanguageModel) ReplaceOOVWordsWithUNK(tokenizedDocs [][]string, v
 	for _, doc := range tokenizedDocs {
 		replacedDoc := []int{}
 		for _, token := range doc {
-			tokenID := lm.TermIDMap.GetID(token)
+			tokenID := lm.termIDMap.GetID(token)
 			if _, ok := vocabSet[tokenID]; ok {
 				replacedDoc = append(replacedDoc, tokenID)
 			} else {
@@ -97,19 +102,19 @@ func (lm *NGramLanguageModel) ReplaceOOVWordsWithUNK(tokenizedDocs [][]string, v
 }
 
 func (lm *NGramLanguageModel) PreProcessData(tokenizedDocs [][]string, countThresold int) [][]int {
-	lm.CountWords(tokenizedDocs)
-	vocabulary := lm.GetWordsWithNPlusFreq(tokenizedDocs, countThresold)
-	replacedTokenizedDocs := lm.ReplaceOOVWordsWithUNK(tokenizedDocs, vocabulary)
+	lm.countWords(tokenizedDocs)
+	vocabulary := lm.getWordsWithNPlusFreq(tokenizedDocs, countThresold)
+	replacedTokenizedDocs := lm.replaceOOVWordsWithUNK(tokenizedDocs, vocabulary)
 	return replacedTokenizedDocs
 }
 
-func (lm *NGramLanguageModel) CountOnegram(data [][]int) {
+func (lm *NGramLanguageModel) countOnegram(data [][]int) {
 
 	var nGrams = make(map[int]int)
 
 	for _, doc := range data {
 
-		doc = lm.AddStartEndToken(doc, 1)
+		doc = lm.addStartEndToken(doc, 1)
 
 		m := len(doc)
 		for i := 0; i < m; i++ {
@@ -128,13 +133,13 @@ func (lm *NGramLanguageModel) CountOnegram(data [][]int) {
 	lm.Data.OneGramCount = nGrams
 }
 
-func (lm *NGramLanguageModel) CountTwogram(data [][]int) {
+func (lm *NGramLanguageModel) countTwogram(data [][]int) {
 
 	var nGrams = make(map[[2]int]int)
 
 	for _, doc := range data {
 
-		doc = lm.AddStartEndToken(doc, 2)
+		doc = lm.addStartEndToken(doc, 2)
 
 		m := len(doc) - 2 + 1
 		for i := 0; i < m; i++ {
@@ -153,13 +158,13 @@ func (lm *NGramLanguageModel) CountTwogram(data [][]int) {
 	lm.Data.TwoGramCount = nGrams
 }
 
-func (lm *NGramLanguageModel) CountThreegram(data [][]int) {
+func (lm *NGramLanguageModel) countThreegram(data [][]int) {
 
 	var nGrams = make(map[[3]int]int)
 
 	for _, doc := range data {
 
-		doc = lm.AddStartEndToken(doc, 3)
+		doc = lm.addStartEndToken(doc, 3)
 
 		m := len(doc) - 3 + 1
 		for i := 0; i < m; i++ {
@@ -178,13 +183,13 @@ func (lm *NGramLanguageModel) CountThreegram(data [][]int) {
 	lm.Data.ThreeGramCount = nGrams
 }
 
-func (lm *NGramLanguageModel) CountFourgram(data [][]int) {
+func (lm *NGramLanguageModel) countFourgram(data [][]int) {
 
 	var nGrams = make(map[[4]int]int)
 
 	for _, doc := range data {
 
-		doc = lm.AddStartEndToken(doc, 4)
+		doc = lm.addStartEndToken(doc, 4)
 
 		m := len(doc) - 4 + 1
 		for i := 0; i < m; i++ {
@@ -345,17 +350,36 @@ func (lm *NGramLanguageModel) StupidBackoff(nextWord int, prevNgrams []int, n in
 // MakeCountMatrix. menghitung frekuensi n-gram dari data
 func (lm *NGramLanguageModel) MakeCountMatrix(data [][]int) {
 
-	lm.CountOnegram(data)
-	lm.CountTwogram(data)
-	lm.CountThreegram(data)
-	lm.CountFourgram(data)
+	var wg sync.WaitGroup
+	wg.Add(4)
+	go func() {
+		defer wg.Done()
+		lm.countOnegram(data)
+	}()
+
+	go func() {
+		defer wg.Done()
+		lm.countTwogram(data)
+	}()
+
+	go func() {
+		defer wg.Done()
+		lm.countThreegram(data)
+	}()
+
+	go func() {
+		defer wg.Done()
+		lm.countFourgram(data)
+	}()
+	wg.Wait()
+
 }
 
-// AddStartEndToken. menambahkan token <s> sebanyak n dan </s> pada awal dan akhir dokumen
-func (lm *NGramLanguageModel) AddStartEndToken(doc []int, n int) []int {
+// addStartEndToken. menambahkan token <s> sebanyak n dan </s> pada awal dan akhir dokumen
+func (lm *NGramLanguageModel) addStartEndToken(doc []int, n int) []int {
 	startToken := []int{}
-	startTokenID := lm.TermIDMap.GetID(START_TOKEN)
-	endTokenID := lm.TermIDMap.GetID(END_TOKEN)
+	startTokenID := lm.termIDMap.GetID(START_TOKEN)
+	endTokenID := lm.termIDMap.GetID(END_TOKEN)
 
 	for i := 0; i < n; i++ {
 		startToken = append(startToken, startTokenID)
@@ -366,12 +390,14 @@ func (lm *NGramLanguageModel) AddStartEndToken(doc []int, n int) []int {
 }
 
 func (lm *NGramLanguageModel) SaveNGramData() error {
+
 	buf := new(bytes.Buffer)
 	enc := gob.NewEncoder(buf)
 	err := enc.Encode(lm.Data)
 	if err != nil {
-		return err
+		return fmt.Errorf("error when marshalling metadata: %w", err)
 	}
+
 	pwd, err := os.Getwd()
 	if err != nil {
 		return err
@@ -380,18 +406,18 @@ func (lm *NGramLanguageModel) SaveNGramData() error {
 	var ngramFile *os.File
 
 	if pwd != "/" {
-		ngramFile, err = os.OpenFile(pwd+"/"+lm.OutputDir+"/"+"ngram.index", os.O_RDWR|os.O_CREATE, 0666)
+		ngramFile, err = os.OpenFile(pwd+"/"+lm.outputDir+"/"+"ngram.index", os.O_RDWR|os.O_CREATE, 0666)
 		if err != nil {
 			return err
 		}
 	} else {
-		ngramFile, err = os.OpenFile(lm.OutputDir+"/"+"ngram.index", os.O_RDWR|os.O_CREATE, 0666)
+		ngramFile, err = os.OpenFile(lm.outputDir+"/"+"ngram.index", os.O_RDWR|os.O_CREATE, 0666)
 		if err != nil {
 			return err
 		}
 	}
-
 	defer ngramFile.Close()
+
 	err = ngramFile.Truncate(0)
 	if err != nil {
 		return err
@@ -409,25 +435,28 @@ func (lm *NGramLanguageModel) LoadNGramData() error {
 	}
 	var ngramFile *os.File
 	if pwd != "/" {
-		ngramFile, err = os.OpenFile(pwd+"/"+lm.OutputDir+"/"+"ngram.index", os.O_RDONLY|os.O_CREATE, 0666)
+		ngramFile, err = os.OpenFile(pwd+"/"+lm.outputDir+"/"+"ngram.index", os.O_RDONLY|os.O_CREATE, 0666)
 		if err != nil {
 			return err
 		}
 	} else {
-		ngramFile, err = os.OpenFile(lm.OutputDir+"/"+"ngram.index", os.O_RDONLY|os.O_CREATE, 0666)
+		ngramFile, err = os.OpenFile(lm.outputDir+"/"+"ngram.index", os.O_RDONLY|os.O_CREATE, 0666)
 		if err != nil {
 			return err
 		}
 	}
 	defer ngramFile.Close()
 
-	buf := make([]byte, 1024*1024*10)
+	stat, err := os.Stat(ngramFile.Name())
+	if err != nil {
+		return fmt.Errorf("error when getting file stat: %w", err)
+	}
+	buf := make([]byte, stat.Size()*2)
 	ngramFile.Read(buf)
 	dec := gob.NewDecoder(bytes.NewReader(buf))
 	err = dec.Decode(&lm.Data)
 	if err != nil {
-
-		return err
+		return fmt.Errorf("error when unmarshalling metadata ngram: %w", err)
 	}
 
 	return nil

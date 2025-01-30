@@ -2,6 +2,7 @@ package geo
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"osm-search/pkg"
@@ -13,10 +14,10 @@ import (
 )
 
 type NodeMapContainer struct {
-	nodeMap map[int]*osm.Node
+	nodeMap map[int64]*osm.Node
 }
 
-func (nm *NodeMapContainer) GetNode(id int) *osm.Node {
+func (nm *NodeMapContainer) GetNode(id int64) *osm.Node {
 	return nm.nodeMap[id]
 }
 
@@ -51,11 +52,12 @@ var ValidNodeSearchTag = map[string]bool{
 }
 
 type OSMWay struct {
-	NodeIDs []int
+	ID      int64
+	NodeIDs []int64
 	TagMap  map[int]int
 }
 
-func NewOSMWay(nodeIDs []int, tagMap map[int]int) OSMWay {
+func NewOSMWay(id int64, nodeIDs []int64, tagMap map[int]int) OSMWay {
 	return OSMWay{
 		NodeIDs: nodeIDs,
 		TagMap:  tagMap,
@@ -63,12 +65,13 @@ func NewOSMWay(nodeIDs []int, tagMap map[int]int) OSMWay {
 }
 
 type OSMNode struct {
+	ID     int64
 	Lat    float64
 	Lon    float64
 	TagMap map[int]int
 }
 
-func NewOSMNode(lat float64, lon float64, tagMap map[int]int) OSMNode {
+func NewOSMNode(id int64, lat float64, lon float64, tagMap map[int]int) OSMNode {
 	return OSMNode{
 		Lat:    lat,
 		Lon:    lon,
@@ -76,13 +79,13 @@ func NewOSMNode(lat float64, lon float64, tagMap map[int]int) OSMNode {
 	}
 }
 
-func ParseOSM(mapfile string) ([]OSMWay, []OSMNode, NodeMapContainer, pkg.IDMap, error) {
-	var TagIDMap pkg.IDMap = pkg.NewIDMap()
+func ParseOSM(mapfile string) ([]OSMWay, []OSMNode, NodeMapContainer, *pkg.IDMap, error) {
+	var TagIDMap *pkg.IDMap = pkg.NewIDMap()
 
 	f, err := os.Open(mapfile)
 
 	if err != nil {
-		return []OSMWay{}, []OSMNode{}, NodeMapContainer{}, pkg.IDMap{}, err
+		return []OSMWay{}, []OSMNode{}, NodeMapContainer{}, &pkg.IDMap{}, err
 	}
 
 	defer f.Close()
@@ -93,7 +96,7 @@ func ParseOSM(mapfile string) ([]OSMWay, []OSMNode, NodeMapContainer, pkg.IDMap,
 	count := 0
 
 	ctr := NodeMapContainer{
-		nodeMap: make(map[int]*osm.Node),
+		nodeMap: make(map[int64]*osm.Node),
 	}
 
 	ways := []OSMWay{}
@@ -135,12 +138,12 @@ func ParseOSM(mapfile string) ([]OSMWay, []OSMNode, NodeMapContainer, pkg.IDMap,
 		}
 
 		if tipe == osm.TypeWay {
-			nodeIDs := []int{}
+			nodeIDs := []int64{}
 			for _, node := range o.(*osm.Way).Nodes {
 				wayNodesMap[node.ID] = true
-				nodeIDs = append(nodeIDs, int(node.ID))
+				nodeIDs = append(nodeIDs, int64(node.ID))
 			}
-			way := NewOSMWay(nodeIDs, myTag)
+			way := NewOSMWay(int64(o.(*osm.Way).ID), nodeIDs, myTag)
 			ways = append(ways, way)
 		}
 		count++
@@ -149,7 +152,7 @@ func ParseOSM(mapfile string) ([]OSMWay, []OSMNode, NodeMapContainer, pkg.IDMap,
 	bar.Add(1)
 	f.Seek(0, io.SeekStart)
 	if err != nil {
-		return []OSMWay{}, []OSMNode{}, NodeMapContainer{}, pkg.IDMap{}, err
+		return []OSMWay{}, []OSMNode{}, NodeMapContainer{}, &pkg.IDMap{}, err
 	}
 
 	scanner = osmpbf.New(context.Background(), f, 3)
@@ -161,7 +164,7 @@ func ParseOSM(mapfile string) ([]OSMWay, []OSMNode, NodeMapContainer, pkg.IDMap,
 		if o.ObjectID().Type() == osm.TypeNode {
 			node := o.(*osm.Node)
 			if _, ok := wayNodesMap[node.ID]; ok {
-				ctr.nodeMap[int(o.(*osm.Node).ID)] = o.(*osm.Node)
+				ctr.nodeMap[int64(o.(*osm.Node).ID)] = o.(*osm.Node)
 			}
 			name, _, _, _ := GetNameAddressTypeFromOSNode(node.TagMap())
 			if name == "" {
@@ -176,7 +179,7 @@ func ParseOSM(mapfile string) ([]OSMWay, []OSMNode, NodeMapContainer, pkg.IDMap,
 				for k, v := range tag {
 					myTag[TagIDMap.GetID(k)] = TagIDMap.GetID(v)
 				}
-				onlyOsmNodes = append(onlyOsmNodes, NewOSMNode(lat, lon, myTag))
+				onlyOsmNodes = append(onlyOsmNodes, NewOSMNode(int64(o.(*osm.Node).ID), lat, lon, myTag))
 			}
 		}
 	}
@@ -184,19 +187,32 @@ func ParseOSM(mapfile string) ([]OSMWay, []OSMNode, NodeMapContainer, pkg.IDMap,
 
 	scanErr := scanner.Err()
 	if scanErr != nil {
-		return []OSMWay{}, []OSMNode{}, NodeMapContainer{}, pkg.IDMap{}, err
+		return []OSMWay{}, []OSMNode{}, NodeMapContainer{}, &pkg.IDMap{}, err
 	}
 
 	return ways, onlyOsmNodes, ctr, TagIDMap, nil
 }
 
+// TODO: ngikutin Nominatim, infer dari administrative boundary & nearest street dari osm way.
 func GetNameAddressTypeFromOSMWay(tag map[string]string) (string, string, string, string) {
 	name := tag["name"]
+	shortName, ok := tag["short_name"]
+	if ok {
+		name = fmt.Sprintf("%s (%s)", name, shortName)
+	}
+
 	address := ""
 	fullAdress, ok := tag["addr:full"]
 	if ok {
 		address += fullAdress + ", "
 	}
+
+	houseNumber, ok := tag["addr:housenumber"]
+
+	if ok {
+		address += houseNumber + ", "
+	}
+
 	street, ok := tag["addr:street"]
 	if ok {
 		address += street + ", "

@@ -16,20 +16,23 @@ type IDMap struct {
 	Vocabulary map[string]bool
 }
 
-func NewIDMap() IDMap {
-	return IDMap{
+func NewIDMap() *IDMap {
+	return &IDMap{
 		StrToID: make(map[string]int),
 		IDToStr: make(map[int]string),
 	}
 }
 
 func (idMap *IDMap) GetID(str string) int {
+
 	if id, ok := idMap.StrToID[str]; ok {
 		return id
 	}
+
 	id := len(idMap.StrToID)
 	idMap.StrToID[str] = id
 	idMap.IDToStr[id] = str
+
 	return id
 }
 

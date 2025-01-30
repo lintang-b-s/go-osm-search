@@ -56,28 +56,7 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	buildSpellCorrector := func() error {
-		var errChan = make(chan error, 1)
-
-		go func() {
-			errChan <- invertedIndex.BuildSpellCorrectorAndNgram()
-		}()
-
-		select {
-		case <-ctx.Done():
-			<-errChan
-			return nil
-		case err = <-errChan:
-			return err
-		}
-	}
-
-	c := make(chan error, 1)
-	go func() {
-		c <- buildSpellCorrector()
-	}()
-
-	err = invertedIndex.SpimiBatchIndex()
+	nodeIDMap, err := invertedIndex.SpimiBatchIndex(ctx)
 	if err != nil {
 		panic(err)
 	}
@@ -89,11 +68,12 @@ func main() {
 		}
 	}
 
-	if err = <-c; err != nil {
-		cleanup()
+	defer cleanup()
+
+	ngramLM.SetTermIDMap(invertedIndex.GetTermIDMap())
+	err = invertedIndex.BuildSpellCorrectorAndNgram(nodeIDMap)
+	if err != nil {
 		panic(err)
 	}
-
-	cleanup()
-
 }
+

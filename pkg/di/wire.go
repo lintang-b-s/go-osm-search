@@ -51,5 +51,6 @@ func NewSearchAPIServer(ctx context.Context, log *zap.Logger,
 }
 
 func InitializeSearcherService() (*searchHttp.Server, func(), error) {
+
 	panic(wire.Build(searcherSet))
 }

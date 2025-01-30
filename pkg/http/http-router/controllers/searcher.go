@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"osm-search/pkg/datastructure"
 	helper "osm-search/pkg/http/http-router/router-helper"
 	"regexp"
 
@@ -38,11 +39,37 @@ func (api *searchAPI) Routes(group *helper.RouteGroup) {
 	group.POST("/autocomplete", api.autocomplete)
 }
 
-type searchRequest struct {
-	Query string `json:"query" validate:"required"`
-	TopK  int    `json:"top_k" validate:"required,min=1,max=100"`
+type errorResponse struct {
+	Error struct {
+		Code    string `json:"code"`
+		Message string `json:"message"`
+	} `json:"error"`
 }
 
+// searchRequest model info
+// @Description request body for full text search.
+type searchRequest struct {
+	Query string `json:"query" validate:"required"`               // query entered by the user.
+	TopK  int    `json:"top_k" validate:"required,min=1,max=100"` // the number of relevant documents you want to display in the full text search results.
+}
+
+// searchResponse model info
+// @Description response body untuk hasil full text search.
+type searchResponse struct {
+	Data []datastructure.Node `json:"data"` // list of osm objects that are relevant to the query given by the user.
+}
+
+// search
+// @Summary search operation to find osm objects relevant to the query given by the user. Support spelling correction.
+// @Description search operation to find osm objects relevant to the query given by the user. Support spelling correction.
+// @Tags search
+// @Param body body searchRequest true
+// @Accept application/json
+// @Produce application/json
+// @Router /api/search [post]
+// @Success 200 {object} searchResponse
+// @Failure 400 {object} errorResponse
+// @Failure 500 {object} errorResponse
 func (api *searchAPI) search(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 	var request searchRequest
 	err := json.NewDecoder(r.Body).Decode(&request)
@@ -88,6 +115,17 @@ type autoCompleteRequest struct {
 	Query string `json:"query" validate:"required"`
 }
 
+// search
+// @Summary autocomplete operation allows users to search for osm objects based on the prefix of the query.
+// @Description autocomplete operation allows users to search for osm objects based on the prefix of the query.
+// @Tags search
+// @Param body body autoCompleteRequest true
+// @Accept application/json
+// @Produce application/json
+// @Router /api/search [post]
+// @Success 200 {object} searchResponse
+// @Failure 400 {object} errorResponse
+// @Failure 500 {object} errorResponse
 func (api *searchAPI) autocomplete(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 	var request autoCompleteRequest
 	err := json.NewDecoder(r.Body).Decode(&request)

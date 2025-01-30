@@ -32,7 +32,7 @@ type SpellCorrector struct {
 	NGram          NgramLM
 	CorpusTermsFST *vellum.FST
 	Data           [][]int
-	TermIDMap      pkg.IDMap
+	TermIDMap      *pkg.IDMap
 }
 
 func NewSpellCorrector(ngram NgramLM) *SpellCorrector {
@@ -69,7 +69,7 @@ func (sc *SpellCorrector) BuildFiniteStateTransducerSortedTerms(sortedTerms []st
 	return nil
 }
 
-func (sc *SpellCorrector) InitializeSpellCorrector(sortedTerms []string, termIDMap pkg.IDMap) error {
+func (sc *SpellCorrector) InitializeSpellCorrector(sortedTerms []string, termIDMap *pkg.IDMap) error {
 	sc.TermIDMap = termIDMap
 	sc.BuildFiniteStateTransducerSortedTerms(sortedTerms)
 	err := sc.NGram.LoadNGramData()
@@ -165,11 +165,12 @@ func (sc SpellCorrector) GetMatchedWordBasedOnPrefix(prefixWord string) ([]int, 
 	if err != nil {
 		return []int{}, fmt.Errorf("error when executing regex automaton: %w", err)
 	}
-	// searcher, err :=sc.CorpusTermsFST.Iterator()
+
 	matchedWordCandidates := []int{}
 	for err == nil {
 
 		key, _ := fstIt.Current()
+
 		matchedWordCandidates = append(matchedWordCandidates, sc.TermIDMap.GetID(string(key)))
 
 		err = fstIt.Next()
@@ -221,3 +222,4 @@ func (sc *SpellCorrector) GetMatchedWordsAutocomplete(allQueryCandidates [][]int
 
 	return matchedQuery, nil
 }
+

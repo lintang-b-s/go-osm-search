@@ -33,7 +33,8 @@ func NewMergeKArrayIterator(indexes []*InvertedIndex) *MergeKArrayIterator {
 	}
 }
 
-func (it *MergeKArrayIterator) mergeKArray() iter.Seq2[heapMergeOutput, error] {
+// mergeKSortedArray. merge k inverted index sorted by terms into one inverted index iterator. yield term & its postings lists in sorted order by termID from each inverted index. O(NlogK) where N is total number of terms in all inverted indexes.
+func (it *MergeKArrayIterator) mergeKSortedArray() iter.Seq2[heapMergeOutput, error] {
 	return func(yield func(heapMergeOutput, error) bool) {
 		pq := datastructure.NewMinPriorityQueue[datastructure.HeapMergeItem, int]()
 		heap.Init(pq)
@@ -59,7 +60,6 @@ func (it *MergeKArrayIterator) mergeKArray() iter.Seq2[heapMergeOutput, error] {
 			currHeapMergeItem := datastructure.NewHeapMergeItem(termID, []int{i, 0, termSize}, item.GetPostingList())
 			pqItem := datastructure.NewPriorityQueueNode[datastructure.HeapMergeItem](termID, currHeapMergeItem)
 			heap.Push(pq, pqItem)
-
 		}
 
 		for pq.Len() > 0 {

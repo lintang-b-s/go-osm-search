@@ -7,6 +7,7 @@ import (
 	"math"
 	"osm-search/pkg/datastructure"
 	"strconv"
+	"sync"
 
 	"go.etcd.io/bbolt"
 )
@@ -17,17 +18,49 @@ const (
 
 type KVDB struct {
 	db *bbolt.DB
+	sync.Mutex
 }
 
 func NewKVDB(db *bbolt.DB) *KVDB {
 
-	return &KVDB{db}
+	return &KVDB{db,
+		sync.Mutex{}}
 }
 
+// save osm objects ks boltDB. batching
 func (db *KVDB) SaveDocs(nodes []datastructure.Node) error {
+	db.Lock()
+	defer db.Unlock()
+	return db.db.Batch(func(tx *bbolt.Tx) error {
+		for _, node := range nodes {
+			err := db.Set(node, tx)
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
 
+func (db *KVDB) Set(node datastructure.Node, tx *bbolt.Tx) error {
+
+	nodeBytes, err := serializeNode(node)
+	if err != nil {
+		return err
+	}
+	b := tx.Bucket([]byte(BBOLTDB_BUCKET))
+	err = b.Put([]byte(strconv.Itoa(node.ID)), nodeBytes)
+	if err != nil {
+		return err
+	}
+	return nil // harus return nil , kalau return err kena rollback txn-nya
+}
+
+func (db *KVDB) SaveDocsNoBatch(nodes []datastructure.Node) error {
+	db.Lock()
+	defer db.Unlock()
 	for _, node := range nodes {
-		err := db.Set(node)
+		err := db.setNoBatch(node)
 		if err != nil {
 			return err
 		}
@@ -35,10 +68,10 @@ func (db *KVDB) SaveDocs(nodes []datastructure.Node) error {
 	return nil
 }
 
-func (db *KVDB) Set(node datastructure.Node) error {
+func (db *KVDB) setNoBatch(node datastructure.Node) error {
 
 	return db.db.Update(func(tx *bbolt.Tx) error {
-		nodeBytes, err := SerializeNode(node)
+		nodeBytes, err := serializeNode(node)
 		if err != nil {
 			return err
 		}
@@ -52,9 +85,7 @@ func (db *KVDB) Set(node datastructure.Node) error {
 }
 
 func (db *KVDB) GetDoc(id int) (node datastructure.Node, err error) {
-	if id > 1200000 {
-		fmt.Print("tes")
-	}
+
 	db.db.View(func(tx *bbolt.Tx) error {
 		b := tx.Bucket([]byte(BBOLTDB_BUCKET))
 		nodeBytes := b.Get([]byte(strconv.Itoa(id)))
@@ -62,7 +93,7 @@ func (db *KVDB) GetDoc(id int) (node datastructure.Node, err error) {
 			err = fmt.Errorf("document with docID: %d not found", id)
 			return nil
 		}
-		node, err = DeserializeNode(nodeBytes)
+		node, err = deserializeNode(nodeBytes)
 		return nil
 	})
 	return
@@ -115,7 +146,7 @@ func GetDocSize(doc datastructure.Node) int {
 		4 + len([]byte(doc.City))
 }
 
-func SerializeNode(node datastructure.Node) ([]byte, error) {
+func serializeNode(node datastructure.Node) ([]byte, error) {
 
 	bb := bytes.NewBuffer(make([]byte, GetDocSize(node)))
 
@@ -144,7 +175,7 @@ func SerializeNode(node datastructure.Node) ([]byte, error) {
 	return bb.Bytes(), nil
 }
 
-func DeserializeNode(buf []byte) (datastructure.Node, error) {
+func deserializeNode(buf []byte) (datastructure.Node, error) {
 	bb := bytes.NewBuffer(buf)
 	node := datastructure.Node{}
 	leftPos := 0
