@@ -1,7 +1,7 @@
 package datastructure
 
 type HeapMergeItem struct {
-	Metadata  []int
+	Metadata []int
 	TermID   int
 	Postings []int
 }
@@ -15,7 +15,7 @@ func NewHeapMergeItem(termID int, metadata []int, postings []int) HeapMergeItem 
 }
 
 type Item interface {
-	int | HeapMergeItem
+	int | HeapMergeItem | RtreeLeaf[OSMObject]
 }
 
 type Rank interface {
@@ -32,7 +32,6 @@ func (pq *PriorityQueueNode[Item, Rank]) GetRank() Rank {
 	return pq.rank
 }
 
-
 func (pq *PriorityQueueNode[Item, Rank]) GetItem() Item {
 	return pq.item
 }
@@ -40,7 +39,6 @@ func (pq *PriorityQueueNode[Item, Rank]) GetItem() Item {
 func (pq *PriorityQueueNode[Item, Rank]) GetIndex() int {
 	return pq.index
 }
-
 
 func NewPriorityQueueNode[T Item, G Rank](rank G, item T) *PriorityQueueNode[T, G] {
 	return &PriorityQueueNode[T, G]{rank: rank, item: item}
@@ -82,9 +80,7 @@ func (pq *priorityQueue[Item, Rank]) Pop() interface{} {
 	return no
 }
 
-
-
-//  Min Priority queue
+// Min Priority queue
 type minPriorityQueue[T Item, G Rank] []*PriorityQueueNode[T, G]
 
 func NewMinPriorityQueue[T Item, G Rank]() *minPriorityQueue[T, G] {

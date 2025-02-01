@@ -42,16 +42,15 @@ type BboltDBI interface {
 // https://nlp.stanford.edu/IR-book/pdf/04const.pdf (4.3 Single-pass in-memory indexing)
 type DynamicIndex struct {
 	TermIDMap                 *pkg.IDMap
-	WorkingDir                string
-	IntermediateIndices       []string
-	InMemoryIndices           map[int][]int
-	MaxDynamicPostingListSize int
-	DocWordCount              map[int]int
-	OutputDir                 string
-	DocsCount                 int
-	SpellCorrectorBuilder     SpellCorrectorI
+	workingDir                string
+	intermediateIndices       []string
+	maxDynamicPostingListSize int
+	docWordCount              map[int]int
+	outputDir                 string
+	docsCount                 int
+	spellCorrectorBuilder     SpellCorrectorI
 	IndexedData               IndexedData
-	DocumentStore             BboltDBI //DocumentStoreI
+	documentStore             BboltDBI //DocumentStoreI
 }
 
 type IndexedData struct {
@@ -82,16 +81,15 @@ func NewDynamicIndex(outputDir string, maxPostingListSize int,
 	}
 	idx := &DynamicIndex{
 		TermIDMap:                 pkg.NewIDMap(),
-		IntermediateIndices:       []string{},
-		WorkingDir:                pwd,
-		InMemoryIndices:           make(map[int][]int),
-		MaxDynamicPostingListSize: maxPostingListSize,
-		DocWordCount:              make(map[int]int),
-		OutputDir:                 outputDir,
-		DocsCount:                 0,
-		SpellCorrectorBuilder:     spell,
+		intermediateIndices:       []string{},
+		workingDir:                pwd,
+		maxDynamicPostingListSize: maxPostingListSize,
+		docWordCount:              make(map[int]int),
+		outputDir:                 outputDir,
+		docsCount:                 0,
+		spellCorrectorBuilder:     spell,
 		IndexedData:               indexedData,
-		DocumentStore:             boltDB,
+		documentStore:             boltDB,
 	}
 	if server {
 		err := idx.LoadMeta()
@@ -103,6 +101,8 @@ func NewDynamicIndex(outputDir string, maxPostingListSize int,
 	return idx, nil
 }
 
+// SpimiBatchIndex a function to create multiple inverted index segments from osm objects and 
+// then merge all of those segments into one merged inverted index using a single-pass-in-memory indexing algorithm
 func (Idx *DynamicIndex) SpimiBatchIndex(ctx context.Context) (map[int64]int, error) {
 	var batchingLock sync.Mutex // buat lock block & nodeIDx.
 	var nodeIDMap = make(map[int64]int)
@@ -191,7 +191,7 @@ func (Idx *DynamicIndex) SpimiBatchIndex(ctx context.Context) (map[int64]int, er
 					return
 				}
 
-				err = Idx.DocumentStore.SaveDocs(searchNodes)
+				err = Idx.documentStore.SaveDocs(searchNodes)
 				if err != nil {
 					indexingRes <- IndexingResults{Error: err}
 					return
@@ -208,7 +208,7 @@ func (Idx *DynamicIndex) SpimiBatchIndex(ctx context.Context) (map[int64]int, er
 				return
 			}
 
-			err = Idx.DocumentStore.SaveDocs(searchNodes)
+			err = Idx.documentStore.SaveDocs(searchNodes)
 			if err != nil {
 				indexingRes <- IndexingResults{Error: err}
 				return
@@ -290,7 +290,7 @@ func (Idx *DynamicIndex) SpimiBatchIndex(ctx context.Context) (map[int64]int, er
 					indexingRes <- IndexingResults{Error: err}
 					return
 				}
-				err = Idx.DocumentStore.SaveDocs(searchNodes)
+				err = Idx.documentStore.SaveDocs(searchNodes)
 				if err != nil {
 					indexingRes <- IndexingResults{Error: err}
 					return
@@ -305,7 +305,7 @@ func (Idx *DynamicIndex) SpimiBatchIndex(ctx context.Context) (map[int64]int, er
 				indexingRes <- IndexingResults{Error: err}
 				return
 			}
-			err = Idx.DocumentStore.SaveDocs(searchNodes)
+			err = Idx.documentStore.SaveDocs(searchNodes)
 			if err != nil {
 				indexingRes <- IndexingResults{Error: err}
 				return
@@ -386,13 +386,13 @@ func (Idx *DynamicIndex) SpimiBatchIndex(ctx context.Context) (map[int64]int, er
 		fmt.Println("")
 	}
 
-	Idx.DocsCount = nodeIDX
+	Idx.docsCount = nodeIDX
 
-	// merge semua inverted indexes di IntermediateIndices ke merged_index.
-	mergedIndex := NewInvertedIndex("merged_index", Idx.OutputDir, Idx.WorkingDir)
+	// merge semua inverted indexes di intermediateIndices ke merged_index.
+	mergedIndex := NewInvertedIndex("merged_index", Idx.outputDir, Idx.workingDir)
 	indices := []*InvertedIndex{}
-	for _, indexID := range Idx.IntermediateIndices {
-		index := NewInvertedIndex(indexID, Idx.OutputDir, Idx.WorkingDir)
+	for _, indexID := range Idx.intermediateIndices {
+		index := NewInvertedIndex(indexID, Idx.outputDir, Idx.workingDir)
 		err := index.OpenReader()
 		if err != nil {
 			return nil, err
@@ -454,7 +454,7 @@ func IsNodeDuplicateCheck(name string, lats, lon float64, nodeBoundingBox map[st
 	return contain
 }
 
-// Merge. repeat the join of k inverted indices, writing the list of posts for each termID to the join index.
+// Merge. merge k inverted indexes into 1 merged index.
 func (Idx *DynamicIndex) Merge(indices []*InvertedIndex, mergedIndex *InvertedIndex) error {
 	lastTerm, lastPosting := -1, []int{}
 	mergeKArrayIterator := NewMergeKArrayIterator(indices)
@@ -490,6 +490,7 @@ func (Idx *DynamicIndex) Merge(indices []*InvertedIndex, mergedIndex *InvertedIn
 	return nil
 }
 
+// SpimiInvert is a function to invert a batch of nodes into a posting list & write it to inverted index file.
 // https://nlp.stanford.edu/IR-book/pdf/04const.pdf (Figure 4.4 Spimi-invert)
 func (Idx *DynamicIndex) SpimiInvert(nodes []datastructure.Node, block *int, lock *sync.Mutex) error {
 	postingSize := 0
@@ -515,7 +516,7 @@ func (Idx *DynamicIndex) SpimiInvert(nodes []datastructure.Node, block *int, loc
 		termToPostingMap[termID] = postingList
 		postingSize += 1
 
-		if postingSize >= Idx.MaxDynamicPostingListSize {
+		if postingSize >= Idx.maxDynamicPostingListSize {
 			postingSize = 0
 			terms := []int{}
 			for termID, _ := range termToPostingMap {
@@ -528,14 +529,14 @@ func (Idx *DynamicIndex) SpimiInvert(nodes []datastructure.Node, block *int, loc
 			*block += 1
 			lock.Unlock()
 
-			index := NewInvertedIndex(indexID, Idx.OutputDir, Idx.WorkingDir)
+			index := NewInvertedIndex(indexID, Idx.outputDir, Idx.workingDir)
 			err := index.OpenWriter()
 			if err != nil {
 				return err
 			}
 
 			lock.Lock()
-			Idx.IntermediateIndices = append(Idx.IntermediateIndices, indexID)
+			Idx.intermediateIndices = append(Idx.intermediateIndices, indexID)
 			lock.Unlock()
 			for term := range terms {
 
@@ -559,14 +560,14 @@ func (Idx *DynamicIndex) SpimiInvert(nodes []datastructure.Node, block *int, loc
 	*block += 1
 	lock.Unlock()
 
-	index := NewInvertedIndex(indexID, Idx.OutputDir, Idx.WorkingDir)
+	index := NewInvertedIndex(indexID, Idx.outputDir, Idx.workingDir)
 	err := index.OpenWriter()
 	if err != nil {
 		return err
 	}
 
 	lock.Lock()
-	Idx.IntermediateIndices = append(Idx.IntermediateIndices, indexID)
+	Idx.intermediateIndices = append(Idx.intermediateIndices, indexID)
 	lock.Unlock()
 	for _, term := range terms {
 		sort.Ints(termToPostingMap[term])
@@ -580,6 +581,7 @@ func (Idx *DynamicIndex) SpimiInvert(nodes []datastructure.Node, block *int, loc
 	return nil
 }
 
+// SpimiParseOSMNode is a function to parse an OSM node into a token stream (termID-docID pairs).
 func (Idx *DynamicIndex) SpimiParseOSMNode(node datastructure.Node, lock *sync.Mutex) [][]int {
 	termDocPairs := [][]int{}
 
@@ -591,7 +593,7 @@ func (Idx *DynamicIndex) SpimiParseOSMNode(node datastructure.Node, lock *sync.M
 
 	words := sastrawi.Tokenize(soup)
 	lock.Lock()
-	Idx.DocWordCount[node.ID] = len(words)
+	Idx.docWordCount[node.ID] = len(words)
 	lock.Unlock()
 
 	for _, word := range words {
@@ -605,6 +607,7 @@ func (Idx *DynamicIndex) SpimiParseOSMNode(node datastructure.Node, lock *sync.M
 	return termDocPairs
 }
 
+// SpimiParseOSMNodes is a function to parse a batch of OSM nodes into a token stream (termID-docID pairs).
 func (Idx *DynamicIndex) SpimiParseOSMNodes(nodes []datastructure.Node, lock *sync.Mutex) [][]int {
 	termDocPairs := [][]int{}
 	for _, node := range nodes {
@@ -689,7 +692,7 @@ func (Idx *DynamicIndex) BuildSpellCorrectorAndNgram(nodeIDMap map[int64]int) er
 	}
 	bar.Add(1)
 
-	Idx.DocsCount = len(nodeIDMap)
+	Idx.docsCount = len(nodeIDMap)
 
 	tokenizedDocs := [][]string{}
 	for _, node := range searchNodes {
@@ -707,7 +710,7 @@ func (Idx *DynamicIndex) BuildSpellCorrectorAndNgram(nodeIDMap map[int64]int) er
 	}
 
 	bar.Add(1)
-	Idx.SpellCorrectorBuilder.Preprocessdata(tokenizedDocs)
+	Idx.spellCorrectorBuilder.Preprocessdata(tokenizedDocs)
 	bar.Add(1)
 	fmt.Println("")
 	return nil
@@ -731,9 +734,10 @@ func (Idx *DynamicIndex) Close() error {
 	return err
 }
 
+// SaveMeta is a function to save the metadata of the main inverted index to disk.
 func (Idx *DynamicIndex) SaveMeta() error {
 	// save to disk
-	SpimiMeta := NewSpimiIndexMetadata(Idx.TermIDMap, Idx.DocWordCount, Idx.DocsCount)
+	SpimiMeta := NewSpimiIndexMetadata(Idx.TermIDMap, Idx.docWordCount, Idx.docsCount)
 
 	buf, err := msgpack.Marshal(&SpimiMeta)
 	if err != nil {
@@ -741,13 +745,13 @@ func (Idx *DynamicIndex) SaveMeta() error {
 	}
 
 	var metadataFile *os.File
-	if Idx.WorkingDir != "/" {
-		metadataFile, err = os.OpenFile(Idx.WorkingDir+"/"+Idx.OutputDir+"/"+"meta.metadata", os.O_RDWR|os.O_CREATE, 0666)
+	if Idx.workingDir != "/" {
+		metadataFile, err = os.OpenFile(Idx.workingDir+"/"+Idx.outputDir+"/"+"meta.metadata", os.O_RDWR|os.O_CREATE, 0666)
 		if err != nil {
 			return err
 		}
 	} else {
-		metadataFile, err = os.OpenFile(Idx.OutputDir+"/"+"meta.metadata", os.O_RDWR|os.O_CREATE, 0666)
+		metadataFile, err = os.OpenFile(Idx.outputDir+"/"+"meta.metadata", os.O_RDWR|os.O_CREATE, 0666)
 		if err != nil {
 			return err
 		}
@@ -764,16 +768,17 @@ func (Idx *DynamicIndex) SaveMeta() error {
 	return err
 }
 
+// LoadMeta is a function to load the metadata of the main inverted index from disk.
 func (Idx *DynamicIndex) LoadMeta() error {
 	var metadataFile *os.File
 	var err error
-	if Idx.WorkingDir != "/" {
-		metadataFile, err = os.OpenFile(Idx.WorkingDir+"/"+Idx.OutputDir+"/"+"meta.metadata", os.O_RDWR|os.O_CREATE, 0666)
+	if Idx.workingDir != "/" {
+		metadataFile, err = os.OpenFile(Idx.workingDir+"/"+Idx.outputDir+"/"+"meta.metadata", os.O_RDWR|os.O_CREATE, 0666)
 		if err != nil {
 			return err
 		}
 	} else {
-		metadataFile, err = os.OpenFile(Idx.OutputDir+"/"+"meta.metadata", os.O_RDWR|os.O_CREATE, 0666)
+		metadataFile, err = os.OpenFile(Idx.outputDir+"/"+"meta.metadata", os.O_RDWR|os.O_CREATE, 0666)
 		if err != nil {
 			return err
 		}
@@ -791,21 +796,21 @@ func (Idx *DynamicIndex) LoadMeta() error {
 	}
 
 	Idx.TermIDMap = save.TermIDMap
-	Idx.DocWordCount = save.DocWordCount
-	Idx.DocsCount = save.DocsCount
+	Idx.docWordCount = save.DocWordCount
+	Idx.docsCount = save.DocsCount
 	return nil
 }
 
 func (Idx *DynamicIndex) GetOutputDir() string {
-	return Idx.OutputDir
+	return Idx.outputDir
 }
 
 func (Idx *DynamicIndex) GetDocWordCount() map[int]int {
-	return Idx.DocWordCount
+	return Idx.docWordCount
 }
 
 func (Idx *DynamicIndex) GetDocsCount() int {
-	return Idx.DocsCount
+	return Idx.docsCount
 }
 
 func (Idx *DynamicIndex) GetTermIDMap() *pkg.IDMap {
