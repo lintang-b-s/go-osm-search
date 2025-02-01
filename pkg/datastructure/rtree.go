@@ -1,14 +1,12 @@
 package datastructure
 
 import (
-	"container/heap"
 	"math"
-	"osm-search/pkg/geo"
 	"sort"
 )
 
 // cuma rewrite dari implementatasi c++ ini: https://github.com/virtuald/r-star-tree/
-// + add k-nearest neighbors & Search.
+// + add N-nearest neighbors & Search.
 // https://infolab.usc.edu/csci599/Fall2001/paper/rstar-tree.pdf
 // https://dl.acm.org/doi/10.1145/971697.602266
 
@@ -667,28 +665,20 @@ func (rt *Rtree[LeafType]) split(node *RtreeNode) *RtreeNode {
 				bbArea := 0.0
 
 				// calculate bounding box of the first group
-				// firstGroup.reset()
+
 				firstGroup = reset(firstGroup)
 				for i := 0; i < (rt.minChildItems-1)+k; i++ { // (m-1)+k entries
-					// firstGroup.stretch(node.items[i].getBound())
+
 					firstGroup = stretch(firstGroup, node.items[i].getBound())
 				}
 
 				// calculate bounding box of the second group
-				// secondGroup.reset()
+
 				secondGroup = reset(secondGroup)
 				for i := (rt.minChildItems - 1) + k; i < len(node.items); i++ {
-					// secondGroup.stretch(node.items[i].getBound())
+
 					secondGroup = stretch(secondGroup, node.items[i].getBound())
 				}
-
-				// // margin  = area[bb(first group)] +area[bb(second group)]
-				// // Compute S. the sum of all margin-values of the different  distributions.
-				// margin += firstGroup.edgeDeltas() + secondGroup.edgeDeltas()
-				// // area = margin[bb(first group)] + margin[bb(second group)]
-				// area += firstGroup.area() + secondGroup.area()
-				// // overlap = area[bb(first group) n bb(second group)]. n = overlap
-				// overlap = firstGroup.overlap(&secondGroup)
 
 				// margin  = area[bb(first group)] +area[bb(second group)]
 				// Compute S. the sum of all margin-values of the different  distributions.
@@ -728,19 +718,17 @@ func (rt *Rtree[LeafType]) split(node *RtreeNode) *RtreeNode {
 	node.items = node.items[:splitIndex] // erase the end [(m-1)+k,len(node.items)) of the array node.items
 
 	// adjust the bounding box.
-	// node.bound.reset()
+
 	node.bound = reset(node.bound)
 	for i := 0; i < len(node.items); i++ {
-		// node.bound.stretch(node.items[i].getBound())
 		node.bound = stretch(node.bound, node.items[i].getBound())
 	}
 
 	// adjust the bounding box.
 	newNode.bound = NewRtreeBoundingBox(rt.dimensions, make([]float64, rt.dimensions), make([]float64, rt.dimensions))
-	// newNode.bound.reset()
+
 	newNode.bound = reset(newNode.bound)
 	for i := 0; i < len(newNode.items); i++ {
-		// newNode.bound.stretch(newNode.items[i].getBound())
 		newNode.bound = stretch(newNode.bound, newNode.items[i].getBound())
 	}
 
@@ -794,6 +782,7 @@ func (p Point) minDist(r RtreeBoundingBox) float64 {
 
 	// Edges[0] = {minLat, maxLat}
 	// Edges[1] = {minLon, maxLon}
+
 	if p.Lat < r.Edges[0][0] {
 		sum += (p.Lat - r.Edges[0][0]) * (p.Lat - r.Edges[0][0])
 	} else if p.Lat > r.Edges[0][1] {
@@ -809,40 +798,10 @@ func (p Point) minDist(r RtreeBoundingBox) float64 {
 	return sum
 }
 
-func (rt *Rtree[LeafType]) KNearestNeighbors(k int, p Point) []RtreeLeaf[OSMObject] {
-	nearestsListsPQ := NewMaxPriorityQueue[RtreeLeaf[OSMObject], float64]()
-
-	root := rt.mRoot
-
-	rt.kNearestNeighbors(k, p, root, nearestsListsPQ)
-	nearestLists := make([]RtreeLeaf[OSMObject], 0, k)
-	for nearestsListsPQ.Len() > 0 {
-		nearestLists = append(nearestLists, heap.Pop(nearestsListsPQ).(*PriorityQueueNode[RtreeLeaf[OSMObject], float64]).item)
-	}
-	reverseG(nearestLists)
-	return nearestLists
-}
-
-func reverseG[T any](arr []T) (result []T) {
-	for i, j := 0, len(arr)-1; i < j; i, j = i+1, j-1 {
-		arr[i], arr[j] = arr[j], arr[i]
-	}
-	return arr
-}
-
 type OSMObject struct {
 	id  int
 	lat float64
 	lon float64
-}
-
-func insertToNearestLists(nearestLists *priorityQueue[RtreeLeaf[OSMObject], float64], obj RtreeLeaf[OSMObject], dist float64, k int) {
-	if nearestLists.Len() < k {
-		heap.Push(nearestLists, &PriorityQueueNode[RtreeLeaf[OSMObject], float64]{rank: dist, item: obj})
-	} else if dist < (*nearestLists)[0].rank {
-		heap.Pop(nearestLists)
-		heap.Push(nearestLists, &PriorityQueueNode[RtreeLeaf[OSMObject], float64]{rank: dist, item: obj})
-	}
 }
 
 type activeBranch struct {
@@ -850,48 +809,149 @@ type activeBranch struct {
 	Dist  float64
 }
 
-// https://dl.acm.org/doi/pdf/10.1145/320248.320255 (Fig. 7. k-nearest neighbor algorithm.)
-// TODO: add pruning? idk
-func (rt *Rtree[LeafType]) kNearestNeighbors(k int, p Point, n *RtreeNode,
-	nearestLists *priorityQueue[RtreeLeaf[OSMObject], float64]) {
-	var nearestListMaxDist float64 = math.Inf(1)
+func (rt *Rtree[LeafType]) FastNNearestNeighbors(k int, p Point) []OSMObject {
+	nearestsLists := make([]OSMObject, 0, k)
 
-	pq := *nearestLists
+	root := rt.mRoot
 
-	if nearestLists.Len() < k && nearestLists.Len() > 0 {
-		nearestListMaxDist = pq[0].rank
+	dists := make([]float64, 0, k)
+
+	nearestsLists, _ = rt.fastNNearestNeighbors(k, p, root, nearestsLists, dists)
+
+	return nearestsLists
+}
+
+func fastInsertToNearestLists(nearestLists []OSMObject, obj OSMObject, dist float64, k int,
+	dists []float64) ([]OSMObject, []float64) {
+	idx := sort.SearchFloat64s(dists, dist)
+	for idx < len(nearestLists) && dist >= dists[idx] {
+		idx++
+	}
+
+	if idx >= k {
+		return nearestLists, dists
+	}
+
+	if len(nearestLists) < k {
+		dists = append(dists, 0)
+		nearestLists = append(nearestLists, OSMObject{})
+	}
+
+	copy(dists, dists[:idx])
+	copy(dists[idx+1:], dists[idx:len(dists)-1])
+	dists[idx] = dist
+
+	copy(nearestLists, nearestLists[:idx])
+	copy(nearestLists[idx+1:], nearestLists[idx:len(nearestLists)-1])
+	nearestLists[idx] = obj
+
+	return nearestLists, dists
+}
+
+func (rt *Rtree[LeafType]) fastNNearestNeighbors(k int, p Point, n *RtreeNode,
+	nearestLists []OSMObject, nNearestDists []float64) ([]OSMObject, []float64) {
+
+	var nearestDist float64 = math.Inf(1)
+	if len(nearestLists) > 0 {
+		nearestDist = nNearestDists[0]
 	}
 
 	if n.isLeaf {
+
 		for _, item := range n.items {
-			dist := geo.HaversineDistance(p.Lat, p.Lon,
-				item.(*RtreeLeaf[OSMObject]).leaf.lat, item.(*RtreeLeaf[OSMObject]).leaf.lon)
-			if dist < nearestListMaxDist {
-				insertToNearestLists(nearestLists, *item.(*RtreeLeaf[OSMObject]), dist, k)
+			dist := p.minDist(item.getBound())
+
+			if dist < nearestDist {
+				nearestLists, nNearestDists = fastInsertToNearestLists(nearestLists, item.(*RtreeLeaf[OSMObject]).leaf, dist, k, nNearestDists)
 			}
 		}
 	} else {
-		activeBranchLists := make([]activeBranch, len(n.items))
-		for i, e := range n.items {
-			activeBranchLists[i] = activeBranch{e, p.minDist(e.getBound())}
+		dists := make([]float64, 0, len(n.items))
+		for _, e := range n.items {
+			dists = append(dists, p.minDist(e.getBound()))
 		}
 
-		// sort entries based on the distance from point p to the minimum bounding rectangle of each entry.
-		sort.Slice(activeBranchLists, func(i, j int) bool {
-			return activeBranchLists[i].Dist < activeBranchLists[j].Dist
-		})
+		entries := make([]BoundedItem, len(n.items))
+		copy(entries, n.items)
+		sort.Sort(activeBranchSlice{entries, dists})
 
-		for _, e := range activeBranchLists {
+		var cutBranchIdx int
+		if len(nNearestDists) >= k {
+			for i := 0; i < len(entries); i++ {
+				if dists[i] > nNearestDists[len(nNearestDists)-1] {
+					cutBranchIdx = i
+				}
+			}
+			entries = entries[:cutBranchIdx]
 
-			if e.Dist < nearestListMaxDist {
-				// recursion to children node entry e.
-				rt.kNearestNeighbors(k, p, e.entry.(*RtreeNode), nearestLists)
+		}
+
+		for i := 0; i < len(entries); i++ {
+			// recursion to children node entry e.
+			nearestLists, nNearestDists = rt.fastNNearestNeighbors(k, p, entries[i].(*RtreeNode), nearestLists, nNearestDists)
+		}
+	}
+	return nearestLists, nNearestDists
+}
+
+func (rt *Rtree[LeafType]) ImprovedNearestNeighbor(p Point) OSMObject {
+
+	nearest := OSMObject{}
+
+	nnDistTemp := math.Inf(1)
+	root := rt.mRoot
+
+	rt.nearestNeighbor(p, root, &nearest, &nnDistTemp)
+	return nearest
+}
+
+type activeBranchSlice struct {
+	entries []BoundedItem
+	dists   []float64
+}
+
+func (s activeBranchSlice) Len() int { return len(s.entries) }
+
+func (s activeBranchSlice) Swap(i, j int) {
+	s.entries[i], s.entries[j] = s.entries[j], s.entries[i]
+	s.dists[i], s.dists[j] = s.dists[j], s.dists[i]
+}
+
+func (s activeBranchSlice) Less(i, j int) bool {
+	return s.dists[i] < s.dists[j]
+}
+
+func (rt *Rtree[LeafType]) nearestNeighbor(p Point, n *RtreeNode,
+	nearest *OSMObject, nnDistTemp *float64) {
+
+	if n.isLeaf {
+		for _, item := range n.items {
+
+			dist := p.minDist(item.getBound())
+
+			if dist < *nnDistTemp {
+				*nnDistTemp = dist
+				*nearest = item.(*RtreeLeaf[OSMObject]).leaf
+			}
+		}
+	} else {
+		dists := make([]float64, 0, len(n.items))
+		for _, e := range n.items {
+			dists = append(dists, p.minDist(e.getBound()))
+		}
+
+		entries := make([]BoundedItem, len(n.items))
+		copy(entries, n.items)
+		sort.Sort(activeBranchSlice{entries, dists})
+
+		for i := 0; i < len(entries); i++ {
+
+			if dists[i] > *nnDistTemp {
+				break
 			} else {
-				// if the distance from the point p to the minimum bounding rectangle of entry e is greater than the maximum distance in the nearestListsPQ
-				// then we can stop the recursion to the children node entry e.
-				break 
+				// recursion to children node entry e.
+				rt.nearestNeighbor(p, entries[i].(*RtreeNode), nearest, nnDistTemp)
 			}
 		}
 	}
 }
-

@@ -280,8 +280,8 @@ func randomLatLon(minLat, maxLat, minLon, maxLon float64) (float64, float64) {
 	return lat, lon
 }
 
-func TestKNearestNeighbors(t *testing.T) {
-	t.Run("Test K Nearest Neighbors kota surakarta", func(t *testing.T) {
+func TestNNearestNeighbors(t *testing.T) {
+	t.Run("Test N Nearest Neighbors kota surakarta", func(t *testing.T) {
 		itemsData := []OSMObject{
 			{
 				id:  7,
@@ -340,13 +340,167 @@ func TestKNearestNeighbors(t *testing.T) {
 		}
 
 		myLocation := Point{-7.548263971398246, 110.78226484631368}
-		results := rt.KNearestNeighbors(5, myLocation)
+		results := rt.FastNNearestNeighbors(5, myLocation)
 
 		assert.Equal(t, 5, len(results))
-		assert.Equal(t, 0, results[0].leaf.id)
-		assert.Equal(t, 7, results[1].leaf.id)
-		assert.Equal(t, 6, results[2].leaf.id)
-		assert.Equal(t, 5, results[3].leaf.id)
-		assert.Equal(t, 4, results[4].leaf.id)
+		assert.Equal(t, 0, results[0].id)
+		assert.Equal(t, 7, results[1].id)
+		assert.Equal(t, 6, results[2].id)
+		assert.Equal(t, 5, results[3].id)
+		assert.Equal(t, 4, results[4].id)
 	})
+}
+
+func TestNearestNeighbor(t *testing.T) {
+	t.Run("Test N Nearest Neighbors kota surakarta", func(t *testing.T) {
+		itemsData := []OSMObject{
+			{
+				id:  7,
+				lat: -7.546392935195944,
+				lon: 110.77718220472673,
+			},
+			{
+				id:  6,
+				lat: -7.5559986670115675,
+				lon: 110.79466621171177,
+			},
+			{
+				id:  5,
+				lat: -7.555869730414206,
+				lon: 110.80500875243253,
+			},
+			{
+				id:  4,
+				lat: -7.571289544570394,
+				lon: 110.8301500772816,
+			},
+			{
+				id:  3,
+				lat: -7.7886707815273155,
+				lon: 110.361625035987,
+			}, {
+				id:  2,
+				lat: -7.8082872068169475,
+				lon: 110.35793427899466,
+			},
+			{
+				id:  1,
+				lat: -7.759889166547908,
+				lon: 110.36689459108496,
+			},
+			{
+				id:  1000,
+				lat: -7.550561079106621,
+				lon: 110.7837156929654,
+			},
+			{
+				id: 1001,
+				lat: -7.755002453207869,
+				lon: 110.37712514761436,
+			},
+		}
+
+		for i := 8; i < 500; i++ {
+			lat, lon := randomLatLon(-6.107481038495567, -5.995288834299442, 106.13128828884481, 107.0509652831274)
+			itemsData = append(itemsData, OSMObject{
+				id:  i,
+				lat: lat,
+				lon: lon,
+			})
+		}
+
+		rt := NewRtree[OSMObject](25, 50, 2)
+		for _, item := range itemsData {
+			minVal, maxVal := []float64{item.lat - 0.0001, item.lon - 0.0001}, []float64{item.lat + 0.0001, item.lon + 0.0001}
+			rt.insertLeaf(NewRtreeBoundingBox(2, minVal, maxVal), item)
+		}
+
+		myLocation := Point{-7.760335932763678, 110.37671195413539}
+
+		result := rt.ImprovedNearestNeighbor(myLocation)
+		assert.Equal(t, 1001, result.id)
+
+	})
+}
+
+func BenchmarkNNearestNeighbors(b *testing.B) {
+	itemsData := []OSMObject{}
+
+	for i := 0; i < 100000; i++ {
+
+		lat, lon := randomLatLon(-6.809629930307937, -6.896578040216839, 105.99351536809907, 112.60245825180131)
+		itemsData = append(itemsData, OSMObject{
+			id:  i,
+			lat: lat,
+			lon: lon,
+		})
+	}
+
+	rt := NewRtree[OSMObject](25, 50, 2)
+	for _, item := range itemsData {
+		minVal, maxVal := []float64{item.lat - 0.0001, item.lon - 0.0001}, []float64{item.lat + 0.0001, item.lon + 0.0001}
+		rt.insertLeaf(NewRtreeBoundingBox(2, minVal, maxVal), item)
+	}
+
+	myLocation := Point{-7.548263971398246, 110.78226484631368}
+
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		rt.FastNNearestNeighbors(5, myLocation)
+	}
+
+}
+
+func BenchmarkInsert(b *testing.B) {
+	itemsData := []OSMObject{}
+
+	for i := 0; i < 100000; i++ {
+
+		lat, lon := randomLatLon(-6.809629930307937, -6.896578040216839, 105.99351536809907, 112.60245825180131)
+		itemsData = append(itemsData, OSMObject{
+			id:  i,
+			lat: lat,
+			lon: lon,
+		})
+	}
+
+	rt := NewRtree[OSMObject](25, 50, 2)
+
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		randInt := rand.Intn(100000)
+		item := itemsData[randInt]
+		minVal, maxVal := []float64{item.lat - 0.0001, item.lon - 0.0001}, []float64{item.lat + 0.0001, item.lon + 0.0001}
+		rt.insertLeaf(NewRtreeBoundingBox(2, minVal, maxVal), item)
+	}
+
+}
+
+func BenchmarkImprovedNearestNeighbor(b *testing.B) {
+	itemsData := []OSMObject{}
+
+	for i := 0; i < 100000; i++ {
+
+		lat, lon := randomLatLon(-6.809629930307937, -6.896578040216839, 105.99351536809907, 112.60245825180131)
+		itemsData = append(itemsData, OSMObject{
+			id:  i,
+			lat: lat,
+			lon: lon,
+		})
+	}
+
+	rt := NewRtree[OSMObject](25, 50, 2)
+	for _, item := range itemsData {
+		minVal, maxVal := []float64{item.lat - 0.0001, item.lon - 0.0001}, []float64{item.lat + 0.0001, item.lon + 0.0001}
+		rt.insertLeaf(NewRtreeBoundingBox(2, minVal, maxVal), item)
+	}
+	myLocation := Point{-7.548263971398246, 110.78226484631368}
+
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		rt.ImprovedNearestNeighbor(myLocation)
+	}
 }
