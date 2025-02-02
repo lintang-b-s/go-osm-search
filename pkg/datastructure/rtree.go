@@ -1,7 +1,11 @@
 package datastructure
 
 import (
+	"bytes"
+	"encoding/gob"
+	"fmt"
 	"math"
+	"os"
 	"sort"
 )
 
@@ -288,38 +292,38 @@ func stretchBoundingBox(mBound RtreeBoundingBox, item BoundedItem) RtreeBounding
 	return stretch(mBound, item.getBound())
 }
 
-func sortBoundedItemsByFirstEdge(mAxis int, items []BoundedItem) {
+func sortBoundedItemsByFirstEdge(mAxis int, items []*RtreeNode) {
 	sort.Slice(items, func(i, j int) bool {
 		return items[i].getBound().Edges[mAxis][0] < items[j].getBound().Edges[mAxis][0]
 	})
 }
 
-func sortBoundedItemsBySecondEdge(mAxis int, items []BoundedItem) {
+func sortBoundedItemsBySecondEdge(mAxis int, items []*RtreeNode) {
 	sort.Slice(items, func(i, j int) bool {
 		return items[i].getBound().Edges[mAxis][1] < items[j].getBound().Edges[mAxis][1]
 	})
 }
 
-func sortIncreasingBoundedItemsByDistanceFromCenter(mCenter RtreeBoundingBox, items []BoundedItem) {
+func sortIncreasingBoundedItemsByDistanceFromCenter(mCenter RtreeBoundingBox, items []*RtreeNode) {
 	sort.Slice(items, func(i, j int) bool {
 		return mCenter.distanceFromCenter(items[i].getBound()) < mCenter.distanceFromCenter(items[j].getBound())
 	})
 }
 
-func sortDecreasingBoundedItemsByDistanceFromCenter(mCenter RtreeBoundingBox, items []BoundedItem) {
+func sortDecreasingBoundedItemsByDistanceFromCenter(mCenter RtreeBoundingBox, items []*RtreeNode) {
 	sort.Slice(items, func(i, j int) bool {
 		return mCenter.distanceFromCenter(items[i].getBound()) > mCenter.distanceFromCenter(items[j].getBound())
 	})
 }
 
-func sortBoundedItemsByAreaEnlargement(bbarea float64, items []BoundedItem) {
+func sortBoundedItemsByAreaEnlargement(bbarea float64, items []*RtreeNode) {
 	sort.Slice(items, func(i, j int) bool {
 		return bbarea-area(items[i].getBound()) < bbarea-area(items[j].getBound())
 
 	})
 }
 
-func sortIncreasingBoundedItemsByOverlapEnlargement(items []BoundedItem, center RtreeBoundingBox) {
+func sortIncreasingBoundedItemsByOverlapEnlargement(items []*RtreeNode, center RtreeBoundingBox) {
 	sort.Slice(items, func(i, j int) bool {
 
 		return overlap(items[i].getBound(), center) < overlap(items[j].getBound(), center)
@@ -327,7 +331,7 @@ func sortIncreasingBoundedItemsByOverlapEnlargement(items []BoundedItem, center 
 	})
 }
 
-func sortDecreasingBoundedItemsByOverlapEnlargement(items []BoundedItem, center RtreeBoundingBox) {
+func sortDecreasingBoundedItemsByOverlapEnlargement(items []*RtreeNode, center RtreeBoundingBox) {
 	sort.Slice(items, func(i, j int) bool {
 		return overlap(items[i].getBound(), center) > overlap(items[j].getBound(), center)
 
@@ -340,95 +344,84 @@ type BoundedItem interface {
 	isLeafNode() bool
 }
 
-// rtree node. can be either a leaf node or a internal node
+// rtree node. can be either a leaf node or a internal node or leafData.
 type RtreeNode struct {
 	// entries. can be either a leaf node or a  internal node.
 	// leafNode has items in the form of a list of RtreeLeaf
-	items  []BoundedItem
-	parent *RtreeNode
+	Items  []*RtreeNode
+	Parent *RtreeNode
 
-	bound RtreeBoundingBox
+	Bound RtreeBoundingBox
 	// isLeaf. true if  this node is a leafNode.
-	isLeaf bool
+	IsLeaf bool
+
+	Leaf OSMObject // if this node is a leafData
 }
 
 // isLeaf. true if this node is a leafNode.
 func (node *RtreeNode) isLeafNode() bool {
-	return node.isLeaf
+	return node.IsLeaf
 }
 
 func (node *RtreeNode) getBound() RtreeBoundingBox {
-	return node.bound
+	return node.Bound
 }
 
-// leaf entry
-type RtreeLeaf[G any] struct {
-	leaf G
-
-	bound RtreeBoundingBox
+type Rtree struct {
+	Root          *RtreeNode
+	Size          int
+	MinChildItems int
+	MaxChildItems int
+	Dimensions    int
+	Height        int
 }
 
-func (leaf *RtreeLeaf[G]) isLeafNode() bool {
-	return false
-}
-
-func (leaf *RtreeLeaf[G]) getBound() RtreeBoundingBox {
-	return leaf.bound
-}
-
-type Rtree[LeafType any] struct {
-	mRoot         *RtreeNode
-	size          int
-	minChildItems int
-	maxChildItems int
-	dimensions    int
-}
-
-func NewRtree[LeafType any](minChildItems, maxChildItems, dimensions int) *Rtree[LeafType] {
-	return &Rtree[LeafType]{
-		mRoot:         nil,
-		size:          0,
-		minChildItems: minChildItems,
-		maxChildItems: maxChildItems,
-		dimensions:    dimensions,
+func NewRtree(minChildItems, maxChildItems, dimensions int) *Rtree {
+	return &Rtree{
+		Root:          nil,
+		Size:          0,
+		Height:        0,
+		MinChildItems: minChildItems,
+		MaxChildItems: maxChildItems,
+		Dimensions:    dimensions,
 	}
 }
 
-func (rt *Rtree[LeafType]) insertLeaf(bound RtreeBoundingBox, leaf LeafType) {
+func (rt *Rtree) InsertLeaf(bound RtreeBoundingBox, leaf OSMObject) {
 
-	newLeaf := &RtreeLeaf[LeafType]{}
-	newLeaf.bound = bound
-	newLeaf.leaf = leaf
+	newLeaf := &RtreeNode{}
+	newLeaf.Bound = bound
+	newLeaf.Leaf = leaf
 
-	if rt.mRoot == nil {
-		rt.mRoot = &RtreeNode{}
-		rt.mRoot.isLeaf = true // set root as leaf node
+	if rt.Root == nil {
+		rt.Root = &RtreeNode{}
+		rt.Root.IsLeaf = true // set root as leaf node
 
-		rt.mRoot.items = make([]BoundedItem, 0, rt.minChildItems)
+		rt.Root.Items = make([]*RtreeNode, 0, rt.MinChildItems)
 
-		rt.mRoot.items = append(rt.mRoot.items, newLeaf) // add new leaf data to the root
-		rt.mRoot.bound = bound
+		rt.Root.Items = append(rt.Root.Items, newLeaf) // add new leaf data to the root
+		rt.Root.Bound = bound
 	} else {
-		rt.insertInternal(newLeaf, rt.mRoot, true)
+		rt.insertInternal(newLeaf, rt.Root, true)
 	}
-	rt.size++
+	rt.Size++
 
 }
 
-func (rt *Rtree[LeafType]) insertInternal(leaf *RtreeLeaf[LeafType], root *RtreeNode, firstInsert bool) *RtreeNode {
+func (rt *Rtree) insertInternal(leaf *RtreeNode, root *RtreeNode, firstInsert bool) *RtreeNode {
 
 	// I1: Invoke ChooseSubtree. with the level as a parameter,
 	// to find an appropriate node N, in which to place the new entry E
 
-	leafNode := rt.chooseSubtree(root, leaf.bound)
+	leafNode := rt.chooseSubtree(root, leaf.Bound)
 
 	// if this node is a leafNode then add the leaf data to the  leafNode
 	//I2: accommodate E in N.
-	leafNode.items = append(leafNode.items, leaf)
+	leafNode.Items = append(leafNode.Items, leaf)
 
 	// I2: if node N has M+1 entries. invoke OverflowTreatment
 	// with the level of N as a parameter [for reinsertion or split]
-	if len(leafNode.items) > rt.maxChildItems {
+	if len(leafNode.Items) > rt.MaxChildItems {
 		rt.overflowTreatment(leafNode, firstInsert)
 
 	}
@@ -436,12 +429,12 @@ func (rt *Rtree[LeafType]) insertInternal(leaf *RtreeLeaf[LeafType], root *Rtree
 	return nil
 }
 
-func (rt *Rtree[LeafType]) overflowTreatment(level *RtreeNode, firstInsert bool) {
+func (rt *Rtree) overflowTreatment(level *RtreeNode, firstInsert bool) {
 	// OT1: If the level is not the root level and this is the first
 	// call of OverflowTreatment in the given level
 	// during the Insertion of one data rectangle, then
 	// invoke Reinsert
-	if level != rt.mRoot && firstInsert {
+	if level != rt.Root && firstInsert {
 		rt.reinsert(level)
 		return
 	}
@@ -451,47 +444,54 @@ func (rt *Rtree[LeafType]) overflowTreatment(level *RtreeNode, firstInsert bool)
 
 	// I3:  If OverflowTreatment caused a split of the root, create a
 	// new root whose children are the two resulting nodes (old root & newNode).
-	if level == rt.mRoot {
+	if level == rt.Root {
 		// benar
 		newRoot := &RtreeNode{}
-		newRoot.isLeaf = false
+		newRoot.IsLeaf = false
 
-		newRoot.items = make([]BoundedItem, 0, rt.minChildItems)
-		newRoot.items = append(newRoot.items, rt.mRoot)
-		newRoot.items = append(newRoot.items, newNode)
-		rt.mRoot.parent = newRoot
-		newNode.parent = newRoot
+		newRoot.Items = make([]*RtreeNode, 0, rt.MinChildItems)
+		newRoot.Items = append(newRoot.Items, rt.Root)
+		newRoot.Items = append(newRoot.Items, newNode)
+		rt.Root.Parent = newRoot
+		newNode.Parent = newRoot
+
+		rt.Height++
 
 		// I4: Adjust all covering rectangles in the insertion path
 		// such that they are minimum bounding boxes
 		// enclosing their children rectangles
-		newRoot.bound = NewRtreeBoundingBox(rt.dimensions, make([]float64, rt.dimensions), make([]float64, rt.dimensions))
+		newRoot.Bound = NewRtreeBoundingBox(rt.Dimensions, make([]float64, rt.Dimensions), make([]float64, rt.Dimensions))
 
-		newRoot.bound = reset(newRoot.bound)
-		for i := 0; i < len(newRoot.items); i++ {
-			newRoot.bound = stretchBoundingBox(newRoot.bound, newRoot.items[i])
+		newRoot.Bound = reset(newRoot.Bound)
+		for i := 0; i < len(newRoot.Items); i++ {
+			newRoot.Bound = stretchBoundingBox(newRoot.Bound, newRoot.Items[i])
 		}
 
-		rt.mRoot = newRoot
+		rt.Root = newRoot
 		return
 	}
 
-	newNode.parent = level.parent
-	level.parent.items = append(level.parent.items, newNode)
+	newNode.Parent = level.Parent
+	level.Parent.Items = append(level.Parent.Items, newNode)
+
+	level.Parent.Bound = reset(level.Parent.Bound)
+	for i := 0; i < len(level.Parent.Items); i++ {
+		level.Parent.Bound = stretch(level.Parent.Bound, level.Parent.Items[i].getBound())
+	}
 
 	// I3: If OverflowTreatment was called and a split was
 	// performed, propagate OverflowTreatment upwards
 	// If necessary
 	// return newNode
-	if len(level.parent.items) > rt.maxChildItems {
-		rt.overflowTreatment(level.parent, firstInsert)
+	if len(level.Parent.Items) > rt.MaxChildItems {
+		rt.overflowTreatment(level.Parent, firstInsert)
 	}
 }
 
-func (rt *Rtree[LeafType]) reinsert(node *RtreeNode) {
-	var removedItems []BoundedItem
+func (rt *Rtree) reinsert(node *RtreeNode) {
+	var removedItems []*RtreeNode
 
-	nItems := len(node.items)
+	nItems := len(node.Items)
 	var p int
 	if float64(nItems)*REINSERT_P > 0 {
 		// The experiments have
@@ -501,7 +501,7 @@ func (rt *Rtree[LeafType]) reinsert(node *RtreeNode) {
 		p = 1
 	}
 
-	assertt(nItems == rt.maxChildItems+1, "nItems must be equal to maxChildItems + 1")
+	assertt(nItems == rt.MaxChildItems+1, "nItems must be equal to maxChildItems + 1")
 
 	// (Reinsertion) RI1: For all M+1 entries of a node N, compute the distance
 	//	between the centers of their rectangles and the center
@@ -509,34 +509,34 @@ func (rt *Rtree[LeafType]) reinsert(node *RtreeNode) {
 
 	// RI2: Sort the entries in decreasing order of their distances
 	// computed in RI1
-	sortDecreasingBoundedItemsByDistanceFromCenter(node.bound, node.items[:len(node.items)-p])
+	sortDecreasingBoundedItemsByDistanceFromCenter(node.Bound, node.Items[:len(node.Items)-p])
 
 	// RI3: Remove the first p entries from N and adjust the
 	// bounding rectangle of N
-	removedItems = node.items[p:]
-	node.items = node.items[:p]
+	removedItems = node.Items[p:]
+	node.Items = node.Items[:p]
 
 	// adjust the bounding rectangle of N
-	node.bound = reset(node.bound)
-	for i := 0; i < len(node.items); i++ {
-		node.bound = stretchBoundingBox(node.bound, node.items[i])
+	node.Bound = reset(node.Bound)
+	for i := 0; i < len(node.Items); i++ {
+		node.Bound = stretchBoundingBox(node.Bound, node.Items[i])
 	}
 
 	// RI4: In the sort, defined in RI2, starting with the maximum
 	// distance (= far reinsert) or minimum distance (= close
 	// reinsert), invoke Insert to reinsert the entries
 	for _, removedItem := range removedItems {
-		rt.insertInternal(removedItem.(*RtreeLeaf[LeafType]), rt.mRoot, false)
+		rt.insertInternal(removedItem, rt.Root, false)
 	}
 }
 
-func (rt *Rtree[LeafType]) chooseSubtree(node *RtreeNode, bound RtreeBoundingBox) *RtreeNode {
+func (rt *Rtree) chooseSubtree(node *RtreeNode, bound RtreeBoundingBox) *RtreeNode {
 	// Insert I4: Adjust all covering rectangles in the insertion path
 	// such that they are minimum bounding boxes
 	// enclosing their children rectangles
 
-	// node.bound.stretch(bound)
-	node.bound = stretch(node.bound, bound)
+	// node.Bound.stretch(bound)
+	node.Bound = stretch(node.Bound, bound)
 
 	var chosen *RtreeNode
 
@@ -546,7 +546,7 @@ func (rt *Rtree[LeafType]) chooseSubtree(node *RtreeNode, bound RtreeBoundingBox
 	}
 
 	// If the child pointers in N point to leaves (leaves = leaf node)
-	if node.items[0].isLeafNode() {
+	if node.Items[0].isLeafNode() {
 
 		// If the childpointers in N point to leaves [determine
 		// the minimum overlap cost],
@@ -557,21 +557,21 @@ func (rt *Rtree[LeafType]) chooseSubtree(node *RtreeNode, bound RtreeBoundingBox
 
 		minOverlapEnlargement := math.MaxFloat64
 		idxEntryWithMinOverlapEnlargement := 0
-		for i, item := range node.items {
+		for i, item := range node.Items {
 			itembb := item.getBound()
-			// bb := itembb.boundingBox(bound)
+			// bb := itembb.BoundingBox(bound)
 			bb := boundingBox(itembb, bound)
 
 			// enlargement := item.getBound().overlap(bound)
 			enlargement := overlap(item.getBound(), bound)
 
 			if enlargement < minOverlapEnlargement || (enlargement == minOverlapEnlargement &&
-				area(bb)-area(item.getBound()) < area(bb)-area(node.items[idxEntryWithMinOverlapEnlargement].getBound())) {
+				area(bb)-area(item.getBound()) < area(bb)-area(node.Items[idxEntryWithMinOverlapEnlargement].getBound())) {
 				minOverlapEnlargement = enlargement
 				idxEntryWithMinOverlapEnlargement = i
 			}
 		}
-		chosen = node.items[idxEntryWithMinOverlapEnlargement].(*RtreeNode)
+		chosen = node.Items[idxEntryWithMinOverlapEnlargement]
 		return rt.chooseSubtree(chosen, bound)
 	}
 
@@ -584,42 +584,42 @@ func (rt *Rtree[LeafType]) chooseSubtree(node *RtreeNode, bound RtreeBoundingBox
 
 	minAreaEnlargement := math.MaxFloat64
 	idxEntryWithMinAreaEnlargement := 0
-	for i, item := range node.items {
+	for i, item := range node.Items {
 		itembb := item.getBound()
-		// bb := itembb.boundingBox(bound)
+		// bb := itembb.BoundingBox(bound)
 		bb := boundingBox(itembb, bound)
 
 		// enlargement := bb.area() - item.getBound().area()
 		enlargement := area(bb) - area(item.getBound())
 		if enlargement < minAreaEnlargement ||
 			(enlargement == minAreaEnlargement &&
-				area(bb) < area(node.items[idxEntryWithMinAreaEnlargement].getBound())) {
+				area(bb) < area(node.Items[idxEntryWithMinAreaEnlargement].getBound())) {
 			minAreaEnlargement = enlargement
 			idxEntryWithMinAreaEnlargement = i
 		}
 	}
 
-	chosen = node.items[idxEntryWithMinAreaEnlargement].(*RtreeNode)
+	chosen = node.Items[idxEntryWithMinAreaEnlargement]
 
 	return rt.chooseSubtree(chosen, bound)
 }
 
-func (rt *Rtree[LeafType]) split(node *RtreeNode) *RtreeNode {
+func (rt *Rtree) split(node *RtreeNode) *RtreeNode {
 	newNode := &RtreeNode{}
 
-	newNode.isLeaf = node.isLeaf
+	newNode.IsLeaf = node.IsLeaf
 
-	nItems := len(node.items)
-	distributionCount := nItems - 2*rt.minChildItems + 1
+	nItems := len(node.Items)
+	distributionCount := nItems - 2*rt.MinChildItems + 1
 	minSplitMargin := math.MaxFloat64
 
 	splitIndex := 0 // split index for the first group (m-1)+k
 
 	firstGroup := RtreeBoundingBox{}  // first group [0,(m-1)+k) entries
 	secondGroup := RtreeBoundingBox{} // second group [(m-1)+k,n) entries
-	assertt(nItems == rt.maxChildItems+1, "nItems must be equal to maxChildItems + 1")
+	assertt(nItems == rt.MaxChildItems+1, "nItems must be equal to maxChildItems + 1")
 	assertt(distributionCount > 0, "distributionCount must be greater than 0")
-	assertt(rt.minChildItems+distributionCount-1 <= nItems, "rt.minChildItems + distributionCount - 1 must be less than or equal to nItems")
+	assertt(rt.MinChildItems+distributionCount-1 <= nItems, "rt.MinChildItems + distributionCount - 1 must be less than or equal to nItems")
 
 	// the entries are first sorted by the lower
 	// value, then sorted by the upper value of then rectangles For
@@ -632,7 +632,7 @@ func (rt *Rtree[LeafType]) split(node *RtreeNode) *RtreeNode {
 	// distributins as described above Compute S. the
 	// sum of all margin-values of the different
 	// distributions
-	for axis := 0; axis < rt.dimensions; axis++ {
+	for axis := 0; axis < rt.Dimensions; axis++ {
 		margin := 0.0
 		overlapVal := 0.0
 
@@ -653,9 +653,9 @@ func (rt *Rtree[LeafType]) split(node *RtreeNode) *RtreeNode {
 			// Sort the entries by the lower then by the upper
 			// value of their rectangles
 			if edge == 0 {
-				sortBoundedItemsByFirstEdge(axis, node.items)
+				sortBoundedItemsByFirstEdge(axis, node.Items)
 			} else {
-				sortBoundedItemsBySecondEdge(axis, node.items)
+				sortBoundedItemsBySecondEdge(axis, node.Items)
 			}
 
 			//  where the k-th distribution (k = 1,....,(M-2m+2))
@@ -667,17 +667,17 @@ func (rt *Rtree[LeafType]) split(node *RtreeNode) *RtreeNode {
 				// calculate bounding box of the first group
 
 				firstGroup = reset(firstGroup)
-				for i := 0; i < (rt.minChildItems-1)+k; i++ { // (m-1)+k entries
+				for i := 0; i < (rt.MinChildItems-1)+k; i++ { // (m-1)+k entries
 
-					firstGroup = stretch(firstGroup, node.items[i].getBound())
+					firstGroup = stretch(firstGroup, node.Items[i].getBound())
 				}
 
 				// calculate bounding box of the second group
 
 				secondGroup = reset(secondGroup)
-				for i := (rt.minChildItems - 1) + k; i < len(node.items); i++ {
+				for i := (rt.MinChildItems - 1) + k; i < len(node.Items); i++ {
 
-					secondGroup = stretch(secondGroup, node.items[i].getBound())
+					secondGroup = stretch(secondGroup, node.Items[i].getBound())
 				}
 
 				// margin  = area[bb(first group)] +area[bb(second group)]
@@ -692,7 +692,7 @@ func (rt *Rtree[LeafType]) split(node *RtreeNode) *RtreeNode {
 				// Resolve ties by choosing the distribution with
 				// minimum area-value
 				if overlapVal < minOverlap || overlapVal == minOverlap && bbArea < minArea {
-					distribIndex = (rt.minChildItems - 1) + k //(m-1)+k // k = distribution value
+					distribIndex = (rt.MinChildItems - 1) + k //(m-1)+k // k = distribution value
 					minOverlap = overlapVal
 					minArea = bbArea
 				}
@@ -709,40 +709,40 @@ func (rt *Rtree[LeafType]) split(node *RtreeNode) *RtreeNode {
 
 	// S3: Distribute the items into two groups
 
-	// distribute the end of the array node.items to the newNode. and erase them from the original node.
-	newNode.items = make([]BoundedItem, 0, len(node.items)-splitIndex)
-	// insert elements [(m-1)+k,len(node.items)) of the array node.items to the newNode.items
-	for i := splitIndex; i < len(node.items); i++ {
-		newNode.items = append(newNode.items, node.items[i])
+	// distribute the end of the array node.Items to the newNode. and erase them from the original node.
+	newNode.Items = make([]*RtreeNode, 0, len(node.Items)-splitIndex)
+	// insert elements [(m-1)+k,len(node.Items)) of the array node.Items to the newNode.Items
+	for i := splitIndex; i < len(node.Items); i++ {
+		newNode.Items = append(newNode.Items, node.Items[i])
 	}
-	node.items = node.items[:splitIndex] // erase the end [(m-1)+k,len(node.items)) of the array node.items
+	node.Items = node.Items[:splitIndex] // erase the end [(m-1)+k,len(node.Items)) of the array node.Items
 
 	// adjust the bounding box.
 
-	node.bound = reset(node.bound)
-	for i := 0; i < len(node.items); i++ {
-		node.bound = stretch(node.bound, node.items[i].getBound())
+	node.Bound = reset(node.Bound)
+	for i := 0; i < len(node.Items); i++ {
+		node.Bound = stretch(node.Bound, node.Items[i].getBound())
 	}
 
 	// adjust the bounding box.
-	newNode.bound = NewRtreeBoundingBox(rt.dimensions, make([]float64, rt.dimensions), make([]float64, rt.dimensions))
+	newNode.Bound = NewRtreeBoundingBox(rt.Dimensions, make([]float64, rt.Dimensions), make([]float64, rt.Dimensions))
 
-	newNode.bound = reset(newNode.bound)
-	for i := 0; i < len(newNode.items); i++ {
-		newNode.bound = stretch(newNode.bound, newNode.items[i].getBound())
+	newNode.Bound = reset(newNode.Bound)
+	for i := 0; i < len(newNode.Items); i++ {
+		newNode.Bound = stretch(newNode.Bound, newNode.Items[i].getBound())
 	}
 
 	return newNode
 }
 
-func (rt *Rtree[LeafType]) Search(bound RtreeBoundingBox) []RtreeLeaf[LeafType] {
-	results := []RtreeLeaf[LeafType]{}
-	return rt.search(rt.mRoot, bound, results)
+func (rt *Rtree) Search(bound RtreeBoundingBox) []RtreeNode {
+	results := []RtreeNode{}
+	return rt.search(rt.Root, bound, results)
 }
 
-func (rt *Rtree[LeafType]) search(node *RtreeNode, bound RtreeBoundingBox,
-	results []RtreeLeaf[LeafType]) []RtreeLeaf[LeafType] {
-	for _, e := range node.items {
+func (rt *Rtree) search(node *RtreeNode, bound RtreeBoundingBox,
+	results []RtreeNode) []RtreeNode {
+	for _, e := range node.Items {
 
 		if !overlaps(e.getBound(), bound) {
 			continue
@@ -753,17 +753,17 @@ func (rt *Rtree[LeafType]) search(node *RtreeNode, bound RtreeBoundingBox,
 			// check each entry E to determine
 			// whether E.I overlaps S. For all overlapping entries, invoke Search on the tree
 			// whose root node is pointed to by E.p
-			rt.search(e.(*RtreeNode), bound, results)
+			rt.search(e, bound, results)
 			continue
 		}
 
-		for _, leaf := range e.(*RtreeNode).items {
+		for _, leaf := range e.Items {
 			if overlaps(leaf.getBound(), bound) {
 				// S2. [Search leaf node.] If T is a leaf, check
 				// all entries E to determine whether E.I
 				// overlaps S. If so, E is a qualifying
 				// record
-				results = append(results, *leaf.(*RtreeLeaf[LeafType]))
+				results = append(results, *leaf)
 			}
 		}
 	}
@@ -798,10 +798,18 @@ func (p Point) minDist(r RtreeBoundingBox) float64 {
 	return sum
 }
 
+// type RtreeLeafData interface {
+// 	GetBound() RtreeBoundingBox
+// }
+
 type OSMObject struct {
-	id  int
-	lat float64
-	lon float64
+	ID  int
+	Lat float64
+	Lon float64
+}
+
+func (o *OSMObject) GetBound() RtreeBoundingBox {
+	return NewRtreeBoundingBox(2, []float64{o.Lat - 0.0001, o.Lon - 0.0001}, []float64{o.Lat + 0.0001, o.Lon + 0.0001})
 }
 
 type activeBranch struct {
@@ -809,10 +817,10 @@ type activeBranch struct {
 	Dist  float64
 }
 
-func (rt *Rtree[LeafType]) FastNNearestNeighbors(k int, p Point) []OSMObject {
-	nearestsLists := make([]OSMObject, 0, k)
+func (rt *Rtree) FastNNearestNeighbors(k int, p Point) []RtreeNode {
+	nearestsLists := make([]RtreeNode, 0, k)
 
-	root := rt.mRoot
+	root := rt.Root
 
 	dists := make([]float64, 0, k)
 
@@ -821,8 +829,8 @@ func (rt *Rtree[LeafType]) FastNNearestNeighbors(k int, p Point) []OSMObject {
 	return nearestsLists
 }
 
-func fastInsertToNearestLists(nearestLists []OSMObject, obj OSMObject, dist float64, k int,
-	dists []float64) ([]OSMObject, []float64) {
+func fastInsertToNearestLists(nearestLists []RtreeNode, obj RtreeNode, dist float64, k int,
+	dists []float64) ([]RtreeNode, []float64) {
 	idx := sort.SearchFloat64s(dists, dist)
 	for idx < len(nearestLists) && dist >= dists[idx] {
 		idx++
@@ -834,7 +842,7 @@ func fastInsertToNearestLists(nearestLists []OSMObject, obj OSMObject, dist floa
 
 	if len(nearestLists) < k {
 		dists = append(dists, 0)
-		nearestLists = append(nearestLists, OSMObject{})
+		nearestLists = append(nearestLists, RtreeNode{})
 	}
 
 	copy(dists, dists[:idx])
@@ -848,31 +856,31 @@ func fastInsertToNearestLists(nearestLists []OSMObject, obj OSMObject, dist floa
 	return nearestLists, dists
 }
 
-func (rt *Rtree[LeafType]) fastNNearestNeighbors(k int, p Point, n *RtreeNode,
-	nearestLists []OSMObject, nNearestDists []float64) ([]OSMObject, []float64) {
+func (rt *Rtree) fastNNearestNeighbors(k int, p Point, n *RtreeNode,
+	nearestLists []RtreeNode, nNearestDists []float64) ([]RtreeNode, []float64) {
 
 	var nearestDist float64 = math.Inf(1)
 	if len(nearestLists) > 0 {
 		nearestDist = nNearestDists[0]
 	}
 
-	if n.isLeaf {
+	if n.IsLeaf {
 
-		for _, item := range n.items {
+		for _, item := range n.Items {
 			dist := p.minDist(item.getBound())
 
 			if dist < nearestDist {
-				nearestLists, nNearestDists = fastInsertToNearestLists(nearestLists, item.(*RtreeLeaf[OSMObject]).leaf, dist, k, nNearestDists)
+				nearestLists, nNearestDists = fastInsertToNearestLists(nearestLists, *item, dist, k, nNearestDists)
 			}
 		}
 	} else {
-		dists := make([]float64, 0, len(n.items))
-		for _, e := range n.items {
+		dists := make([]float64, 0, len(n.Items))
+		for _, e := range n.Items {
 			dists = append(dists, p.minDist(e.getBound()))
 		}
 
-		entries := make([]BoundedItem, len(n.items))
-		copy(entries, n.items)
+		entries := make([]*RtreeNode, len(n.Items))
+		copy(entries, n.Items)
 		sort.Sort(activeBranchSlice{entries, dists})
 
 		var cutBranchIdx int
@@ -888,25 +896,25 @@ func (rt *Rtree[LeafType]) fastNNearestNeighbors(k int, p Point, n *RtreeNode,
 
 		for i := 0; i < len(entries); i++ {
 			// recursion to children node entry e.
-			nearestLists, nNearestDists = rt.fastNNearestNeighbors(k, p, entries[i].(*RtreeNode), nearestLists, nNearestDists)
+			nearestLists, nNearestDists = rt.fastNNearestNeighbors(k, p, entries[i], nearestLists, nNearestDists)
 		}
 	}
 	return nearestLists, nNearestDists
 }
 
-func (rt *Rtree[LeafType]) ImprovedNearestNeighbor(p Point) OSMObject {
+func (rt *Rtree) ImprovedNearestNeighbor(p Point) RtreeNode {
 
-	nearest := OSMObject{}
+	nearest := RtreeNode{}
 
 	nnDistTemp := math.Inf(1)
-	root := rt.mRoot
+	root := rt.Root
 
 	rt.nearestNeighbor(p, root, &nearest, &nnDistTemp)
 	return nearest
 }
 
 type activeBranchSlice struct {
-	entries []BoundedItem
+	entries []*RtreeNode
 	dists   []float64
 }
 
@@ -921,27 +929,27 @@ func (s activeBranchSlice) Less(i, j int) bool {
 	return s.dists[i] < s.dists[j]
 }
 
-func (rt *Rtree[LeafType]) nearestNeighbor(p Point, n *RtreeNode,
-	nearest *OSMObject, nnDistTemp *float64) {
+func (rt *Rtree) nearestNeighbor(p Point, n *RtreeNode,
+	nearest *RtreeNode, nnDistTemp *float64) {
 
-	if n.isLeaf {
-		for _, item := range n.items {
+	if n.IsLeaf {
+		for _, item := range n.Items {
 
 			dist := p.minDist(item.getBound())
 
 			if dist < *nnDistTemp {
 				*nnDistTemp = dist
-				*nearest = item.(*RtreeLeaf[OSMObject]).leaf
+				*nearest = *item
 			}
 		}
 	} else {
-		dists := make([]float64, 0, len(n.items))
-		for _, e := range n.items {
+		dists := make([]float64, 0, len(n.Items))
+		for _, e := range n.Items {
 			dists = append(dists, p.minDist(e.getBound()))
 		}
 
-		entries := make([]BoundedItem, len(n.items))
-		copy(entries, n.items)
+		entries := make([]*RtreeNode, len(n.Items))
+		copy(entries, n.Items)
 		sort.Sort(activeBranchSlice{entries, dists})
 
 		for i := 0; i < len(entries); i++ {
@@ -950,8 +958,77 @@ func (rt *Rtree[LeafType]) nearestNeighbor(p Point, n *RtreeNode,
 				break
 			} else {
 				// recursion to children node entry e.
-				rt.nearestNeighbor(p, entries[i].(*RtreeNode), nearest, nnDistTemp)
+				rt.nearestNeighbor(p, entries[i], nearest, nnDistTemp)
 			}
 		}
 	}
+}
+
+func SerializeRtreeData(workingDir string, outputDir string, items []OSMObject) error {
+
+	buf := new(bytes.Buffer)
+	enc := gob.NewEncoder(buf)
+	err := enc.Encode(items)
+	if err != nil {
+		return err
+	}
+
+	var rtreeFile *os.File
+	if workingDir != "/" {
+		rtreeFile, err = os.OpenFile(workingDir+"/"+outputDir+"/"+"rtree.dat", os.O_RDWR|os.O_CREATE, 0666)
+		if err != nil {
+			return err
+		}
+	} else {
+		rtreeFile, err = os.OpenFile(outputDir+"/"+"rtree.dat", os.O_RDWR|os.O_CREATE, 0666)
+		if err != nil {
+			return err
+		}
+	}
+	_, err = rtreeFile.Write(buf.Bytes())
+
+	return err
+}
+
+func (rt *Rtree) Deserialize(workingDir string, outputDir string) error {
+
+	var rtreeFile *os.File
+	var err error
+	if workingDir != "/" {
+		rtreeFile, err = os.Open(workingDir + "/" + outputDir + "/" + "rtree.dat")
+		if err != nil {
+			return fmt.Errorf("error opening file: %v", err)
+		}
+	} else {
+		rtreeFile, err = os.Open(outputDir + "/" + "rtree.dat")
+		if err != nil {
+			return fmt.Errorf("error opening file: %v", err)
+		}
+	}
+
+	stat, err := os.Stat(rtreeFile.Name())
+	if err != nil {
+		return fmt.Errorf("error when getting metadata file stat: %w", err)
+	}
+
+	buf := make([]byte, stat.Size()*2)
+
+	_, err = rtreeFile.Read(buf)
+	if err != nil {
+		return err
+	}
+
+	gobDec := gob.NewDecoder(bytes.NewBuffer(buf))
+
+	items := []OSMObject{}
+	err = gobDec.Decode(&items)
+	if err != nil {
+		return err
+	}
+
+	for _, item := range items {
+		rt.InsertLeaf(item.GetBound(), item)
+	}
+
+	return nil
 }

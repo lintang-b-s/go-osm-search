@@ -269,29 +269,7 @@ func BenchmarkAutocomplete(b *testing.B) {
 
 }
 
-func BenchmarkFullTextSearchQueryWithoutDocs(b *testing.B) {
 
-	searcher, db := LoadIndex()
-	defer db.Close()
-	err := searcher.LoadMainIndex()
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer searcher.Close()
-
-	rand.Seed(time.Now().UnixNano())
-	b.ResetTimer()
-
-	for n := 0; n < b.N; n++ {
-		randomIndex := rand.Intn(len(searchQuery))
-		_, err := searcher.FreeFormQueryWithoutDocs(searchQuery[randomIndex], 15)
-		if err != nil {
-			b.Fatal(err)
-		}
-	}
-	b.StopTimer()
-	//BenchmarkFullTextSearchQueryWithoutDocs-12    	    4718	    260868 ns/op	  323354 B/op	     232 allocs/op
-}
 
 func BenchmarkGetPostingList(b *testing.B) {
 	searcher, db := LoadIndex()

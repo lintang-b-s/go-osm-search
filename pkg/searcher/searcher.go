@@ -1,7 +1,6 @@
 package searcher
 
 import (
-	"container/heap"
 	"errors"
 	"fmt"
 	"math"
@@ -12,10 +11,13 @@ import (
 	"sort"
 
 	"github.com/RadhiFadlillah/go-sastrawi"
+	"github.com/k0kubun/go-ansi"
+	"github.com/schollz/progressbar/v3"
 )
 
 type DynamicIndexer interface {
 	GetOutputDir() string
+	GetWorkingDir() string
 	GetDocWordCount() map[int]int
 	GetDocsCount() int
 	GetTermIDMap() *pkg.IDMap
@@ -32,6 +34,7 @@ type Searcher struct {
 	SpellCorrector index.SpellCorrectorI
 	TermIDMap      *pkg.IDMap
 	DocStore       SearcherDocStore
+	osmRtree       *datastructure.Rtree
 }
 
 func NewSearcher(idx DynamicIndexer, docStore SearcherDocStore, spell index.SpellCorrectorI) *Searcher {
@@ -40,6 +43,21 @@ func NewSearcher(idx DynamicIndexer, docStore SearcherDocStore, spell index.Spel
 }
 
 func (se *Searcher) LoadMainIndex() error {
+	bar := progressbar.NewOptions(5,
+		progressbar.OptionSetWriter(ansi.NewAnsiStdout()),
+		progressbar.OptionEnableColorCodes(true),
+		progressbar.OptionShowBytes(true),
+		progressbar.OptionSetWidth(15),
+		progressbar.OptionSetDescription("[cyan][1/3]Loading Search & Spatial Index..."),
+		progressbar.OptionSetTheme(progressbar.Theme{
+			Saucer:        "[green]=[reset]",
+			SaucerHead:    "[green]>[reset]",
+			SaucerPadding: " ",
+			BarStart:      "[",
+			BarEnd:        "]",
+		}))
+	fmt.Println("")
+
 	pwd, err := os.Getwd()
 	if err != nil {
 		return err
@@ -50,8 +68,21 @@ func (se *Searcher) LoadMainIndex() error {
 		return err
 	}
 	se.MainIndex = mainIndex
+	bar.Add(1)
+
+	// build vocabulary
 	se.Idx.BuildVocabulary()
 	se.TermIDMap = se.Idx.GetTermIDMap()
+	bar.Add(1)
+
+	// load r*-tree
+	rt := datastructure.NewRtree(25, 50, 2)
+	err = rt.Deserialize(se.Idx.GetWorkingDir(), se.Idx.GetOutputDir())
+	if err != nil {
+		return fmt.Errorf("error when deserialize rtree: %w", err)
+	}
+	se.osmRtree = rt
+	bar.Add(1)
 	return nil
 }
 
@@ -440,123 +471,13 @@ func (se *Searcher) processQuery(rpnDeque Deque) ([]int, error) {
 	return docIDsResult, nil
 }
 
-func (se *Searcher) FreeFormQueryWithoutDocs(query string, k int) ([]int, error) {
-	if k == 0 {
-		k = 10
-	}
-	documentScore := make(map[int]float64) // menyimpan skor cosine tf-idf docs \dot tf-idf query
-
-	docsPQ := datastructure.NewMaxPriorityQueue[int, float64]()
-	heap.Init(docsPQ)
-
-	queryTerms := sastrawi.Tokenize(query)
-
-	queryWordCount := make(map[int]int, len(queryTerms))
-
-	queryTermsID := make([]int, 0, len(queryTerms))
-
-	allPostings := make(map[int][]int, len(queryTerms))
-
-	// {{term1,term1OneEdit}, {term2, term2Edit}, ...}
-	allPossibleQueryTerms := make([][]int, len(queryTerms))
-	originalQueryTerms := make([]int, 0, len(queryTerms))
-
-	for i, term := range queryTerms {
-		tokenizedTerm := pkg.Stemmer.Stem(term)
-		isInVocab := se.TermIDMap.IsInVocabulary(tokenizedTerm)
-
-		originalQueryTerms = append(originalQueryTerms, se.TermIDMap.GetID(tokenizedTerm))
-
-		if !isInVocab {
-
-			correctionOne, err := se.SpellCorrector.GetWordCandidates(tokenizedTerm, 1)
-			if err != nil {
-				return []int{}, err
-			}
-			correctionTwo, err := se.SpellCorrector.GetWordCandidates(tokenizedTerm, 2)
-			if err != nil {
-				return []int{}, err
-			}
-			allPossibleQueryTerms[i] = append(allPossibleQueryTerms[i], correctionOne...)
-			allPossibleQueryTerms[i] = append(allPossibleQueryTerms[i], correctionTwo...)
-		} else {
-			termID := se.TermIDMap.GetID(tokenizedTerm)
-			allPossibleQueryTerms[i] = []int{termID}
-		}
-	}
-
-	allCorrectQueryCandidates := se.SpellCorrector.GetCorrectQueryCandidates(allPossibleQueryTerms)
-	correctQuery, err := se.SpellCorrector.GetCorrectSpellingSuggestion(allCorrectQueryCandidates, originalQueryTerms)
-
+func (se *Searcher) ReverseGeocoding(lat, lon float64) (datastructure.Node, error) {
+	result := se.osmRtree.ImprovedNearestNeighbor(datastructure.Point{lat, lon})
+	doc, err := se.DocStore.GetDoc(result.Leaf.ID)
 	if err != nil {
-		return []int{}, err
+		return datastructure.Node{}, fmt.Errorf("error when get doc: %w", err)
 	}
-
-	queryTermsID = append(queryTermsID, correctQuery...)
-
-	for _, termID := range queryTermsID {
-		postings, err := se.MainIndex.GetPostingList(termID)
-		if err != nil {
-			return []int{}, err
-		}
-		allPostings[termID] = postings
-		queryWordCount[termID] += 1
-	}
-
-	docsCount := float64(se.Idx.GetDocsCount())
-	docNorm := make(map[int]float64)
-	queryNorm := 0.0
-	for qTermID, postings := range allPostings {
-		// iterate semua term di query, hitung tf-idf query dan tf-idf document, accumulate skor cosine di docScore
-		// https://web.stanford.edu/~jurafsky/slp3/14.pdf
-
-		termCountInDoc := make(map[int]int)
-		for _, docID := range postings {
-			termCountInDoc[docID]++ // conunt(t,d)
-		}
-
-		tfTermQuery := 1 + math.Log10(float64(queryWordCount[qTermID]))                  //  1 + log(count(t,q))
-		idfTermQuery := math.Log10(docsCount) - math.Log10(float64(len(termCountInDoc))) // log(N/df_t)
-		tfIDFTermQuery := tfTermQuery * idfTermQuery
-
-		for docID, termCount := range termCountInDoc {
-			tf := 1 + math.Log10(float64(termCount)) //  //  1 + log(count(t,d))
-
-			tfIDFTermDoc := tf * idfTermQuery //tfidf docID
-
-			documentScore[docID] += tfIDFTermDoc * tfIDFTermQuery // summation tfidfDoc*tfIDfquery over query terms
-
-			docNorm[docID] += tfIDFTermDoc * tfIDFTermDoc // document Norm
-		}
-
-		queryNorm += tfIDFTermQuery * tfIDFTermQuery
-	}
-
-	queryNorm = math.Sqrt(queryNorm)
-
-	docWithScores := make([]DocWithScore, 0, len(documentScore))
-	// normalize dengan cara dibagi dengan norm vector query & document
-	for docID, score := range documentScore {
-		documentScore[docID] = score / (queryNorm * math.Sqrt(docNorm[docID]))
-		docWithScores = append(docWithScores, DocWithScore{DocID: docID, Score: documentScore[docID]})
-	}
-
-	sort.Slice(docWithScores, func(i, j int) bool {
-		return docWithScores[i].Score > docWithScores[j].Score
-	})
-
-	relevantDocs := make([]int, 0, k)
-	for i := 0; i < k; i++ {
-		if i >= len(docWithScores) {
-			break
-		}
-
-		currRelDocID := docWithScores[i].DocID
-
-		relevantDocs = append(relevantDocs, currRelDocID)
-	}
-
-	return relevantDocs, nil
+	return doc, nil
 }
 
 func PostingListIntersection2(a, b []int) []int {

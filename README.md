@@ -1,5 +1,5 @@
 # osm-search
-Openstreetmap Full Text Search (support Autocomplete & Spell Corrector) without any external API/external database.
+Openstreetmap Full Text Search (support Autocomplete & Spell Corrector) and Reverse Geocoder without any external API/external database.
 
 # Quick Start
 ## Indexing

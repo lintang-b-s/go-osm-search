@@ -37,6 +37,7 @@ func New(searchService SearchService, log *zap.Logger) *searchAPI {
 func (api *searchAPI) Routes(group *helper.RouteGroup) {
 	group.POST("/search", api.search)
 	group.POST("/autocomplete", api.autocomplete)
+	group.POST("/reverse", api.reverseGeocoding)
 }
 
 type errorResponse struct {
@@ -163,9 +164,50 @@ func (api *searchAPI) autocomplete(w http.ResponseWriter, r *http.Request, _ htt
 
 	if err := api.writeJSON(w, http.StatusOK, envelope{"data": results}, headers); err != nil {
 		api.ServerErrorResponse(w, r, err)
-
 	}
 }
+
+type reverseGeocodingRequest struct {
+	Lat float64 `json:"lat" validate:"required,min=-90,max=90"`
+	Lon float64 `json:"lon" validate:"required,min=-180,max=180"`
+}
+
+func (api *searchAPI) reverseGeocoding(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
+	var request reverseGeocodingRequest
+	err := json.NewDecoder(r.Body).Decode(&request)
+	if err != nil {
+		api.BadRequestResponse(w, r, err)
+		return
+	}
+
+	validate := validator.New()
+	if err := validate.Struct(request); err != nil {
+		english := en.New()
+		uni := ut.New(english, english)
+		trans, _ := uni.GetTranslator("en")
+		_ = enTranslations.RegisterDefaultTranslations(validate, trans)
+		vv := translateError(err, trans)
+		vvString := []string{}
+		for _, v := range vv {
+			vvString = append(vvString, v.Error())
+		}
+		api.BadRequestResponse(w, r, fmt.Errorf("validation error: %v", vvString))
+		return
+	}
+
+	result, err := api.searchService.ReverseGeocoding(request.Lat, request.Lon)
+	if err != nil {
+		api.ServerErrorResponse(w, r, err)
+		return
+	}
+
+	headers := make(http.Header)
+
+	if err := api.writeJSON(w, http.StatusOK, envelope{"data": result}, headers); err != nil {
+		api.ServerErrorResponse(w, r, err)
+	}
+}
+
 
 func translateError(err error, trans ut.Translator) (errs []error) {
 	if err == nil {

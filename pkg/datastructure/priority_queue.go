@@ -15,7 +15,7 @@ func NewHeapMergeItem(termID int, metadata []int, postings []int) HeapMergeItem 
 }
 
 type Item interface {
-	int | HeapMergeItem | RtreeLeaf[OSMObject]
+	int | HeapMergeItem 
 }
 
 type Rank interface {

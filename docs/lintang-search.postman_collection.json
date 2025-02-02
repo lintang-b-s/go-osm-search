@@ -13,7 +13,7 @@
 				"header": [],
 				"body": {
 					"mode": "raw",
-					"raw": "{\n    \"query\": \"Kebun Bibatqng Raginan\",\n    \"top_k\": 10\n}",
+					"raw": "{\n    \"query\": \"Kebun Binayang Ragunsm\",\n    \"top_k\": 10\n}",
 					"options": {
 						"raw": {
 							"language": "json"
@@ -30,6 +30,35 @@
 					"path": [
 						"api",
 						"search"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "reverse geocoding",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"lat\": -6.176485914915514,\n    \"lon\":  106.82251688636687\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "http://localhost:6060/api/reverse",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "6060",
+					"path": [
+						"api",
+						"reverse"
 					]
 				}
 			},

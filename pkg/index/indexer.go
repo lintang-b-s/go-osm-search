@@ -101,11 +101,13 @@ func NewDynamicIndex(outputDir string, maxPostingListSize int,
 	return idx, nil
 }
 
-// SpimiBatchIndex a function to create multiple inverted index segments from osm objects and 
+// SpimiBatchIndex a function to create multiple inverted index segments from osm objects and
 // then merge all of those segments into one merged inverted index using a single-pass-in-memory indexing algorithm
 func (Idx *DynamicIndex) SpimiBatchIndex(ctx context.Context) (map[int64]int, error) {
 	var batchingLock sync.Mutex // buat lock block & nodeIDx.
 	var nodeIDMap = make(map[int64]int)
+
+	osmData := make([]datastructure.OSMObject, 0, len(Idx.IndexedData.Ways)+len(Idx.IndexedData.Nodes))
 
 	fmt.Println("")
 	bar := progressbar.NewOptions(4,
@@ -181,6 +183,14 @@ func (Idx *DynamicIndex) SpimiBatchIndex(ctx context.Context) (map[int64]int, er
 			nodeIDMap[way.ID] = nodeIDX
 			searchNodes = append(searchNodes, datastructure.NewNode(nodeIDX, name, centerLat,
 				centerLon, address, tipe, city))
+
+			rtreeItem := datastructure.OSMObject{
+				ID:  nodeIDX,
+				Lat: centerLat,
+				Lon: centerLon,
+			}
+			osmData = append(osmData, rtreeItem)
+
 			nodeIDX++
 			lock.Unlock()
 
@@ -281,6 +291,14 @@ func (Idx *DynamicIndex) SpimiBatchIndex(ctx context.Context) (map[int64]int, er
 			nodeIDMap[node.ID] = nodeIDX
 			searchNodes = append(searchNodes, datastructure.NewNode(nodeIDX, name, node.Lat,
 				node.Lon, address, tipe, city))
+
+			rtreeItem := datastructure.OSMObject{
+				ID:  nodeIDX,
+				Lat: node.Lat,
+				Lon: node.Lon,
+			}
+			osmData = append(osmData, rtreeItem)
+
 			nodeIDX++
 			lock.Unlock()
 
@@ -386,6 +404,11 @@ func (Idx *DynamicIndex) SpimiBatchIndex(ctx context.Context) (map[int64]int, er
 		fmt.Println("")
 	}
 
+	err := datastructure.SerializeRtreeData(Idx.workingDir, Idx.outputDir, osmData)
+	if err != nil {
+		return nil, err
+	}
+
 	Idx.docsCount = nodeIDX
 
 	// merge semua inverted indexes di intermediateIndices ke merged_index.
@@ -401,7 +424,7 @@ func (Idx *DynamicIndex) SpimiBatchIndex(ctx context.Context) (map[int64]int, er
 	}
 	mergedIndex.OpenWriter()
 
-	err := Idx.Merge(indices, mergedIndex)
+	err = Idx.Merge(indices, mergedIndex)
 	if err != nil {
 		return nil, err
 	}
@@ -785,8 +808,17 @@ func (Idx *DynamicIndex) LoadMeta() error {
 	}
 
 	defer metadataFile.Close()
-	buf := make([]byte, 1024*1024*40)
-	metadataFile.Read(buf)
+
+	stat, err := os.Stat(metadataFile.Name())
+	if err != nil {
+		return fmt.Errorf("error when getting metadata file stat: %w", err)
+	}
+
+	buf := make([]byte, stat.Size()*2)
+	_, err = metadataFile.Read(buf)
+	if err != nil {
+		return fmt.Errorf("error when reading metadata file: %w", err)
+	}
 
 	save := SpimiIndexMetadata{}
 
@@ -803,6 +835,10 @@ func (Idx *DynamicIndex) LoadMeta() error {
 
 func (Idx *DynamicIndex) GetOutputDir() string {
 	return Idx.outputDir
+}
+
+func (Idx *DynamicIndex) GetWorkingDir() string {
+	return Idx.workingDir
 }
 
 func (Idx *DynamicIndex) GetDocWordCount() map[int]int {

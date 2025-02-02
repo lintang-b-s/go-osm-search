@@ -30,6 +30,9 @@ func (s *SearcherService) Autocomplete(query string) ([]datastructure.Node, erro
 }
 
 
+func (s *SearcherService) ReverseGeocoding(lat, lon float64) (datastructure.Node, error) {
+	return s.searcher.ReverseGeocoding(lat, lon)
+}
 
 
 
