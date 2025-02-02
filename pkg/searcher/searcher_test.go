@@ -61,7 +61,7 @@ func TestFullTextSearch(t *testing.T) {
 		}
 
 		mostRelDoc := relevantDocs[0].Name + " " + relevantDocs[0].Address + " " +
-			relevantDocs[0].City + " " + relevantDocs[0].Tipe
+			" " + relevantDocs[0].Tipe
 		assert.Contains(t, mostRelDoc, "Dunia Fantasi")
 	})
 
@@ -72,7 +72,7 @@ func TestFullTextSearch(t *testing.T) {
 		}
 
 		mostRelDoc := relevantDocs[0].Name + " " + relevantDocs[0].Address + " " +
-			relevantDocs[0].City + " " + relevantDocs[0].Tipe
+			" " + relevantDocs[0].Tipe
 		assert.Contains(t, mostRelDoc, "Dunia Fantasi")
 	})
 
@@ -107,7 +107,7 @@ func TestFullTextSearch(t *testing.T) {
 				return
 			}
 			mostRelDoc := relevantDocs[0].Name + " " + relevantDocs[0].Address + " " +
-				relevantDocs[0].City + " " + relevantDocs[0].Tipe
+				" " + relevantDocs[0].Tipe
 			assert.Contains(t, mostRelDoc, tt.wantRes)
 			assert.Equal(t, tt.wantErr, err)
 		})
@@ -174,7 +174,7 @@ func TestAutocomplete(t *testing.T) {
 			isContain := false
 			for _, doc := range relevantDocs {
 				relDocName := doc.Name + " " + doc.Address + " " +
-					doc.City + " " + doc.Tipe
+					doc.Tipe
 
 				if strings.Contains(strings.ToLower(relDocName), tt.wantRes) {
 					isContain = true
@@ -268,8 +268,6 @@ func BenchmarkAutocomplete(b *testing.B) {
 	b.StopTimer()
 
 }
-
-
 
 func BenchmarkGetPostingList(b *testing.B) {
 	searcher, db := LoadIndex()

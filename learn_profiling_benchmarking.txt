@@ -304,3 +304,6 @@ osm-search docker:
 
 
 
+
+
+osmium extract -b 

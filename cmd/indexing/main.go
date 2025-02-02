@@ -13,7 +13,7 @@ import (
 )
 
 var (
-	mapFile   = flag.String("f", "jabodetabek_big.osm.pbf", "openstreeetmap file")
+	mapFile   = flag.String("f", "jabodetabek.osm.pbf", "openstreeetmap file")
 	outputDir = flag.String("o", "lintang", "output directory buat simpan inverted index, ngram, dll")
 )
 
@@ -24,7 +24,7 @@ func main() {
 		os.Mkdir(*outputDir, 0755)
 	}
 
-	ways, onylySearchNodes, nodeMap, tagIDMap, err := geo.ParseOSM(*mapFile)
+	ways, onylySearchNodes, nodeMap, tagIDMap, spatialIndex, osmRelations, err := geo.ParseOSM(*mapFile)
 	if err != nil {
 		panic(err)
 	}
@@ -56,7 +56,7 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	nodeIDMap, err := invertedIndex.SpimiBatchIndex(ctx)
+	allSearchNodes, err := invertedIndex.SpimiBatchIndex(ctx, spatialIndex, osmRelations)
 	if err != nil {
 		panic(err)
 	}
@@ -71,9 +71,8 @@ func main() {
 	defer cleanup()
 
 	ngramLM.SetTermIDMap(invertedIndex.GetTermIDMap())
-	err = invertedIndex.BuildSpellCorrectorAndNgram(nodeIDMap)
+	err = invertedIndex.BuildSpellCorrectorAndNgram(ctx,allSearchNodes, spatialIndex, osmRelations)
 	if err != nil {
 		panic(err)
 	}
 }
-

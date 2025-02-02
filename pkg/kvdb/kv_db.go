@@ -143,7 +143,7 @@ func PutString(bb *bytes.Buffer, offset int, s string) int {
 
 func GetDocSize(doc datastructure.Node) int {
 	return 4 + 4 + len([]byte(doc.Name)) + 8 + 8 + 4 + len([]byte(doc.Address)) + 4 + len([]byte(doc.Tipe)) +
-		4 + len([]byte(doc.City))
+		4
 }
 
 func serializeNode(node datastructure.Node) ([]byte, error) {
@@ -170,8 +170,6 @@ func serializeNode(node datastructure.Node) ([]byte, error) {
 	stringLen = PutString(bb, leftPos, node.Tipe)
 	leftPos += stringLen + 4
 
-	PutString(bb, leftPos, node.City)
-
 	return bb.Bytes(), nil
 }
 
@@ -197,8 +195,6 @@ func deserializeNode(buf []byte) (datastructure.Node, error) {
 
 	node.Tipe = GetString(bb, leftPos)
 	leftPos += len([]byte(node.Tipe)) + 4
-
-	node.City = GetString(bb, leftPos)
 
 	return node, nil
 }

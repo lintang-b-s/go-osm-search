@@ -48,7 +48,7 @@ func (se *Searcher) LoadMainIndex() error {
 		progressbar.OptionEnableColorCodes(true),
 		progressbar.OptionShowBytes(true),
 		progressbar.OptionSetWidth(15),
-		progressbar.OptionSetDescription("[cyan][1/3]Loading Search & Spatial Index..."),
+		progressbar.OptionSetDescription("[cyan][1/3]Loading Inverted & R-tree Index..."),
 		progressbar.OptionSetTheme(progressbar.Theme{
 			Saucer:        "[green]=[reset]",
 			SaucerHead:    "[green]>[reset]",

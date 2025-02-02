@@ -41,9 +41,9 @@ func TestInsertRtree(t *testing.T) {
 	itemsData := []OSMObject{}
 	for i := 0; i < 100; i++ {
 		itemsData = append(itemsData, OSMObject{
-			ID: i,
-			Lat:  float64(i),
-			Lon:  float64(i),
+			ID:  i,
+			Lat: float64(i),
+			Lon: float64(i),
 		})
 	}
 
@@ -56,19 +56,19 @@ func TestInsertRtree(t *testing.T) {
 			name: "Insert 100 item",
 			items: append(itemsData, []OSMObject{
 				{
-					ID: 100,
-					Lat:  0,
-					Lon:  -5,
+					ID:  100,
+					Lat: 0,
+					Lon: -5,
 				},
 				{
-					ID: 101,
-					Lat:  2,
-					Lon:  -10,
+					ID:  101,
+					Lat: 2,
+					Lon: -10,
 				},
 				{
-					ID: 102,
-					Lat:  3,
-					Lon:  -15,
+					ID:  102,
+					Lat: 3,
+					Lon: -15,
 				},
 			}...),
 			expectItems: 103,
@@ -169,9 +169,9 @@ func TestSearch(t *testing.T) {
 		itemsData := []OSMObject{}
 		for i := 0; i < 100; i++ {
 			itemsData = append(itemsData, OSMObject{
-				ID: i,
-				Lat:  float64(i),
-				Lon:  float64(i),
+				ID:  i,
+				Lat: float64(i),
+				Lon: float64(i),
 			})
 		}
 
@@ -203,9 +203,9 @@ func TestSplit(t *testing.T) {
 		itemsData := []OSMObject{}
 		for i := 0; i < 26; i++ {
 			itemsData = append(itemsData, OSMObject{
-				ID: i,
-				Lat:  float64(i),
-				Lon:  float64(i),
+				ID:  i,
+				Lat: float64(i),
+				Lon: float64(i),
 			})
 		}
 
@@ -235,9 +235,9 @@ func TestOverflowTreatment(t *testing.T) {
 		itemsData := []OSMObject{}
 		for i := 0; i < 26; i++ {
 			itemsData = append(itemsData, OSMObject{
-				ID: i,
-				Lat:  float64(i),
-				Lon:  float64(i),
+				ID:  i,
+				Lat: float64(i),
+				Lon: float64(i),
 			})
 		}
 
@@ -486,5 +486,31 @@ func BenchmarkImprovedNearestNeighbor(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		rt.ImprovedNearestNeighbor(myLocation)
+	}
+}
+
+func BenchmarkSearch(b *testing.B) {
+	itemsData := []OSMObject{}
+
+	for i := 0; i < 100000; i++ {
+
+		lat, lon := randomLatLon(-6.809629930307937, -6.896578040216839, 105.99351536809907, 112.60245825180131)
+		itemsData = append(itemsData, OSMObject{
+			ID:  i,
+			Lat: lat,
+			Lon: lon,
+		})
+	}
+
+	rt := NewRtree(25, 50, 2)
+	for _, item := range itemsData {
+		rt.InsertLeaf(item.GetBound(), item)
+	}
+	myLocation := Point{-7.548263971398246, 110.78226484631368}
+
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		rt.Search(NewRtreeBoundingBox(2, []float64{myLocation.Lat - 0.0001, myLocation.Lon - 0.0001}, []float64{myLocation.Lat + 0.0001, myLocation.Lon + 0.0001}))
 	}
 }
