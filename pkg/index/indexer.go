@@ -19,7 +19,7 @@ import (
 )
 
 const (
-	BATCH_SIZE = 200000
+	BATCH_SIZE = 100000
 )
 
 type SpellCorrectorI interface {
