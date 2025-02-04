@@ -1,5 +1,5 @@
 # osm-search
-Openstreetmap Full Text Search (support Autocomplete & Spell Corrector) and Reverse Geocoder without any external API/external database. by default uses BM25F as the ranking function.
+Openstreetmap Full Text Search (support Autocomplete & Spell Corrector Up to 2 Edit Distance per-word) and Reverse Geocoder without any external API/external database. by default uses BM25F as the ranking function.
 
 # Quick Start
 ## Indexing
