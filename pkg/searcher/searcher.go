@@ -27,9 +27,10 @@ const (
 // BM25+ parameter
 const (
 	DELTA = 1.0
-	K1    = 5
+	K1    = 1.2
 	B     = 0.75
 	// param BM25F
+	K1_BM25F       = 10
 	NAME_WEIGHT    = 20
 	ADDRESS_WEIGHT = 1
 	NAME_B         = 0.95
@@ -272,13 +273,13 @@ func (se *Searcher) scoreBM25Field(allPostingsNameField map[int][]int,
 		for docID, tftd := range tfTermDocNameField {
 			weightTD := NAME_WEIGHT * (tftd / (1 + NAME_B*((float64(nameLenDF[docID])/averageNameLenDF)-1)))
 			uniqueDocContainingTerm[docID] = struct{}{}
-			documentScore[docID] += (weightTD / (K1 + weightTD)) * idf
+			documentScore[docID] += (weightTD / (K1_BM25F + weightTD)) * idf
 		}
 
 		for docID, tftd := range tfTermDocAddressField {
 			weightTD := ADDRESS_WEIGHT * (tftd / (1 + NAME_B*((float64(addressLenDF[docID])/averageAddressLenDF)-1)))
 			uniqueDocContainingTerm[docID] = struct{}{}
-			documentScore[docID] += (weightTD / (K1 + weightTD)) * idf
+			documentScore[docID] += (weightTD / (K1_BM25F + weightTD)) * idf
 		}
 
 	}
