@@ -21,6 +21,19 @@ type SimiliarityScoring int
 const (
 	TF_IDF_COSINE SimiliarityScoring = iota
 	BM25_PLUS
+	BM25_FIELD
+)
+
+// BM25+ parameter
+const (
+	DELTA = 1.0
+	K1    = 5
+	B     = 0.75
+	// param BM25F
+	NAME_WEIGHT    = 20
+	ADDRESS_WEIGHT = 1
+	NAME_B         = 0.95
+	ADDRESS_B      = 0.3
 )
 
 type DynamicIndexer interface {
@@ -38,13 +51,14 @@ type SearcherDocStore interface {
 }
 
 type Searcher struct {
-	Idx                DynamicIndexer
-	MainIndex          *index.InvertedIndex
-	SpellCorrector     index.SpellCorrectorI
-	TermIDMap          *pkg.IDMap
-	DocStore           SearcherDocStore
-	osmRtree           *datastructure.Rtree
-	similiarityScoring SimiliarityScoring
+	Idx                   DynamicIndexer
+	MainIndexNameField    *index.InvertedIndex
+	MainIndexAddressField *index.InvertedIndex
+	SpellCorrector        index.SpellCorrectorI
+	TermIDMap             *pkg.IDMap
+	DocStore              SearcherDocStore
+	osmRtree              *datastructure.Rtree
+	similiarityScoring    SimiliarityScoring
 }
 
 func NewSearcher(idx DynamicIndexer, docStore SearcherDocStore, spell index.SpellCorrectorI,
@@ -73,12 +87,19 @@ func (se *Searcher) LoadMainIndex() error {
 	if err != nil {
 		return err
 	}
-	mainIndex := index.NewInvertedIndex("merged_index", se.Idx.GetOutputDir(), pwd)
-	err = mainIndex.OpenReader()
+	mainIndexNameField := index.NewInvertedIndex("merged_name_index", se.Idx.GetOutputDir(), pwd)
+	err = mainIndexNameField.OpenReader()
 	if err != nil {
 		return err
 	}
-	se.MainIndex = mainIndex
+	se.MainIndexNameField = mainIndexNameField
+
+	mainIndexAddressField := index.NewInvertedIndex("merged_address_index", se.Idx.GetOutputDir(), pwd)
+	err = mainIndexAddressField.OpenReader()
+	if err != nil {
+		return err
+	}
+	se.MainIndexAddressField = mainIndexAddressField
 	bar.Add(1)
 
 	// build vocabulary
@@ -98,7 +119,8 @@ func (se *Searcher) LoadMainIndex() error {
 }
 
 func (se *Searcher) Close() {
-	se.MainIndex.Close()
+	se.MainIndexNameField.Close()
+	se.MainIndexAddressField.Close()
 }
 
 type DocWithScore struct {
@@ -117,8 +139,6 @@ func (se *Searcher) FreeFormQuery(query string, k, offset int) ([]datastructure.
 	queryTerms := sastrawi.Tokenize(query)
 
 	queryTermsID := make([]int, 0, len(queryTerms))
-
-	allPostings := make(map[int][]int, len(queryTerms))
 
 	// {{term1,term1OneEdit}, {term2, term2Edit}, ...}
 	allPossibleQueryTerms := make([][]int, len(queryTerms))
@@ -160,22 +180,37 @@ func (se *Searcher) FreeFormQuery(query string, k, offset int) ([]datastructure.
 
 	queryTermsID = append(queryTermsID, correctQuery...)
 
+	allPostingsNameField := make(map[int][]int, len(queryTerms))
+	allPostingsAddressField := make(map[int][]int, len(queryTerms))
+
 	for _, termID := range queryTermsID {
-		// bisa dibuat concurrent
-		postings, err := se.MainIndex.GetPostingList(termID)
+		postings, err := se.MainIndexNameField.GetPostingList(termID)
 		if err != nil {
 			return []datastructure.Node{}, err
 		}
-		allPostings[termID] = postings
+		postingsAddress, err := se.MainIndexAddressField.GetPostingList(termID)
+		if err != nil {
+			return []datastructure.Node{}, err
+		}
+		allPostingsNameField[termID] = postings
+		allPostingsAddressField[termID] = postingsAddress
 		queryWordCount[termID] += 1
 	}
 
 	docWithScores := []DocWithScore{}
 	switch se.similiarityScoring {
 	case TF_IDF_COSINE:
-		docWithScores = se.scoreTFIDFCosine(allPostings, queryWordCount)
+		for termID, postings := range allPostingsAddressField {
+			allPostingsNameField[termID] = append(allPostingsNameField[termID], postings...)
+		}
+		docWithScores = se.scoreTFIDFCosine(allPostingsNameField, queryWordCount)
 	case BM25_PLUS:
-		docWithScores = se.scoreBM25Plus(allPostings)
+		for termID, postings := range allPostingsAddressField {
+			allPostingsNameField[termID] = append(allPostingsNameField[termID], postings...)
+		}
+		docWithScores = se.scoreBM25Plus(allPostingsNameField)
+	case BM25_FIELD:
+		docWithScores = se.scoreBM25Field(allPostingsNameField, allPostingsAddressField, queryTermsID)
 	}
 
 	relevantDocs := make([]datastructure.Node, 0, k)
@@ -197,11 +232,72 @@ func (se *Searcher) FreeFormQuery(query string, k, offset int) ([]datastructure.
 	return relevantDocs, nil
 }
 
-func (se *Searcher) scoreBM25Plus(allPostings map[int][]int) []DocWithScore {
+// https://trec.nist.gov/pubs/trec13/papers/microsoft-cambridge.web.hard.pdf
+func (se *Searcher) scoreBM25Field(allPostingsNameField map[int][]int,
+	allPostingsAddressField map[int][]int, allQueryTermIDs []int) []DocWithScore {
 	// param bm25+
-	delta := 1.0 
-	k1 := 1.2
-	b := 0.75
+
+	documentScore := make(map[int]float64)
+
+	docCount := float64(se.Idx.GetDocsCount())
+
+	nameLenDF := se.MainIndexNameField.GetLenFieldInDoc()
+	addressLenDF := se.MainIndexAddressField.GetLenFieldInDoc()
+	averageNameLenDF := se.MainIndexNameField.GetAverageFieldLength()
+	averageAddressLenDF := se.MainIndexAddressField.GetAverageFieldLength()
+
+	for _, qTermID := range allQueryTermIDs {
+
+		// name field
+		namePostingsList := allPostingsNameField[qTermID]
+
+		tfTermDocNameField := make(map[int]float64, len(namePostingsList))
+		for _, docID := range namePostingsList {
+			tfTermDocNameField[docID]++ // conunt(t,d)
+		}
+
+		// address field
+		addressPostingsList := allPostingsAddressField[qTermID]
+
+		tfTermDocAddressField := make(map[int]float64, len(addressPostingsList))
+		for _, docID := range addressPostingsList {
+			tfTermDocAddressField[docID]++ // conunt(t,d)
+		}
+
+		// score untuk doc yang include term di name field
+
+		uniqueDocContainingTerm := make(map[int]struct{}, len(tfTermDocNameField)+len(tfTermDocAddressField))
+		idf := math.Log10(docCount-float64(len(uniqueDocContainingTerm))+0.5) - math.Log10(float64(len(uniqueDocContainingTerm))+0.5) // log(N-df_t+0.5/df_t+0.5)
+
+		for docID, tftd := range tfTermDocNameField {
+			weightTD := NAME_WEIGHT * (tftd / (1 + NAME_B*((float64(nameLenDF[docID])/averageNameLenDF)-1)))
+			uniqueDocContainingTerm[docID] = struct{}{}
+			documentScore[docID] += (weightTD / (K1 + weightTD)) * idf
+		}
+
+		for docID, tftd := range tfTermDocAddressField {
+			weightTD := ADDRESS_WEIGHT * (tftd / (1 + NAME_B*((float64(addressLenDF[docID])/averageAddressLenDF)-1)))
+			uniqueDocContainingTerm[docID] = struct{}{}
+			documentScore[docID] += (weightTD / (K1 + weightTD)) * idf
+		}
+
+	}
+
+	docWithScores := make([]DocWithScore, 0, len(documentScore))
+
+	for docID, score := range documentScore {
+		docWithScores = append(docWithScores, DocWithScore{DocID: docID, Score: score})
+	}
+
+	sort.Slice(docWithScores, func(i, j int) bool {
+		return docWithScores[i].Score > docWithScores[j].Score
+	})
+
+	return docWithScores
+}
+
+func (se *Searcher) scoreBM25Plus(allPostingsField map[int][]int) []DocWithScore {
+	// param bm25+
 
 	documentScore := make(map[int]float64)
 
@@ -210,8 +306,7 @@ func (se *Searcher) scoreBM25Plus(allPostings map[int][]int) []DocWithScore {
 
 	avgDocLength := se.Idx.GetAverageDocLength()
 
-	for _, postings := range allPostings {
-		// iterate semua term di query, hitung tf-idf query dan tf-idf document, accumulate skor cosine di docScore
+	for _, postings := range allPostingsField {
 
 		tfTermDoc := make(map[int]float64)
 		for _, docID := range postings {
@@ -223,8 +318,8 @@ func (se *Searcher) scoreBM25Plus(allPostings map[int][]int) []DocWithScore {
 		for docID, tftd := range tfTermDoc {
 			// https://www.cs.otago.ac.nz/homepages/andrew/papers/2014-2.pdf
 
-			documentScore[docID] += idf * (delta +
-				((k1+1)+tftd)/(k1*(1-b+b*float64(docWordCount[docID])/avgDocLength)+tftd))
+			documentScore[docID] += idf * (DELTA +
+				((K1+1)+tftd)/(K1*(1-B+B*float64(docWordCount[docID])/avgDocLength)+tftd))
 		}
 	}
 
@@ -344,7 +439,7 @@ func (se *Searcher) Autocomplete(query string, k, offset int) ([]datastructure.N
 				tokens = append(tokens, -1) // AND
 			}
 
-			postings, err := se.MainIndex.GetPostingList(termID)
+			postings, err := se.MainIndexNameField.GetPostingList(termID)
 			if err != nil {
 				return []datastructure.Node{}, err
 			}
@@ -543,7 +638,7 @@ func (se *Searcher) processQuery(rpnDeque Deque) ([]int, error) {
 		}
 
 		if _, ok := operator[token]; !ok {
-			postingList, err := se.MainIndex.GetPostingList(token)
+			postingList, err := se.MainIndexNameField.GetPostingList(token)
 			if err != nil {
 				return []int{}, fmt.Errorf("error when get posting list skip list: %w", err)
 			}

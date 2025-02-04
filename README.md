@@ -1,5 +1,5 @@
 # osm-search
-Openstreetmap Full Text Search (support Autocomplete & Spell Corrector) and Reverse Geocoder without any external API/external database.
+Openstreetmap Full Text Search (support Autocomplete & Spell Corrector) and Reverse Geocoder without any external API/external database. by default uses BM25F as the ranking function.
 
 # Quick Start
 ## Indexing
@@ -21,14 +21,6 @@ Note: The indexing process takes 3-7 minutes, please wait. you can also replace 
 
 
 
-## Benchmark
-
-|          BenchmarkName          | Iterations | Total ns/op  |  Total B/op | Total Allocs/op |
-| :-----------------------------: | ---------- | :----------: | ----------: | --------------- |
-| BenchmarkFullTextSearchQuery-12 | 2930       | 360077 ns/op | 413571 B/op | 1516 allocs/op  |
-|    BenchmarkAutocomplete-12     | 3816       | 288859 ns/op | 246140 B/op | 819 allocs/op   |
-
-Very slow hahah. search operation is much faster than Nominatim :).
 
 
 

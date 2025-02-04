@@ -100,6 +100,7 @@ type OsmRelation struct {
 	AdminLevel  string
 	BoundaryLat []float64
 	BoundaryLon []float64
+	PostalCode  string
 }
 
 func ParseOSM(mapfile string) ([]OSMWay, []OSMNode, NodeMapContainer, *pkg.IDMap, OSMSpatialIndex, []OsmRelation, error) {
@@ -174,6 +175,8 @@ func ParseOSM(mapfile string) ([]OSMWay, []OSMNode, NodeMapContainer, *pkg.IDMap
 				continue
 			}
 
+			postalCode := rel.Tags.Find("postal_code")
+
 			wayIDs := []int64{}
 			for _, m := range rel.Members {
 				if m.Type == osm.TypeWay && m.Role == "outer" {
@@ -190,6 +193,7 @@ func ParseOSM(mapfile string) ([]OSMWay, []OSMNode, NodeMapContainer, *pkg.IDMap
 				AdminLevel:  rel.Tags.Find("admin_level"),
 				BoundaryLat: []float64{},
 				BoundaryLon: []float64{},
+				PostalCode:  postalCode,
 			})
 
 		}
@@ -239,7 +243,7 @@ func ParseOSM(mapfile string) ([]OSMWay, []OSMNode, NodeMapContainer, *pkg.IDMap
 			boundaryWayMap[int64(o.(*osm.Way).ID)] = way
 		}
 
-		name, _, _, _ := GetNameAddressTypeFromOSMWay(tag)
+		name, _, _, _, _ := GetNameAddressTypeFromOSMWay(tag)
 		if name == "" {
 			continue
 		}
@@ -282,7 +286,7 @@ func ParseOSM(mapfile string) ([]OSMWay, []OSMNode, NodeMapContainer, *pkg.IDMap
 			if _, ok := wayNodesMap[node.ID]; ok {
 				ctr.nodeMap[int64(o.(*osm.Node).ID)] = o.(*osm.Node)
 			}
-			name, _, _, _ := GetNameAddressTypeFromOSMWay(node.TagMap())
+			name, _, _, _, _ := GetNameAddressTypeFromOSMWay(node.TagMap())
 			if name == "" {
 				continue
 			}
@@ -306,7 +310,7 @@ func ParseOSM(mapfile string) ([]OSMWay, []OSMNode, NodeMapContainer, *pkg.IDMap
 
 	// process poligon administrative boundary & rtree administrative boundary
 	for relID, rel := range relations {
-	
+
 		boundaryLat, boundaryLon := []float64{}, []float64{}
 		for _, relway := range rel.ways {
 			wway, ok := boundaryWayMap[relway]
@@ -414,7 +418,7 @@ func ParseOSM(mapfile string) ([]OSMWay, []OSMNode, NodeMapContainer, *pkg.IDMap
 }
 
 // TODO: ngikutin Nominatim, infer dari administrative boundary & nearest street dari osm way.
-func GetNameAddressTypeFromOSMWay(tag map[string]string) (string, string, string, string) {
+func GetNameAddressTypeFromOSMWay(tag map[string]string) (string, string, string, string, string) {
 	name := tag["name"]
 	shortName, ok := tag["short_name"]
 	if ok {
@@ -425,12 +429,18 @@ func GetNameAddressTypeFromOSMWay(tag map[string]string) (string, string, string
 
 	postalCode, ok := tag["addr:postcode"]
 
+	houseNumber := tag["addr:housenumber"]
+
 	tipe := GetOSMObjectType(tag)
-	return name, street, tipe, postalCode
+	return name, street, tipe, postalCode, houseNumber
 }
 
 func GetOSMObjectType(tag map[string]string) string {
 	tipe, ok := tag["amenity"]
+	if ok {
+		return tipe
+	}
+	tipe, ok = tag["highway"]
 	if ok {
 		return tipe
 	}

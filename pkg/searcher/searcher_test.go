@@ -270,26 +270,26 @@ func BenchmarkAutocomplete(b *testing.B) {
 
 }
 
-func BenchmarkGetPostingList(b *testing.B) {
-	searcher, db := LoadIndex()
-	defer db.Close()
-	err := searcher.LoadMainIndex()
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer searcher.Close()
+// func BenchmarkGetPostingList(b *testing.B) {
+// 	searcher, db := LoadIndex()
+// 	defer db.Close()
+// 	err := searcher.LoadMainIndex()
+// 	if err != nil {
+// 		log.Fatal(err)
+// 	}
+// 	defer searcher.Close()
 
-	rand.Seed(time.Now().UnixNano())
-	b.ResetTimer()
+// 	rand.Seed(time.Now().UnixNano())
+// 	b.ResetTimer()
 
-	for n := 0; n < b.N; n++ {
-		for i := 0; i < 5; i++ {
-			termID := rand.Intn(10000)
-			_, err = searcher.MainIndex.GetPostingList(termID)
-			if err != nil {
-				b.Fatal(err)
-			}
-		}
+// 	for n := 0; n < b.N; n++ {
+// 		for i := 0; i < 5; i++ {
+// 			termID := rand.Intn(10000)
+// 			_, err = searcher.MainIndex.GetPostingList(termID)
+// 			if err != nil {
+// 				b.Fatal(err)
+// 			}
+// 		}
 
-	}
-}
+// 	}
+// }

@@ -53,7 +53,7 @@ func decodeUVarint(buf []byte) (uint64, int) {
 	return v, n
 }
 
-func DecodePostingList(buf []byte) []int {
+func DecodePostingsList(buf []byte) []int {
 	var results []int
 	for len(buf) > 0 {
 		v, n := decodeUVarint(buf)
@@ -67,7 +67,7 @@ func DecodePostingList(buf []byte) []int {
 	return results
 }
 
-func EncodePostingList(arr []int) []byte {
+func EncodePostingsList(arr []int) []byte {
 
 	buf := make([]byte, 0)
 	for i := 0; i < len(arr); i++ {
@@ -76,34 +76,86 @@ func EncodePostingList(arr []int) []byte {
 	return buf
 }
 
-// func DecodePostingList(buf []byte) []int {
-// 	var results []int
-// 	for len(buf) > 0 {
-// 		v, n := decodeUVarint(buf)
-// 		if n == 0 {
-// 			break
-// 		}
+func RunLengthEncoding(arr []int) []int {
+	encoded := make([]int, 0)
+	s := 0
+	count := 0
 
-// 		results = append(results, int(v))
-// 		buf = buf[n:]
+	for i := 0; i < len(arr); i++ {
+		if arr[i] != arr[s] {
+			// save the element
 
-// 	}
+			encoded = append(encoded, arr[s])
 
-// 	for i := 1; i < len(results); i++ {
-// 		results[i] += results[i-1]
-// 	}
-// 	return results
-// }
-//  error
-// func EncodePostingList(arr []int) []byte {
-// 	var res = make([]int, len(arr))
-// 	copy(res, arr)
-// 	for i := len(arr) - 1; i >= 1; i-- {
-// 		res[i] -= res[i-1]
-// 	}
-// 	buf := make([]byte, 0)
-// 	for i := 0; i < len(arr); i++ {
-// 		buf = append(buf, encodeUVarint(uint64(res[i]))...)
-// 	}
-// 	return buf
-// }
+			// save count of the previous element
+			encoded = append(encoded, count)
+
+			s = i
+			count = 0
+		}
+		count++
+	}
+
+	encoded = append(encoded, arr[s])
+	encoded = append(encoded, count)
+	return encoded
+}
+
+/*
+error pas request k6 banyak ?? unit test aman padahal
+func vbEncodeNum(n int) []byte {
+	var buf = []byte{}
+	for {
+		bb := make([]byte, 1)
+		bb[0] = byte(n & 0x7f) // n mod 128
+		buf = append(bb, buf...)
+		if n < 128 { // n < 128
+			break
+		}
+		n >>= 7 // n div 128
+	}
+	buf[len(buf)-1] |= 0x80 // buf[len(buf)] += 128
+	return buf
+}
+
+func vbDecode(bs []byte) []int {
+	numbers := make([]int, 0)
+	var n int
+	for i := 0; i < len(bs); i++ {
+		if bs[i] < 128 { // bs[i] < 128
+			n = n<<7 | int(bs[i]) // n*128 + bs[i]
+		} else {
+			n = n<<7 | int(bs[i]&0x7f) // n*128 + (bs[i] - 128)
+			numbers = append(numbers, n)
+			n = 0
+		}
+	}
+	return numbers
+}
+
+func EncodePostingsList(postingsList []int) []byte {
+	postisListCopy := make([]int, len(postingsList))
+	copy(postisListCopy, postingsList)
+	for i := len(postisListCopy) - 1; i >= 1; i-- {
+		postisListCopy[i] -= postisListCopy[i-1]
+	}
+
+	var buf bytes.Buffer
+	for _, v := range postisListCopy {
+		buf.Write(vbEncodeNum(v))
+	}
+	return buf.Bytes()
+}
+
+func DecodePostingsList(bs []byte) []int {
+	newBB := make([]byte, len(bs))
+	copy(newBB, bs)
+	numbers := vbDecode(newBB)
+	for i := 1; i < len(numbers); i++ {
+		numbers[i] += numbers[i-1]
+	}
+	return numbers
+}
+
+
+*/

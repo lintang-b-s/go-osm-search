@@ -168,7 +168,7 @@ func (Idx *DynamicIndex) SpimiBatchIndex(ctx context.Context, osmSpatialIdx geo.
 
 			centerLat, centerLon := lat[len(lat)/2], lon[len(lon)/2]
 
-			name, street, tipe, postalCode := geo.GetNameAddressTypeFromOSMWay(way.TagMap)
+			name, street, tipe, postalCode, houseNumber := geo.GetNameAddressTypeFromOSMWay(way.TagMap)
 
 			if name == "" || tipe == "chalet" {
 				continue
@@ -179,7 +179,7 @@ func (Idx *DynamicIndex) SpimiBatchIndex(ctx context.Context, osmSpatialIdx geo.
 				continue
 			}
 
-			address, city := Idx.GetFullAdress(street, postalCode, centerLat, centerLon, osmSpatialIdx, osmRelations)
+			address, city := Idx.GetFullAdress(street, postalCode, houseNumber, centerLat, centerLon, osmSpatialIdx, osmRelations)
 
 			lock.Lock()
 			nodeBoundingBox[strings.ToLower(name)] = geo.NewBoundingBox(lat, lon)
@@ -198,13 +198,27 @@ func (Idx *DynamicIndex) SpimiBatchIndex(ctx context.Context, osmSpatialIdx geo.
 			lock.Unlock()
 
 			if len(searchNodes) == BATCH_SIZE {
-				err := Idx.SpimiInvert(searchNodes, &block, lock)
-				if err != nil {
+				errChan := make(chan error)
+
+				go func() {
+					errChan <- Idx.SpimiInvert(searchNodes, &block, lock, "name", ctx)
+				}()
+
+				go func() {
+					errChan <- Idx.SpimiInvert(searchNodes, &block, lock, "address", ctx)
+				}()
+
+				if err := <-errChan; err != nil {
 					indexingRes <- IndexingResults{Error: err}
 					return
 				}
 
-				err = Idx.documentStore.SaveDocs(searchNodes)
+				if err := <-errChan; err != nil {
+					indexingRes <- IndexingResults{Error: err}
+					return
+				}
+
+				err := Idx.documentStore.SaveDocs(searchNodes)
 				if err != nil {
 					indexingRes <- IndexingResults{Error: err}
 					return
@@ -219,13 +233,26 @@ func (Idx *DynamicIndex) SpimiBatchIndex(ctx context.Context, osmSpatialIdx geo.
 		}
 
 		if len(searchNodes) != 0 {
-			err := Idx.SpimiInvert(searchNodes, &block, lock)
-			if err != nil {
+			errChan := make(chan error)
+			go func() {
+				errChan <- Idx.SpimiInvert(searchNodes, &block, lock, "name", ctx)
+			}()
+
+			go func() {
+				errChan <- Idx.SpimiInvert(searchNodes, &block, lock, "address", ctx)
+			}()
+
+			if err := <-errChan; err != nil {
 				indexingRes <- IndexingResults{Error: err}
 				return
 			}
 
-			err = Idx.documentStore.SaveDocs(searchNodes)
+			if err := <-errChan; err != nil {
+				indexingRes <- IndexingResults{Error: err}
+				return
+			}
+
+			err := Idx.documentStore.SaveDocs(searchNodes)
 			if err != nil {
 				indexingRes <- IndexingResults{Error: err}
 				return
@@ -283,7 +310,7 @@ func (Idx *DynamicIndex) SpimiBatchIndex(ctx context.Context, osmSpatialIdx geo.
 			default:
 			}
 
-			name, street, tipe, postalCode := geo.GetNameAddressTypeFromOSMWay(node.TagMap)
+			name, street, tipe, postalCode, houseNumber := geo.GetNameAddressTypeFromOSMWay(node.TagMap)
 			if name == "" || tipe == "chalet" {
 				continue
 			}
@@ -293,7 +320,7 @@ func (Idx *DynamicIndex) SpimiBatchIndex(ctx context.Context, osmSpatialIdx geo.
 				continue
 			}
 
-			address, city := Idx.GetFullAdress(street, postalCode, node.Lat, node.Lon, osmSpatialIdx, osmRelations)
+			address, city := Idx.GetFullAdress(street, postalCode, houseNumber, node.Lat, node.Lon, osmSpatialIdx, osmRelations)
 
 			lock.Lock()
 
@@ -311,12 +338,26 @@ func (Idx *DynamicIndex) SpimiBatchIndex(ctx context.Context, osmSpatialIdx geo.
 			lock.Unlock()
 
 			if len(searchNodes) == BATCH_SIZE {
-				err := Idx.SpimiInvert(searchNodes, &block, lock)
-				if err != nil {
+				errChan := make(chan error)
+				go func() {
+					errChan <- Idx.SpimiInvert(searchNodes, &block, lock, "name", ctx)
+				}()
+
+				go func() {
+					errChan <- Idx.SpimiInvert(searchNodes, &block, lock, "address", ctx)
+				}()
+
+				if err := <-errChan; err != nil {
 					indexingRes <- IndexingResults{Error: err}
 					return
 				}
-				err = Idx.documentStore.SaveDocs(searchNodes)
+
+				if err := <-errChan; err != nil {
+					indexingRes <- IndexingResults{Error: err}
+					return
+				}
+
+				err := Idx.documentStore.SaveDocs(searchNodes)
 				if err != nil {
 					indexingRes <- IndexingResults{Error: err}
 					return
@@ -331,12 +372,26 @@ func (Idx *DynamicIndex) SpimiBatchIndex(ctx context.Context, osmSpatialIdx geo.
 		}
 
 		if len(searchNodes) != 0 {
-			err := Idx.SpimiInvert(searchNodes, &block, lock)
-			if err != nil {
+			errChan := make(chan error)
+			go func() {
+				errChan <- Idx.SpimiInvert(searchNodes, &block, lock, "name", ctx)
+			}()
+
+			go func() {
+				errChan <- Idx.SpimiInvert(searchNodes, &block, lock, "address", ctx)
+			}()
+
+			if err := <-errChan; err != nil {
 				indexingRes <- IndexingResults{Error: err}
 				return
 			}
-			err = Idx.documentStore.SaveDocs(searchNodes)
+
+			if err := <-errChan; err != nil {
+				indexingRes <- IndexingResults{Error: err}
+				return
+			}
+
+			err := Idx.documentStore.SaveDocs(searchNodes)
 			if err != nil {
 				indexingRes <- IndexingResults{Error: err}
 				return
@@ -429,15 +484,19 @@ func (Idx *DynamicIndex) SpimiBatchIndex(ctx context.Context, osmSpatialIdx geo.
 	Idx.docsCount = nodeIDX
 
 	// merge semua inverted indexes di intermediateIndices ke merged_index.
-	mergedIndex := NewInvertedIndex("merged_index", Idx.outputDir, Idx.workingDir)
+
+	// merged untuk field name
+	mergedIndex := NewInvertedIndex("merged_name_index", Idx.outputDir, Idx.workingDir)
 	indices := []*InvertedIndex{}
 	for _, indexID := range Idx.intermediateIndices {
-		index := NewInvertedIndex(indexID, Idx.outputDir, Idx.workingDir)
-		err := index.OpenReader()
-		if err != nil {
-			return nil, err
+		if strings.Contains(indexID, "name") {
+			index := NewInvertedIndex(indexID, Idx.outputDir, Idx.workingDir)
+			err := index.OpenReader()
+			if err != nil {
+				return nil, err
+			}
+			indices = append(indices, index)
 		}
-		indices = append(indices, index)
 	}
 	mergedIndex.OpenWriter()
 
@@ -445,6 +504,10 @@ func (Idx *DynamicIndex) SpimiBatchIndex(ctx context.Context, osmSpatialIdx geo.
 	if err != nil {
 		return nil, err
 	}
+
+	lenDF := Idx.MergeFieldLengths(indices)
+	mergedIndex.SetLenFieldInDoc(lenDF)
+
 	for _, index := range indices {
 		err := index.Close()
 		if err != nil {
@@ -455,6 +518,40 @@ func (Idx *DynamicIndex) SpimiBatchIndex(ctx context.Context, osmSpatialIdx geo.
 	if err != nil {
 		return nil, err
 	}
+
+	// merged untuk field address
+	mergedIndex = NewInvertedIndex("merged_address_index", Idx.outputDir, Idx.workingDir)
+	indices = []*InvertedIndex{}
+	for _, indexID := range Idx.intermediateIndices {
+		if strings.Contains(indexID, "address") {
+			index := NewInvertedIndex(indexID, Idx.outputDir, Idx.workingDir)
+			err := index.OpenReader()
+			if err != nil {
+				return nil, err
+			}
+			indices = append(indices, index)
+		}
+	}
+	mergedIndex.OpenWriter()
+
+	err = Idx.Merge(indices, mergedIndex)
+	if err != nil {
+		return nil, err
+	}
+
+	lenDF = Idx.MergeFieldLengths(indices)
+	mergedIndex.SetLenFieldInDoc(lenDF)
+	for _, index := range indices {
+		err := index.Close()
+		if err != nil {
+			return nil, err
+		}
+	}
+	err = mergedIndex.Close()
+	if err != nil {
+		return nil, err
+	}
+
 	bar.Add(1)
 	fmt.Println("")
 	return allSearchNodes, nil
@@ -492,6 +589,20 @@ func IsNodeDuplicateCheck(name string, lats, lon float64, nodeBoundingBox map[st
 	}
 	contain := prevBB.Contains(lats, lon)
 	return contain
+}
+
+func (Idx *DynamicIndex) MergeFieldLengths(indices []*InvertedIndex) map[int]int {
+	lenDF := make(map[int]int)
+	for _, index := range indices {
+		for docID, fieldLength := range index.lenFieldInDoc {
+			if _, ok := lenDF[docID]; ok {
+				lenDF[docID] += fieldLength
+			} else {
+				lenDF[docID] = fieldLength
+			}
+		}
+	}
+	return lenDF
 }
 
 // Merge. merge k inverted indexes into 1 merged index.
@@ -532,14 +643,21 @@ func (Idx *DynamicIndex) Merge(indices []*InvertedIndex, mergedIndex *InvertedIn
 
 // SpimiInvert is a function to invert a batch of nodes into a posting list & write it to inverted index file.
 // https://nlp.stanford.edu/IR-book/pdf/04const.pdf (Figure 4.4 Spimi-invert)
-func (Idx *DynamicIndex) SpimiInvert(nodes []datastructure.Node, block *int, lock *sync.Mutex) error {
+func (Idx *DynamicIndex) SpimiInvert(nodes []datastructure.Node, block *int, lock *sync.Mutex, field string,
+	ctx context.Context) error {
 	postingSize := 0
 
 	termToPostingMap := make(map[int][]int)
-	tokenStreams := Idx.SpimiParseOSMNodes(nodes, lock) // [pair of termID and nodeID]
+	lenDF := make(map[int]int)
+	tokenStreams := Idx.SpimiParseOSMNodes(nodes, lock, field, lenDF, ctx) // [pair of termID and nodeID]
 
 	var postingList []int
 	for _, termDocPair := range tokenStreams {
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("context cancelled")
+		default:
+		}
 
 		if len(tokenStreams) == 0 {
 			continue
@@ -565,11 +683,12 @@ func (Idx *DynamicIndex) SpimiInvert(nodes []datastructure.Node, block *int, loc
 			sort.Ints(terms)
 
 			lock.Lock()
-			indexID := "index_" + strconv.Itoa(*block)
+			indexID := "index_" + field + "_" + strconv.Itoa(*block)
 			*block += 1
 			lock.Unlock()
 
 			index := NewInvertedIndex(indexID, Idx.outputDir, Idx.workingDir)
+			index.SetLenFieldInDoc(lenDF)
 			err := index.OpenWriter()
 			if err != nil {
 				return err
@@ -596,11 +715,12 @@ func (Idx *DynamicIndex) SpimiInvert(nodes []datastructure.Node, block *int, loc
 	sort.Ints(terms)
 
 	lock.Lock()
-	indexID := "index_" + strconv.Itoa(*block)
+	indexID := "index_" + field + "_" + strconv.Itoa(*block)
 	*block += 1
 	lock.Unlock()
 
 	index := NewInvertedIndex(indexID, Idx.outputDir, Idx.workingDir)
+	index.SetLenFieldInDoc(lenDF)
 	err := index.OpenWriter()
 	if err != nil {
 		return err
@@ -622,18 +742,28 @@ func (Idx *DynamicIndex) SpimiInvert(nodes []datastructure.Node, block *int, loc
 }
 
 // SpimiParseOSMNode is a function to parse an OSM node into a token stream (termID-docID pairs).
-func (Idx *DynamicIndex) SpimiParseOSMNode(node datastructure.Node, lock *sync.Mutex) [][]int {
+func (Idx *DynamicIndex) SpimiParseOSMNode(node datastructure.Node, lenDF map[int]int,
+	lock *sync.Mutex, field string) [][]int {
 	termDocPairs := [][]int{}
 
-	soup := node.Name + " " + node.Address
+	soup := ""
+	switch field {
+	case "name":
+		soup = node.Name
+	case "address":
+		soup = node.Address
+	}
+
 	if soup == "" {
 		return termDocPairs
 	}
 
 	words := sastrawi.Tokenize(soup)
 	lock.Lock()
-	Idx.docWordCount[node.ID] = len(words)
+	Idx.docWordCount[node.ID] += len(words)
 	lock.Unlock()
+
+	lenDF[node.ID] = len(words)
 
 	for _, word := range words {
 		tokenizedWord := pkg.Stemmer.Stem(word)
@@ -647,10 +777,17 @@ func (Idx *DynamicIndex) SpimiParseOSMNode(node datastructure.Node, lock *sync.M
 }
 
 // SpimiParseOSMNodes is a function to parse a batch of OSM nodes into a token stream (termID-docID pairs).
-func (Idx *DynamicIndex) SpimiParseOSMNodes(nodes []datastructure.Node, lock *sync.Mutex) [][]int {
+func (Idx *DynamicIndex) SpimiParseOSMNodes(nodes []datastructure.Node, lock *sync.Mutex, field string,
+	lenDF map[int]int, ctx context.Context) [][]int {
 	termDocPairs := [][]int{}
 	for _, node := range nodes {
-		termDocPairs = append(termDocPairs, Idx.SpimiParseOSMNode(node, lock)...)
+		select {
+		case <-ctx.Done():
+			return termDocPairs
+		default:
+
+		}
+		termDocPairs = append(termDocPairs, Idx.SpimiParseOSMNode(node, lenDF, lock, field)...)
 	}
 	return termDocPairs
 }
@@ -824,7 +961,7 @@ func (Idx *DynamicIndex) BuildVocabulary() {
 	Idx.TermIDMap.BuildVocabulary()
 }
 
-func (Idx *DynamicIndex) GetFullAdress(street, postalCode string, centerLat, centerLon float64,
+func (Idx *DynamicIndex) GetFullAdress(street, postalCode, houseNumber string, centerLat, centerLon float64,
 	osmSpatialIdx geo.OSMSpatialIndex, osmRelations []geo.OsmRelation) (string, string) {
 	centerItem := datastructure.Point{
 		Lat: centerLat,
@@ -843,8 +980,12 @@ func (Idx *DynamicIndex) GetFullAdress(street, postalCode string, centerLat, cen
 		// pick nearest street
 		street := osmSpatialIdx.StreetRtree.ImprovedNearestNeighbor(centerItem)
 
-		streetName, _, _, _ := geo.GetNameAddressTypeFromOSMWay(Idx.IndexedData.Ways[street.Leaf.ID].TagMap)
+		streetName, _, _, _, _ := geo.GetNameAddressTypeFromOSMWay(Idx.IndexedData.Ways[street.Leaf.ID].TagMap)
 		address += streetName
+	}
+
+	if houseNumber != "" {
+		address += ", " + houseNumber
 	}
 
 	// kelurahan
@@ -853,6 +994,9 @@ func (Idx *DynamicIndex) GetFullAdress(street, postalCode string, centerLat, cen
 
 	for _, currKelurahan := range kelurahans {
 		kelurahanRel := osmRelations[currKelurahan.Leaf.ID]
+		if postalCode == "" {
+			postalCode = kelurahanRel.PostalCode
+		}
 		if len(kelurahanRel.BoundaryLat) == 0 {
 			continue
 		}
@@ -938,8 +1082,26 @@ func (Idx *DynamicIndex) GetFullAdress(street, postalCode string, centerLat, cen
 	// // postalCode
 	if postalCode != "" {
 		address += ", " + postalCode
-	}
+	} else {
+		nearest := osmSpatialIdx.PostalCodeRtree.ImprovedNearestNeighbor(centerItem)
+		nearestWay := Idx.IndexedData.Ways[nearest.Leaf.ID]
+		nearestWayNode := Idx.IndexedData.Ctr.GetNode(nearestWay.NodeIDs[0])
 
+		nearestWayBB := datastructure.NewRtreeBoundingBox(2, []float64{nearestWayNode.Lat - 0.0001, nearestWayNode.Lon - 0.0001},
+			[]float64{nearestWayNode.Lat + 0.0001, nearestWayNode.Lon + 0.0001})
+
+		nearestWayKelurahan := osmSpatialIdx.KelurahanRtree.Search(nearestWayBB)
+
+		for _, currKelurahan := range nearestWayKelurahan {
+			kelurahanRel := osmRelations[currKelurahan.Leaf.ID]
+			inside := geo.IsPointInsidePolygonWindingNum(centerLat, centerLon, kelurahanRel.BoundaryLat, kelurahanRel.BoundaryLon)
+			if inside {
+				address += ", " + nearestWay.TagMap["addr:postcode"]
+				break
+			}
+		}
+
+	}
 	// country
 	if osmSpatialIdx.CountryRtree.Size != 0 {
 		country := osmSpatialIdx.CountryRtree.ImprovedNearestNeighbor(centerItem)

@@ -13,7 +13,8 @@ export default () => {
     "top_k": 10
   };
 
-  const res = http.post(
+  const res = http.request(
+    "GET",
     "http://localhost:6060/api/search",
     JSON.stringify(reqBody),
     {

@@ -7,13 +7,13 @@ import (
 	myHttp "github.com/lintang-b-s/osm-search/pkg/http"
 	"github.com/lintang-b-s/osm-search/pkg/searcher"
 
-	_ "github.com/lintang-b-s/osm-search/cmd/server/docs" 
-	_ "github.com/swaggo/http-swagger"                    
+	_ "github.com/lintang-b-s/osm-search/cmd/server/docs"
+	_ "github.com/swaggo/http-swagger"
 	"go.uber.org/zap"
 )
 
 var (
-	simiiliarityScoring = flag.String("sc", "BM25_PLUS", "similiarity scoring (only 2: BM25_PLUS or TF_IDF_COSINE)")
+	simiiliarityScoring = flag.String("sc", "BM25_FIELD", "similiarity scoring (only 2: BM25_PLUS or TF_IDF_COSINE)")
 )
 
 //	@title			OSM Search Engine API
@@ -38,8 +38,10 @@ func main() {
 		searcherScoring = searcher.BM25_PLUS
 	case "TF_IDF_COSINE":
 		searcherScoring = searcher.TF_IDF_COSINE
+	case "BM25_FIELD":
+		searcherScoring = searcher.BM25_FIELD
 	default:
-		searcherScoring = searcher.BM25_PLUS
+		searcherScoring = searcher.BM25_FIELD
 	}
 
 	service, cleanup, err := di.InitializeSearcherService(searcherScoring)

@@ -13,7 +13,7 @@ export default () => {
   "query": "Taman Min",
   };
 
-  const res = http.post(
+  const res = http.get(
     "http://localhost:6060/api/autocomplete",
     JSON.stringify(reqBody),
     {
