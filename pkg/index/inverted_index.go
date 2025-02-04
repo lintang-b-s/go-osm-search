@@ -2,7 +2,6 @@ package index
 
 import (
 	"encoding/binary"
-	"errors"
 	"fmt"
 	"iter"
 	"math"
@@ -179,7 +178,7 @@ func (Idx *InvertedIndex) OpenReader() error {
 func (Idx *InvertedIndex) GetPostingList(termID int) ([]int, error) {
 	postingMetadata, ok := Idx.postingMetadata[termID]
 	if !ok {
-		return []int{}, errors.New("termID not found")
+		return []int{}, nil // in case termID not found
 	}
 	startPositionInIndexFile := int64(postingMetadata[0])
 	Idx.indexFile.Seek(startPositionInIndexFile, 0)
