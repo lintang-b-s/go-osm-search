@@ -2,7 +2,8 @@ package kv_di
 
 import (
 	"context"
-	"osm-search/pkg/kvdb"
+
+	"github.com/lintang-b-s/osm-search/pkg/kvdb"
 
 	bolt "go.etcd.io/bbolt"
 )

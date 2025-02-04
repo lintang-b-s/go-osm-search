@@ -5,9 +5,10 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math"
-	"osm-search/pkg/datastructure"
 	"strconv"
 	"sync"
+
+	"github.com/lintang-b-s/osm-search/pkg/datastructure"
 
 	"go.etcd.io/bbolt"
 )

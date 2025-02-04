@@ -6,8 +6,9 @@ import (
 	"fmt"
 	"math"
 	"os"
-	"osm-search/pkg"
 	"sync"
+
+	"github.com/lintang-b-s/osm-search/pkg"
 )
 
 const (
@@ -25,11 +26,11 @@ type NGramLanguageModel struct {
 }
 
 type NGramData struct {
-	OneGramCount   map[int]int
-	TwoGramCount   map[[2]int]int
-	ThreeGramCount map[[3]int]int
-	FourGramCount  map[[4]int]int
-	TotalWordFreq  int
+	UniGramCount  map[int]int
+	BiGramCount   map[[2]int]int
+	TriGramCount  map[[3]int]int
+	QuadGramCount map[[4]int]int
+	TotalWordFreq int
 }
 
 func NewNGramLanguageModel(outDir string) *NGramLanguageModel {
@@ -108,7 +109,7 @@ func (lm *NGramLanguageModel) PreProcessData(tokenizedDocs [][]string, countThre
 	return replacedTokenizedDocs
 }
 
-func (lm *NGramLanguageModel) countOnegram(data [][]int) {
+func (lm *NGramLanguageModel) countUnigram(data [][]int) {
 
 	var nGrams = make(map[int]int)
 
@@ -130,10 +131,10 @@ func (lm *NGramLanguageModel) countOnegram(data [][]int) {
 		}
 	}
 
-	lm.Data.OneGramCount = nGrams
+	lm.Data.UniGramCount = nGrams
 }
 
-func (lm *NGramLanguageModel) countTwogram(data [][]int) {
+func (lm *NGramLanguageModel) countBigram(data [][]int) {
 
 	var nGrams = make(map[[2]int]int)
 
@@ -155,10 +156,10 @@ func (lm *NGramLanguageModel) countTwogram(data [][]int) {
 		}
 	}
 
-	lm.Data.TwoGramCount = nGrams
+	lm.Data.BiGramCount = nGrams
 }
 
-func (lm *NGramLanguageModel) countThreegram(data [][]int) {
+func (lm *NGramLanguageModel) countTrigram(data [][]int) {
 
 	var nGrams = make(map[[3]int]int)
 
@@ -180,17 +181,17 @@ func (lm *NGramLanguageModel) countThreegram(data [][]int) {
 		}
 	}
 
-	lm.Data.ThreeGramCount = nGrams
+	lm.Data.TriGramCount = nGrams
 }
 
-func (lm *NGramLanguageModel) countFourgram(data [][]int) {
+func (lm *NGramLanguageModel) countQuadgram(data [][]int) {
 
 	var nGrams = make(map[[4]int]int)
 
 	for _, doc := range data {
 
 		doc = lm.addStartEndToken(doc, 4)
-
+		
 		m := len(doc) - 4 + 1
 		for i := 0; i < m; i++ {
 			var nGram [4]int
@@ -205,15 +206,15 @@ func (lm *NGramLanguageModel) countFourgram(data [][]int) {
 		}
 	}
 
-	lm.Data.FourGramCount = nGrams
+	lm.Data.QuadGramCount = nGrams
 }
 
-// EstimateProbability. menghitung probabilitas nextWord berdasarkan previous tokens.
-func (lm *NGramLanguageModel) EstimateProbability(nextWord int, previousNGram []int, n int) float64 {
+// estimateProbability. menghitung probabilitas nextWord berdasarkan previous tokens.
+func (lm *NGramLanguageModel) estimateProbability(nextWord int, previousNGram []int, n int) float64 {
 	switch n {
 	case 1:
 		var ngramCount int
-		if count, ok := lm.Data.OneGramCount[nextWord]; ok {
+		if count, ok := lm.Data.UniGramCount[nextWord]; ok {
 			ngramCount = count
 		} else {
 			ngramCount = 0
@@ -226,7 +227,7 @@ func (lm *NGramLanguageModel) EstimateProbability(nextWord int, previousNGram []
 
 	case 2:
 		var prevNgramCount int
-		if count, ok := lm.Data.OneGramCount[previousNGram[0]]; ok {
+		if count, ok := lm.Data.UniGramCount[previousNGram[0]]; ok {
 			prevNgramCount = count
 		} else {
 			return 0
@@ -236,7 +237,7 @@ func (lm *NGramLanguageModel) EstimateProbability(nextWord int, previousNGram []
 		nGram := [2]int{previousNGram[0], nextWord}
 
 		var nGramCount int
-		if count, ok := lm.Data.TwoGramCount[nGram]; ok {
+		if count, ok := lm.Data.BiGramCount[nGram]; ok {
 			nGramCount = count
 		} else {
 			nGramCount = 0
@@ -249,7 +250,7 @@ func (lm *NGramLanguageModel) EstimateProbability(nextWord int, previousNGram []
 	case 3:
 		prevNGram := [2]int{previousNGram[0], previousNGram[1]}
 		var prevNgramCount int
-		if count, ok := lm.Data.TwoGramCount[prevNGram]; ok {
+		if count, ok := lm.Data.BiGramCount[prevNGram]; ok {
 			prevNgramCount = count
 		} else {
 			return 0
@@ -259,7 +260,7 @@ func (lm *NGramLanguageModel) EstimateProbability(nextWord int, previousNGram []
 		nGram := [3]int{prevNGram[0], prevNGram[1], nextWord}
 
 		var nGramCount int
-		if count, ok := lm.Data.ThreeGramCount[nGram]; ok {
+		if count, ok := lm.Data.TriGramCount[nGram]; ok {
 			nGramCount = count
 		} else {
 			nGramCount = 0
@@ -272,7 +273,7 @@ func (lm *NGramLanguageModel) EstimateProbability(nextWord int, previousNGram []
 	case 4:
 		prevNGram := [3]int{previousNGram[0], previousNGram[1], previousNGram[2]}
 		var prevNgramCount int
-		if count, ok := lm.Data.ThreeGramCount[prevNGram]; ok {
+		if count, ok := lm.Data.TriGramCount[prevNGram]; ok {
 			prevNgramCount = count
 		} else {
 			return 0
@@ -282,7 +283,7 @@ func (lm *NGramLanguageModel) EstimateProbability(nextWord int, previousNGram []
 		nGram := [4]int{prevNGram[0], prevNGram[1], prevNGram[2], nextWord}
 
 		var nGramCount int
-		if count, ok := lm.Data.FourGramCount[nGram]; ok {
+		if count, ok := lm.Data.QuadGramCount[nGram]; ok {
 			nGramCount = count
 		} else {
 			nGramCount = 0
@@ -296,26 +297,13 @@ func (lm *NGramLanguageModel) EstimateProbability(nextWord int, previousNGram []
 	return 0
 }
 
-func (lm *NGramLanguageModel) EstimateQueryProbability(query []int, originalQuery []int) float64 {
-	probability := math.Log(lm.EstimateProbability(query[0], []int{}, 1))
+// estimate probability of a sequence of words in query.
+func (lm *NGramLanguageModel) estimateQueryProbability(query []int, originalQuery []int) float64 {
+	probability := 0.0
 
-	for i := 1; i < len(query); i++ {
-		if i == 1 {
-			bigram := lm.StupidBackoff(query[i], query[i-1:i], 2)
-
-			probability += math.Log(bigram)
-
-		}
-
-		if i == 2 {
-			trigram := lm.StupidBackoff(query[i], query[i-2:i], 3)
-			probability += math.Log(trigram)
-		}
-
-		if i >= 3 {
-			fourgram := lm.StupidBackoff(query[i], query[i-3:i], 4)
-			probability += math.Log(fourgram)
-		}
+	for i := 4; i < len(query); i++ {
+		fourgram := lm.stupidBackoff(query[i], query[i-3:i], 4)
+		probability += math.Log(fourgram)
 	}
 
 	return probability
@@ -325,18 +313,19 @@ func (lm *NGramLanguageModel) EstimateQueriesProbabilities(queries [][]int, n in
 
 	var sentencesProbabilities = make([]float64, 0, len(queries))
 	for _, sentence := range queries {
-		probability := lm.EstimateQueryProbability(sentence, originalQuery)
+		sentence = lm.addStartEndToken(sentence, n)
+		probability := lm.estimateQueryProbability(sentence, originalQuery)
 		sentencesProbabilities = append(sentencesProbabilities, probability)
 	}
 	return sentencesProbabilities
 }
 
-func (lm *NGramLanguageModel) StupidBackoff(nextWord int, prevNgrams []int, n int) float64 {
+func (lm *NGramLanguageModel) stupidBackoff(nextWord int, prevNgrams []int, n int) float64 {
 	newProb := 0.0
 	lambda := 1.0
 	for ; n > 0; n-- {
 
-		newProb = lambda * lm.EstimateProbability(nextWord, prevNgrams, n)
+		newProb = lambda * lm.estimateProbability(nextWord, prevNgrams, n)
 
 		if newProb != 0 {
 			break
@@ -354,22 +343,22 @@ func (lm *NGramLanguageModel) MakeCountMatrix(data [][]int) {
 	wg.Add(4)
 	go func() {
 		defer wg.Done()
-		lm.countOnegram(data)
+		lm.countUnigram(data)
 	}()
 
 	go func() {
 		defer wg.Done()
-		lm.countTwogram(data)
+		lm.countBigram(data)
 	}()
 
 	go func() {
 		defer wg.Done()
-		lm.countThreegram(data)
+		lm.countTrigram(data)
 	}()
 
 	go func() {
 		defer wg.Done()
-		lm.countFourgram(data)
+		lm.countQuadgram(data)
 	}()
 	wg.Wait()
 

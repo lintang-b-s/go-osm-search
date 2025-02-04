@@ -4,7 +4,8 @@ import (
 	"container/heap"
 	"fmt"
 	"iter"
-	"osm-search/pkg/datastructure"
+
+	"github.com/lintang-b-s/osm-search/pkg/datastructure"
 )
 
 type heapMergeOutput struct {

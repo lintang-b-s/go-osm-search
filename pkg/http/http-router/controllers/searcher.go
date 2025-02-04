@@ -4,9 +4,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"osm-search/pkg/datastructure"
-	helper "osm-search/pkg/http/http-router/router-helper"
 	"regexp"
+
+	"github.com/lintang-b-s/osm-search/pkg/datastructure"
+	helper "github.com/lintang-b-s/osm-search/pkg/http/http-router/router-helper"
 
 	"github.com/go-playground/locales/en"
 	ut "github.com/go-playground/universal-translator"
@@ -35,9 +36,9 @@ func New(searchService SearchService, log *zap.Logger) *searchAPI {
 }
 
 func (api *searchAPI) Routes(group *helper.RouteGroup) {
-	group.POST("/search", api.search)
-	group.POST("/autocomplete", api.autocomplete)
-	group.POST("/reverse", api.reverseGeocoding)
+	group.GET("/search", api.search)
+	group.GET("/autocomplete", api.autocomplete)
+	group.GET("/reverse", api.reverseGeocoding)
 }
 
 type errorResponse struct {
@@ -48,29 +49,33 @@ type errorResponse struct {
 }
 
 // searchRequest model info
-// @Description request body for full text search.
+//
+//	@Description	request body for full text search.
 type searchRequest struct {
-	Query string `json:"query" validate:"required"`               // query entered by the user.
-	TopK  int    `json:"top_k" validate:"required,min=1,max=100"` // the number of relevant documents you want to display in the full text search results.
+	Query  string `json:"query" validate:"required"`               // query entered by the user.
+	TopK   int    `json:"top_k" validate:"required,min=1,max=100"` // the number of relevant documents you want to display in the full text search results.
+	Offset int    `json:"offset" validate:"min=0"`                 // offset for pagination
 }
 
 // searchResponse model info
-// @Description response body untuk hasil full text search.
+//
+//	@Description	response body untuk hasil full text search.
 type searchResponse struct {
 	Data []datastructure.Node `json:"data"` // list of osm objects that are relevant to the query given by the user.
 }
 
-// search
-// @Summary search operation to find osm objects relevant to the query given by the user. Support spelling correction.
-// @Description search operation to find osm objects relevant to the query given by the user. Support spelling correction.
-// @Tags search
-// @Param body body searchRequest true
-// @Accept application/json
-// @Produce application/json
-// @Router /api/search [post]
-// @Success 200 {object} searchResponse
-// @Failure 400 {object} errorResponse
-// @Failure 500 {object} errorResponse
+// search godoc
+// @Summary		search operation to find osm objects relevant to the query given by the user. Support spelling correction.
+// @Description	search operation to find osm objects relevant to the query given by the user. Support spelling correction.
+// @Tags			search
+// @ID search
+// @Param			body	body	searchRequest	true
+// @Accept			application/json
+// @Produce		application/json
+// @Router			/api/search [get]
+// @Success		200	{object}	searchResponse
+// @Failure		400	{object}	errorResponse
+// @Failure		500	{object}	errorResponse
 func (api *searchAPI) search(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 	var request searchRequest
 	err := json.NewDecoder(r.Body).Decode(&request)
@@ -99,7 +104,7 @@ func (api *searchAPI) search(w http.ResponseWriter, r *http.Request, _ httproute
 		return
 	}
 
-	results, err := api.searchService.Search(request.Query, request.TopK)
+	results, err := api.searchService.Search(request.Query, request.TopK, request.Offset)
 	if err != nil {
 		api.ServerErrorResponse(w, r, err)
 		return
@@ -112,23 +117,20 @@ func (api *searchAPI) search(w http.ResponseWriter, r *http.Request, _ httproute
 	}
 }
 
-type autoCompleteRequest struct {
-	Query string `json:"query" validate:"required"`
-}
-
-// search
-// @Summary autocomplete operation allows users to search for osm objects based on the prefix of the query.
-// @Description autocomplete operation allows users to search for osm objects based on the prefix of the query.
-// @Tags search
-// @Param body body autoCompleteRequest true
-// @Accept application/json
-// @Produce application/json
-// @Router /api/search [post]
-// @Success 200 {object} searchResponse
-// @Failure 400 {object} errorResponse
-// @Failure 500 {object} errorResponse
+// autocomplete godoc
+// @Summary		autocomplete operation allows users to search for osm objects based on the prefix of the query.
+// @Description	autocomplete operation allows users to search for osm objects based on the prefix of the query.
+// @Tags			search
+// @ID autocomplete
+// @Param			body	body	searchRequest	true
+// @Accept			application/json
+// @Produce		application/json
+// @Router			/api/autocomplete [get]
+// @Success		200	{object}	searchResponse
+// @Failure		400	{object}	errorResponse
+// @Failure		500	{object}	errorResponse
 func (api *searchAPI) autocomplete(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
-	var request autoCompleteRequest
+	var request searchRequest
 	err := json.NewDecoder(r.Body).Decode(&request)
 	if err != nil {
 		api.BadRequestResponse(w, r, err)
@@ -154,7 +156,7 @@ func (api *searchAPI) autocomplete(w http.ResponseWriter, r *http.Request, _ htt
 		return
 	}
 
-	results, err := api.searchService.Autocomplete(request.Query)
+	results, err := api.searchService.Autocomplete(request.Query, request.TopK, request.Offset)
 	if err != nil {
 		api.ServerErrorResponse(w, r, err)
 		return
@@ -172,6 +174,22 @@ type reverseGeocodingRequest struct {
 	Lon float64 `json:"lon" validate:"required,min=-180,max=180"`
 }
 
+type reverseGeocodingResponse struct {
+	Data datastructure.Node `json:"data"`
+}
+
+// reverseGeocoding godoc
+// @Summary		reverseGeocoding operation allows users to get nearest osm objects based on the latitude and longitude given by the user.
+// @Description	reverseGeocoding operation allows users to get nearest osm objects based on the latitude and longitude given by the user.
+// @Tags			search
+// @ID reverse-geocoding
+// @Param			body	body	reverseGeocodingRequest	true
+// @Accept			application/json
+// @Produce		application/json
+// @Router			/api/reverse [get]
+// @Success		200	{object}	reverseGeocodingResponse
+// @Failure		400	{object}	errorResponse
+// @Failure		500	{object}	errorResponse
 func (api *searchAPI) reverseGeocoding(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 	var request reverseGeocodingRequest
 	err := json.NewDecoder(r.Body).Decode(&request)
@@ -207,7 +225,6 @@ func (api *searchAPI) reverseGeocoding(w http.ResponseWriter, r *http.Request, _
 		api.ServerErrorResponse(w, r, err)
 	}
 }
-
 
 func translateError(err error, trans ut.Translator) (errs []error) {
 	if err == nil {

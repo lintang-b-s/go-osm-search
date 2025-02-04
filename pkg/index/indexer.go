@@ -4,13 +4,14 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"osm-search/pkg"
-	"osm-search/pkg/datastructure"
-	"osm-search/pkg/geo"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/lintang-b-s/osm-search/pkg"
+	"github.com/lintang-b-s/osm-search/pkg/datastructure"
+	"github.com/lintang-b-s/osm-search/pkg/geo"
 
 	"github.com/RadhiFadlillah/go-sastrawi"
 	"github.com/k0kubun/go-ansi"
@@ -46,6 +47,7 @@ type DynamicIndex struct {
 	intermediateIndices       []string
 	maxDynamicPostingListSize int
 	docWordCount              map[int]int
+	averageDocLength          float64
 	outputDir                 string
 	docsCount                 int
 	spellCorrectorBuilder     SpellCorrectorI
@@ -168,6 +170,10 @@ func (Idx *DynamicIndex) SpimiBatchIndex(ctx context.Context, osmSpatialIdx geo.
 
 			name, street, tipe, postalCode := geo.GetNameAddressTypeFromOSMWay(way.TagMap)
 
+			if name == "" || tipe == "chalet" {
+				continue
+			}
+
 			if IsWayDuplicateCheck(strings.ToLower(name), lat, lon, nodeBoundingBox, lock) {
 				// cek duplikat kalo sebelumnya ada way dengan nama sama dan posisi sama dengan way ini.
 				continue
@@ -278,7 +284,7 @@ func (Idx *DynamicIndex) SpimiBatchIndex(ctx context.Context, osmSpatialIdx geo.
 			}
 
 			name, street, tipe, postalCode := geo.GetNameAddressTypeFromOSMWay(node.TagMap)
-			if name == "" {
+			if name == "" || tipe == "chalet" {
 				continue
 			}
 
@@ -782,7 +788,16 @@ func (Idx *DynamicIndex) LoadMeta() error {
 	Idx.TermIDMap = save.TermIDMap
 	Idx.docWordCount = save.DocWordCount
 	Idx.docsCount = save.DocsCount
+
+	for i := 0; i < Idx.docsCount; i++ {
+		Idx.averageDocLength += float64(Idx.docWordCount[i])
+	}
+	Idx.averageDocLength /= float64(Idx.docsCount)
 	return nil
+}
+
+func (Idx *DynamicIndex) GetAverageDocLength() float64 {
+	return Idx.averageDocLength
 }
 
 func (Idx *DynamicIndex) GetOutputDir() string {

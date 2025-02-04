@@ -4,10 +4,11 @@ import (
 	"context"
 	"flag"
 	"os"
-	"osm-search/pkg/geo"
-	"osm-search/pkg/index"
-	"osm-search/pkg/kvdb"
-	"osm-search/pkg/searcher"
+
+	"github.com/lintang-b-s/osm-search/pkg/geo"
+	"github.com/lintang-b-s/osm-search/pkg/index"
+	"github.com/lintang-b-s/osm-search/pkg/kvdb"
+	"github.com/lintang-b-s/osm-search/pkg/searcher"
 
 	bolt "go.etcd.io/bbolt"
 )
@@ -71,7 +72,7 @@ func main() {
 	defer cleanup()
 
 	ngramLM.SetTermIDMap(invertedIndex.GetTermIDMap())
-	err = invertedIndex.BuildSpellCorrectorAndNgram(ctx,allSearchNodes, spatialIndex, osmRelations)
+	err = invertedIndex.BuildSpellCorrectorAndNgram(ctx, allSearchNodes, spatialIndex, osmRelations)
 	if err != nil {
 		panic(err)
 	}

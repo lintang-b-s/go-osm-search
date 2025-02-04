@@ -5,14 +5,22 @@ import (
 	"fmt"
 	"math"
 	"os"
-	"osm-search/pkg"
-	"osm-search/pkg/datastructure"
-	"osm-search/pkg/index"
 	"sort"
+
+	"github.com/lintang-b-s/osm-search/pkg"
+	"github.com/lintang-b-s/osm-search/pkg/datastructure"
+	"github.com/lintang-b-s/osm-search/pkg/index"
 
 	"github.com/RadhiFadlillah/go-sastrawi"
 	"github.com/k0kubun/go-ansi"
 	"github.com/schollz/progressbar/v3"
+)
+
+type SimiliarityScoring int
+
+const (
+	TF_IDF_COSINE SimiliarityScoring = iota
+	BM25_PLUS
 )
 
 type DynamicIndexer interface {
@@ -21,6 +29,7 @@ type DynamicIndexer interface {
 	GetDocWordCount() map[int]int
 	GetDocsCount() int
 	GetTermIDMap() *pkg.IDMap
+	GetAverageDocLength() float64
 	BuildVocabulary()
 }
 
@@ -29,17 +38,19 @@ type SearcherDocStore interface {
 }
 
 type Searcher struct {
-	Idx            DynamicIndexer
-	MainIndex      *index.InvertedIndex
-	SpellCorrector index.SpellCorrectorI
-	TermIDMap      *pkg.IDMap
-	DocStore       SearcherDocStore
-	osmRtree       *datastructure.Rtree
+	Idx                DynamicIndexer
+	MainIndex          *index.InvertedIndex
+	SpellCorrector     index.SpellCorrectorI
+	TermIDMap          *pkg.IDMap
+	DocStore           SearcherDocStore
+	osmRtree           *datastructure.Rtree
+	similiarityScoring SimiliarityScoring
 }
 
-func NewSearcher(idx DynamicIndexer, docStore SearcherDocStore, spell index.SpellCorrectorI) *Searcher {
+func NewSearcher(idx DynamicIndexer, docStore SearcherDocStore, spell index.SpellCorrectorI,
+	scoring SimiliarityScoring) *Searcher {
 
-	return &Searcher{Idx: idx, DocStore: docStore, SpellCorrector: spell}
+	return &Searcher{Idx: idx, DocStore: docStore, SpellCorrector: spell, similiarityScoring: scoring}
 }
 
 func (se *Searcher) LoadMainIndex() error {
@@ -90,57 +101,20 @@ func (se *Searcher) Close() {
 	se.MainIndex.Close()
 }
 
-type PostingsResult struct {
-	Postings []int
-	Err      error
-	TermID   int
-}
-
-func NewPostingsResult(postings []int, err error, termID int) PostingsResult {
-	return PostingsResult{
-		Postings: postings,
-		Err:      err,
-		TermID:   termID,
-	}
-}
-
-func (p *PostingsResult) GetError() error {
-	return p.Err
-}
-
-func (p *PostingsResult) GetTermID() int {
-	return p.TermID
-}
-
-func (p *PostingsResult) GetPostings() []int {
-	return p.Postings
-}
-
-func (se *Searcher) GetPostingListCon(termID int) PostingsResult {
-	postings, err := se.MainIndex.GetPostingList(termID)
-	if err != nil {
-		return NewPostingsResult([]int{}, err, termID)
-	}
-	return NewPostingsResult(postings, nil, termID)
-}
-
 type DocWithScore struct {
 	DocID int
 	Score float64
 }
 
-func (se *Searcher) FreeFormQuery(query string, k int) ([]datastructure.Node, error) {
+func (se *Searcher) FreeFormQuery(query string, k, offset int) ([]datastructure.Node, error) {
 	if query == "" {
 		return []datastructure.Node{}, errors.New("query is empty")
 	}
 	if k == 0 {
 		k = 10
 	}
-	documentScore := make(map[int]float64) // menyimpan skor cosine tf-idf docs \dot tf-idf query
 
 	queryTerms := sastrawi.Tokenize(query)
-
-	queryWordCount := make(map[int]int, len(queryTerms))
 
 	queryTermsID := make([]int, 0, len(queryTerms))
 
@@ -149,6 +123,8 @@ func (se *Searcher) FreeFormQuery(query string, k int) ([]datastructure.Node, er
 	// {{term1,term1OneEdit}, {term2, term2Edit}, ...}
 	allPossibleQueryTerms := make([][]int, len(queryTerms))
 	originalQueryTerms := make([]int, 0, len(queryTerms))
+
+	queryWordCount := make(map[int]int, len(queryTerms))
 
 	for i, term := range queryTerms {
 		tokenizedTerm := pkg.Stemmer.Stem(term)
@@ -194,6 +170,81 @@ func (se *Searcher) FreeFormQuery(query string, k int) ([]datastructure.Node, er
 		queryWordCount[termID] += 1
 	}
 
+	docWithScores := []DocWithScore{}
+	switch se.similiarityScoring {
+	case TF_IDF_COSINE:
+		docWithScores = se.scoreTFIDFCosine(allPostings, queryWordCount)
+	case BM25_PLUS:
+		docWithScores = se.scoreBM25Plus(allPostings)
+	}
+
+	relevantDocs := make([]datastructure.Node, 0, k)
+
+	for i := offset; i < len(docWithScores); i++ {
+
+		if i >= k+offset {
+			break
+		}
+
+		doc, err := se.DocStore.GetDoc(docWithScores[i].DocID)
+		if err != nil {
+			return []datastructure.Node{}, err
+		}
+		relevantDocs = append(relevantDocs, doc)
+
+	}
+
+	return relevantDocs, nil
+}
+
+func (se *Searcher) scoreBM25Plus(allPostings map[int][]int) []DocWithScore {
+	// param bm25+
+	delta := 1.0 
+	k1 := 1.2
+	b := 0.75
+
+	documentScore := make(map[int]float64)
+
+	docsCount := float64(se.Idx.GetDocsCount())
+	docWordCount := se.Idx.GetDocWordCount()
+
+	avgDocLength := se.Idx.GetAverageDocLength()
+
+	for _, postings := range allPostings {
+		// iterate semua term di query, hitung tf-idf query dan tf-idf document, accumulate skor cosine di docScore
+
+		tfTermDoc := make(map[int]float64)
+		for _, docID := range postings {
+			tfTermDoc[docID]++ // conunt(t,d)
+		}
+
+		idf := math.Log10(docsCount+1) - math.Log10(float64(len(tfTermDoc))) // log(N/df_t)
+
+		for docID, tftd := range tfTermDoc {
+			// https://www.cs.otago.ac.nz/homepages/andrew/papers/2014-2.pdf
+
+			documentScore[docID] += idf * (delta +
+				((k1+1)+tftd)/(k1*(1-b+b*float64(docWordCount[docID])/avgDocLength)+tftd))
+		}
+	}
+
+	docWithScores := make([]DocWithScore, 0, len(documentScore))
+
+	for docID, score := range documentScore {
+		docWithScores = append(docWithScores, DocWithScore{DocID: docID, Score: score})
+	}
+
+	sort.Slice(docWithScores, func(i, j int) bool {
+		return docWithScores[i].Score > docWithScores[j].Score
+	})
+
+	return docWithScores
+}
+
+func (se *Searcher) scoreTFIDFCosine(allPostings map[int][]int,
+	queryWordCount map[int]int) []DocWithScore {
+	documentScore := make(map[int]float64) // menyimpan skor cosine tf-idf docs \dot tf-idf query
+
 	docsCount := float64(se.Idx.GetDocsCount())
 	docNorm := make(map[int]float64)
 	queryNorm := 0.0
@@ -235,26 +286,18 @@ func (se *Searcher) FreeFormQuery(query string, k int) ([]datastructure.Node, er
 		return docWithScores[i].Score > docWithScores[j].Score
 	})
 
-	relevantDocs := make([]datastructure.Node, 0, k)
-	for i := 0; i < k; i++ {
-		if i >= len(docWithScores) {
-			break
-		}
-
-		doc, err := se.DocStore.GetDoc(docWithScores[i].DocID)
-		if err != nil {
-			return []datastructure.Node{}, err
-		}
-		relevantDocs = append(relevantDocs, doc)
-	}
-
-	return relevantDocs, nil
+	return docWithScores
 }
 
-func (se *Searcher) Autocomplete(query string) ([]datastructure.Node, error) {
+func (se *Searcher) Autocomplete(query string, k, offset int) ([]datastructure.Node, error) {
 	if query == "" {
 		return []datastructure.Node{}, errors.New("query is empty")
 	}
+
+	if k == 0 {
+		k = 10
+	}
+
 	queryTerms := sastrawi.Tokenize(query)
 
 	// {{term1,term1OneEdit}, {term2, term2Edit}, ...}
@@ -292,12 +335,21 @@ func (se *Searcher) Autocomplete(query string) ([]datastructure.Node, error) {
 	relDocIDs := []int{}
 	for _, queryTerms := range matchedQueries {
 
+		allPostings := make(map[int][]int, len(queryTerms))
+
 		tokens := make([]int, 0, len(queryTerms)-1)
 		for j, termID := range queryTerms {
 			tokens = append(tokens, termID)
 			if j != len(queryTerms)-1 {
 				tokens = append(tokens, -1) // AND
 			}
+
+			postings, err := se.MainIndex.GetPostingList(termID)
+			if err != nil {
+				return []datastructure.Node{}, err
+			}
+
+			allPostings[termID] = postings
 		}
 
 		// shunting Yard
@@ -306,16 +358,22 @@ func (se *Searcher) Autocomplete(query string) ([]datastructure.Node, error) {
 		if err != nil {
 			return []datastructure.Node{}, err
 		}
-		relDocIDs = append(relDocIDs, docIDsRes...)
-	}
 
-	if len(relDocIDs) >= 10 {
-		relDocIDs = relDocIDs[:10]
+		scoredDocs := se.scoreBM25PlusAutocomplete(allPostings, queryTerms, docIDsRes)
+
+		// relDocIDs = append(relDocIDs, docIDsRes...)
+
+		for _, doc := range scoredDocs {
+			relDocIDs = append(relDocIDs, doc.DocID)
+		}
 	}
 
 	relevantDocs := make([]datastructure.Node, 0, len(relDocIDs))
 
-	for i := 0; i < len(relDocIDs); i++ {
+	for i := offset; i < len(relDocIDs); i++ {
+		if i >= k+offset {
+			break
+		}
 
 		doc, err := se.DocStore.GetDoc(relDocIDs[i])
 		if err != nil {
@@ -325,6 +383,52 @@ func (se *Searcher) Autocomplete(query string) ([]datastructure.Node, error) {
 	}
 
 	return relevantDocs, nil
+}
+
+func (se *Searcher) scoreBM25PlusAutocomplete(allPostings map[int][]int, queryTermIDs []int,
+	intersectedDocIDs []int) []DocWithScore {
+	// param bm25+
+	delta := 1.0 // delta bm25+
+	k1 := 1.5
+	b := 0.75
+
+	documentScore := make(map[int]float64)
+
+	docsCount := float64(se.Idx.GetDocsCount())
+	docWordCount := se.Idx.GetDocWordCount()
+
+	avgDocLength := se.Idx.GetAverageDocLength()
+
+	for _, postings := range allPostings {
+		// iterate semua term di query, hitung tf-idf query dan tf-idf document, accumulate skor cosine di docScore
+
+		tfTermDoc := make(map[int]float64)
+		for _, docID := range postings {
+			tfTermDoc[docID]++ // conunt(t,d)
+		}
+
+		idf := math.Log10(docsCount+1) - math.Log10(float64(len(tfTermDoc))) // log(N/df_t)
+
+		for i := 0; i < len(intersectedDocIDs); i++ {
+			docID := intersectedDocIDs[i]
+			tftd := tfTermDoc[docID]
+
+			documentScore[docID] += idf * (delta +
+				((k1+1)+tftd)/(k1*(1-b+b*float64(docWordCount[docID])/avgDocLength)+tftd))
+		}
+	}
+
+	docWithScores := make([]DocWithScore, 0, len(documentScore))
+
+	for docID, score := range documentScore {
+		docWithScores = append(docWithScores, DocWithScore{DocID: docID, Score: score})
+	}
+
+	sort.Slice(docWithScores, func(i, j int) bool {
+		return docWithScores[i].Score > docWithScores[j].Score
+	})
+
+	return docWithScores
 }
 
 type Deque struct {

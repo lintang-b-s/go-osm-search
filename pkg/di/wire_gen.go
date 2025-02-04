@@ -9,20 +9,21 @@ package di
 import (
 	context2 "context"
 	"github.com/google/wire"
+	"github.com/lintang-b-s/osm-search/pkg/di/config"
+	"github.com/lintang-b-s/osm-search/pkg/di/context"
+	"github.com/lintang-b-s/osm-search/pkg/di/kv"
+	"github.com/lintang-b-s/osm-search/pkg/di/logger"
+	"github.com/lintang-b-s/osm-search/pkg/di/searcher"
+	"github.com/lintang-b-s/osm-search/pkg/http"
+	"github.com/lintang-b-s/osm-search/pkg/http/http-router/controllers"
+	"github.com/lintang-b-s/osm-search/pkg/http/usecases"
+	"github.com/lintang-b-s/osm-search/pkg/searcher"
 	"go.uber.org/zap"
-	"osm-search/pkg/di/config"
-	"osm-search/pkg/di/context"
-	"osm-search/pkg/di/kv"
-	"osm-search/pkg/di/logger"
-	"osm-search/pkg/di/searcher"
-	"osm-search/pkg/http"
-	"osm-search/pkg/http/http-router/controllers"
-	"osm-search/pkg/http/usecases"
 )
 
 // Injectors from wire.go:
 
-func InitializeSearcherService() (*http.Server, func(), error) {
+func InitializeSearcherService(scoring searcher.SimiliarityScoring) (*http.Server, func(), error) {
 	contextContext, cleanup, err := context.New()
 	if err != nil {
 		return nil, nil, err
@@ -38,13 +39,13 @@ func InitializeSearcherService() (*http.Server, func(), error) {
 		cleanup()
 		return nil, nil, err
 	}
-	searcher, err := searcher_di.New(contextContext, kvdb)
+	usecasesSearcher, err := searcher_di.New(contextContext, kvdb, scoring)
 	if err != nil {
 		cleanup2()
 		cleanup()
 		return nil, nil, err
 	}
-	searchService := NewSearcherService(logger, searcher)
+	searchService := NewSearcherService(logger, usecasesSearcher)
 	server, err := NewSearchAPIServer(contextContext, logger, searchService)
 	if err != nil {
 		cleanup2()
@@ -67,8 +68,8 @@ var searcherSet = wire.NewSet(
 	NewSearchAPIServer,
 )
 
-func NewSearcherService(log *zap.Logger, searcher usecases.Searcher) controllers.SearchService {
-	return usecases.New(log, searcher)
+func NewSearcherService(log *zap.Logger, searcher2 usecases.Searcher) controllers.SearchService {
+	return usecases.New(log, searcher2)
 }
 
 func NewSearchAPIServer(ctx context2.Context, log *zap.Logger,

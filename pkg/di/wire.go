@@ -5,14 +5,16 @@ package di
 
 import (
 	"context"
-	"osm-search/pkg/di/config"
-	shortcontext "osm-search/pkg/di/context"
-	kv_di "osm-search/pkg/di/kv"
-	logger_di "osm-search/pkg/di/logger"
-	searcher_di "osm-search/pkg/di/searcher"
-	searchHttp "osm-search/pkg/http"
-	"osm-search/pkg/http/http-router/controllers"
-	"osm-search/pkg/http/usecases"
+
+	"github.com/lintang-b-s/osm-search/pkg/di/config"
+	shortcontext "github.com/lintang-b-s/osm-search/pkg/di/context"
+	kv_di "github.com/lintang-b-s/osm-search/pkg/di/kv"
+	logger_di "github.com/lintang-b-s/osm-search/pkg/di/logger"
+	searcher_di "github.com/lintang-b-s/osm-search/pkg/di/searcher"
+	searchHttp "github.com/lintang-b-s/osm-search/pkg/http"
+	"github.com/lintang-b-s/osm-search/pkg/http/http-router/controllers"
+	"github.com/lintang-b-s/osm-search/pkg/http/usecases"
+	"github.com/lintang-b-s/osm-search/pkg/searcher"
 
 	"github.com/google/wire"
 	"go.uber.org/zap"
@@ -50,7 +52,7 @@ func NewSearchAPIServer(ctx context.Context, log *zap.Logger,
 	return apiService, nil
 }
 
-func InitializeSearcherService() (*searchHttp.Server, func(), error) {
+func InitializeSearcherService(scoring searcher.SimiliarityScoring) (*searchHttp.Server, func(), error) {
 
 	panic(wire.Build(searcherSet))
 }

@@ -1,28 +1,48 @@
 package main
 
 import (
-	"osm-search/pkg/di"
-	myHttp "osm-search/pkg/http"
+	"flag"
 
-	_ "github.com/swaggo/http-swagger" // http-swagger middleware
+	"github.com/lintang-b-s/osm-search/pkg/di"
+	myHttp "github.com/lintang-b-s/osm-search/pkg/http"
+	"github.com/lintang-b-s/osm-search/pkg/searcher"
+
+	_ "github.com/lintang-b-s/osm-search/cmd/server/docs" 
+	_ "github.com/swaggo/http-swagger"                    
 	"go.uber.org/zap"
 )
 
-// @title OSM Search Engine API
-// @version 1.0
-// @description This is a openstreetmap search engine server.
+var (
+	simiiliarityScoring = flag.String("sc", "BM25_PLUS", "similiarity scoring (only 2: BM25_PLUS or TF_IDF_COSINE)")
+)
 
-// @contact.name Lintang Birda Saputra
-// @contact.url _
-// @contact.email lintang.birda.saputra@mail.ugm.ac.id
+//	@title			OSM Search Engine API
+//	@version		1.0
+//	@description	This is a openstreetmap search engine server.
 
-// @license.name BSD License
-// @license.url https://opensource.org/license/bsd-2-clause
+//	@contact.name	Lintang Birda Saputra
+//	@contact.url	_
+//	@contact.email	lintang.birda.saputra@mail.ugm.ac.id
 
-// @host localhost
-// @BasePath /api
+//	@license.name	BSD License
+//	@license.url	https://opensource.org/license/bsd-2-clause
+
+// @host		localhost:6060
+// @BasePath	/api
 func main() {
-	service, cleanup, err := di.InitializeSearcherService()
+	flag.Parse()
+	var searcherScoring searcher.SimiliarityScoring
+	switch *simiiliarityScoring {
+
+	case "BM25_PLUS":
+		searcherScoring = searcher.BM25_PLUS
+	case "TF_IDF_COSINE":
+		searcherScoring = searcher.TF_IDF_COSINE
+	default:
+		searcherScoring = searcher.BM25_PLUS
+	}
+
+	service, cleanup, err := di.InitializeSearcherService(searcherScoring)
 	defer cleanup()
 	if err != nil {
 
@@ -33,3 +53,6 @@ func main() {
 
 	service.Log.Info("Search Server Stopped", zap.String("signal", signal.String()))
 }
+
+// swag init
+// entah kenapa ga kegenerate route swaggernya

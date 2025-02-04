@@ -2,6 +2,7 @@ package pkg
 
 import (
 	"sort"
+	"sync"
 
 	"github.com/RadhiFadlillah/go-sastrawi"
 )
@@ -14,6 +15,7 @@ type IDMap struct {
 	StrToID    map[string]int
 	IDToStr    map[int]string
 	Vocabulary map[string]bool
+	sync.Mutex
 }
 
 func NewIDMap() *IDMap {
@@ -24,7 +26,8 @@ func NewIDMap() *IDMap {
 }
 
 func (idMap *IDMap) GetID(str string) int {
-
+	idMap.Lock()
+	defer idMap.Unlock()
 	if id, ok := idMap.StrToID[str]; ok {
 		return id
 	}

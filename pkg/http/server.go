@@ -2,9 +2,10 @@ package http
 
 import (
 	"context"
-	http_router "osm-search/pkg/http/http-router"
-	"osm-search/pkg/http/http-router/controllers"
-	http_server "osm-search/pkg/http/server"
+
+	http_router "github.com/lintang-b-s/osm-search/pkg/http/http-router"
+	"github.com/lintang-b-s/osm-search/pkg/http/http-router/controllers"
+	http_server "github.com/lintang-b-s/osm-search/pkg/http/server"
 
 	"github.com/spf13/viper"
 	"go.uber.org/zap"

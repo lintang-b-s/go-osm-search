@@ -7,7 +7,8 @@ import (
 	"iter"
 	"math"
 	"os"
-	"osm-search/pkg/compress"
+
+	"github.com/lintang-b-s/osm-search/pkg/compress"
 )
 
 type InvertedIndex struct {

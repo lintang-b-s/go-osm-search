@@ -9,7 +9,15 @@ const docTemplate = `{
     "info": {
         "description": "{{escape .Description}}",
         "title": "{{.Title}}",
-        "contact": {},
+        "contact": {
+            "name": "Lintang Birda Saputra",
+            "url": "_",
+            "email": "lintang.birda.saputra@mail.ugm.ac.id"
+        },
+        "license": {
+            "name": "BSD License",
+            "url": "https://opensource.org/license/bsd-2-clause"
+        },
         "version": "{{.Version}}"
     },
     "host": "{{.Host}}",
@@ -19,12 +27,12 @@ const docTemplate = `{
 
 // SwaggerInfo holds exported Swagger Info so clients can modify it
 var SwaggerInfo = &swag.Spec{
-	Version:          "",
-	Host:             "",
-	BasePath:         "",
+	Version:          "1.0",
+	Host:             "localhost:6060",
+	BasePath:         "/api",
 	Schemes:          []string{},
-	Title:            "",
-	Description:      "",
+	Title:            "OSM Search Engine API",
+	Description:      "This is a openstreetmap search engine server.",
 	InfoInstanceName: "swagger",
 	SwaggerTemplate:  docTemplate,
 	LeftDelim:        "{{",

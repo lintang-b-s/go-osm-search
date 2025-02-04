@@ -1,4 +1,15 @@
+basePath: /api
+host: localhost:6060
 info:
-  contact: {}
+  contact:
+    email: lintang.birda.saputra@mail.ugm.ac.id
+    name: Lintang Birda Saputra
+    url: _
+  description: This is a openstreetmap search engine server.
+  license:
+    name: BSD License
+    url: https://opensource.org/license/bsd-2-clause
+  title: OSM Search Engine API
+  version: "1.0"
 paths: {}
 swagger: "2.0"

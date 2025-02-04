@@ -12,7 +12,7 @@ list FreeFormQuery
 result: 
 
 Total: 17.03s
-ROUTINE ======================== osm-search/pkg.(*Searcher).FreeFormQuery in /home/lintangbs/Documents/explore/software/project/personal/osm-search/pkg/searcher.go
+ROUTINE ======================== github.com/lintang-b-s/osm-search/pkg.(*Searcher).FreeFormQuery in /home/lintangbs/Documents/explore/software/project/personal/github.com/lintang-b-s/osm-search/pkg/searcher.go
       70ms      1.32s (flat, cum)  7.75% of Total
          .          .     91:func (se *Searcher) FreeFormQuery(query string, k int) ([]Node, error) {
          .          .     92:   if k == 0 {
@@ -170,7 +170,7 @@ result:
          .          .    156:
          .          .    157:func (d *DocumentStore) SaveMeta() error {
          .          .    158:   metaFile, err := os.OpenFile(d.OutputDir+"/"+DOCUMENT_METADATA_FILENAME, os.O_CREATE|os.O_RDWR, 0666)
-ROUTINE ======================== osm-search/pkg.(*DynamicIndex).GetDocsCount in /home/lintangbs/Documents/explore/software/project/personal/osm-search/pkg/inverted_index.go
+ROUTINE ======================== github.com/lintang-b-s/osm-search/pkg.(*DynamicIndex).GetDocsCount in /home/lintangbs/Documents/explore/software/project/personal/github.com/lintang-b-s/osm-search/pkg/inverted_index.go
       10ms       10ms (flat, cum) 0.059% of Total
          .          .    567:func (Idx *DynamicIndex) GetDocsCount() int {
       10ms       10ms    568:   return Idx.DocsCount
@@ -187,7 +187,7 @@ ROUTINE ======================== osm-search/pkg.(*DynamicIndex).GetDocsCount in 
 list ReadDoc
 
 result: 
-ROUTINE ======================== osm-search/pkg.(*DocumentStore).ReadDoc in /home/lintangbs/Documents/explore/software/project/personal/osm-search/pkg/document_store.go
+ROUTINE ======================== github.com/lintang-b-s/osm-search/pkg.(*DocumentStore).ReadDoc in /home/lintangbs/Documents/explore/software/project/personal/github.com/lintang-b-s/osm-search/pkg/document_store.go
       10ms      860ms (flat, cum)  5.05% of Total
          .          .     86:func (d *DocumentStore) ReadDoc(offset int) (Node, int, error) {
          .      140ms     87:   id, bytesWritten := d.DiskWriterReader.ReadUVarint(offset)
@@ -229,7 +229,7 @@ ROUTINE ======================== osm-search/pkg.(*DocumentStore).ReadDoc in /hom
 
  result:
 
- ROUTINE ======================== osm-search/pkg.(*DiskWriterReader).ReadBytes in /home/lintangbs/Documents/explore/software/project/personal/osm-search/pkg/disk_writer_reader.go
+ ROUTINE ======================== github.com/lintang-b-s/osm-search/pkg.(*DiskWriterReader).ReadBytes in /home/lintangbs/Documents/explore/software/project/personal/github.com/lintang-b-s/osm-search/pkg/disk_writer_reader.go
          0      500ms (flat, cum)  2.94% of Total
          .          .     63:func (d *DiskWriterReader) ReadBytes(offset int, size int) ([]byte, error) {
          .      500ms     64:   buf, err := d.ReadAt(offset, size)
@@ -244,7 +244,7 @@ ROUTINE ======================== osm-search/pkg.(*DocumentStore).ReadDoc in /hom
 list ReadAt
 
 result:
-ROUTINE ======================== osm-search/pkg.(*DiskWriterReader).ReadAt in /home/lintangbs/Documents/explore/software/project/personal/osm-search/pkg/disk_writer_reader.go
+ROUTINE ======================== github.com/lintang-b-s/osm-search/pkg.(*DiskWriterReader).ReadAt in /home/lintangbs/Documents/explore/software/project/personal/github.com/lintang-b-s/osm-search/pkg/disk_writer_reader.go
       10ms      500ms (flat, cum)  2.94% of Total
          .          .    102:func (d *DiskWriterReader) ReadAt(offset int, fieldBytesSize int) ([]byte, error) {
          .       60ms    103:   _, err := d.File.Seek(int64(offset), 0)

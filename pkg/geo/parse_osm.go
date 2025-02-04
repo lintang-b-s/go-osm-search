@@ -5,11 +5,12 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"osm-search/pkg"
-	"osm-search/pkg/datastructure"
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/lintang-b-s/osm-search/pkg"
+	"github.com/lintang-b-s/osm-search/pkg/datastructure"
 
 	"github.com/k0kubun/go-ansi"
 	"github.com/paulmach/osm"
@@ -305,10 +306,7 @@ func ParseOSM(mapfile string) ([]OSMWay, []OSMNode, NodeMapContainer, *pkg.IDMap
 
 	// process poligon administrative boundary & rtree administrative boundary
 	for relID, rel := range relations {
-		// if strings.Contains(rel.Name, "Jakarta") {
-		// 	fmt.Println("tes jakarta")
-		// }
-
+	
 		boundaryLat, boundaryLon := []float64{}, []float64{}
 		for _, relway := range rel.ways {
 			wway, ok := boundaryWayMap[relway]

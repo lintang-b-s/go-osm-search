@@ -3,11 +3,12 @@ package searcher
 import (
 	"errors"
 	"log"
-	"osm-search/pkg/index"
-	"osm-search/pkg/kvdb"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/lintang-b-s/osm-search/pkg/index"
+	"github.com/lintang-b-s/osm-search/pkg/kvdb"
 
 	"math/rand"
 
@@ -41,7 +42,7 @@ func LoadIndex() (*Searcher, *bolt.DB) {
 		log.Fatal(err)
 	}
 
-	searcher := NewSearcher(invertedIndex, bboltKV, spellCorrector)
+	searcher := NewSearcher(invertedIndex, bboltKV, spellCorrector, BM25_PLUS)
 	return searcher, db
 }
 
@@ -55,7 +56,7 @@ func TestFullTextSearch(t *testing.T) {
 	}
 	defer searcher.Close()
 	t.Run("Test full text query without spell correction", func(t *testing.T) {
-		relevantDocs, err := searcher.FreeFormQuery("Dunia Fantasi", 15)
+		relevantDocs, err := searcher.FreeFormQuery("Dunia Fantasi", 15, 0)
 		if err != nil {
 			t.Error(err)
 		}
@@ -66,7 +67,7 @@ func TestFullTextSearch(t *testing.T) {
 	})
 
 	t.Run("Test full text query with spell correction", func(t *testing.T) {
-		relevantDocs, err := searcher.FreeFormQuery("Duniu Fsntaso", 15)
+		relevantDocs, err := searcher.FreeFormQuery("Duniu Fsntaso", 15, 0)
 		if err != nil {
 			t.Error(err)
 		}
@@ -101,7 +102,7 @@ func TestFullTextSearch(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			relevantDocs, err := searcher.FreeFormQuery(tt.query, 15)
+			relevantDocs, err := searcher.FreeFormQuery(tt.query, 15, 0)
 			if err != nil {
 				assert.Equal(t, tt.wantErr, err)
 				return
@@ -126,7 +127,7 @@ func TestAutocomplete(t *testing.T) {
 
 	rand.Seed(time.Now().UnixNano())
 
-	relevantDocs, err := searcher.Autocomplete("Monumen Nasi")
+	relevantDocs, err := searcher.Autocomplete("Monumen Nasi", 10, 0)
 	if err != nil {
 		t.Error(err)
 	}
@@ -165,7 +166,7 @@ func TestAutocomplete(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			relevantDocs, err := searcher.Autocomplete(tt.query)
+			relevantDocs, err := searcher.Autocomplete(tt.query, 10, 0)
 			if err != nil {
 				assert.Equal(t, tt.wantErr, err)
 				return
@@ -220,7 +221,7 @@ func BenchmarkFullTextSearchQuery(b *testing.B) {
 
 	for n := 0; n < b.N; n++ {
 		randomIndex := rand.Intn(len(searchQuery))
-		_, err := searcher.FreeFormQuery(searchQuery[randomIndex], 15)
+		_, err := searcher.FreeFormQuery(searchQuery[randomIndex], 15, 0)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -260,7 +261,7 @@ func BenchmarkAutocomplete(b *testing.B) {
 
 	for n := 0; n < b.N; n++ {
 		randomIndex := rand.Intn(len(autoCompleteQuery))
-		_, err := searcher.Autocomplete(autoCompleteQuery[randomIndex])
+		_, err := searcher.Autocomplete(autoCompleteQuery[randomIndex], 10, 0)
 		if err != nil {
 			b.Fatal(err)
 		}

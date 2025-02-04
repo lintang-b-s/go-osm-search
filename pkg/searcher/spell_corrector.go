@@ -5,8 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"osm-search/pkg"
 	"sort"
+
+	"github.com/lintang-b-s/osm-search/pkg"
 
 	rege "regexp"
 
@@ -26,6 +27,7 @@ type NgramLM interface {
 	MakeCountMatrix(data [][]int)
 	SaveNGramData() error
 	LoadNGramData() error
+	SetTermIDMap(termIDMap *pkg.IDMap)
 }
 
 type SpellCorrector struct {
@@ -73,6 +75,7 @@ func (sc *SpellCorrector) InitializeSpellCorrector(sortedTerms []string, termIDM
 	sc.TermIDMap = termIDMap
 	sc.BuildFiniteStateTransducerSortedTerms(sortedTerms)
 	err := sc.NGram.LoadNGramData()
+	sc.NGram.SetTermIDMap(termIDMap)
 
 	return err
 }
@@ -222,4 +225,3 @@ func (sc *SpellCorrector) GetMatchedWordsAutocomplete(allQueryCandidates [][]int
 
 	return matchedQuery, nil
 }
-

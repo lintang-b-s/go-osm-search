@@ -1,9 +1,10 @@
 package logger_di
 
 import (
-	"osm-search/pkg/logger/config"
-	myZap "osm-search/pkg/logger/zap"
 	"time"
+
+	"github.com/lintang-b-s/osm-search/pkg/logger/config"
+	myZap "github.com/lintang-b-s/osm-search/pkg/logger/zap"
 
 	"github.com/spf13/viper"
 	"go.uber.org/zap"

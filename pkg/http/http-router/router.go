@@ -4,16 +4,17 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"osm-search/pkg/http/http-router/controllers"
-	router_helper "osm-search/pkg/http/http-router/router-helper"
-	http_server "osm-search/pkg/http/server"
+
+	"github.com/lintang-b-s/osm-search/pkg/http/http-router/controllers"
+	router_helper "github.com/lintang-b-s/osm-search/pkg/http/http-router/router-helper"
+	http_server "github.com/lintang-b-s/osm-search/pkg/http/server"
 
 	"github.com/julienschmidt/httprouter"
 	"github.com/justinas/alice"
 	"github.com/rs/cors"
 	"go.uber.org/zap"
 
-	_ "osm-search/cmd/server/docs"
+	_ "github.com/lintang-b-s/osm-search/cmd/server/docs"
 
 	_ "github.com/swaggo/http-swagger"
 	httpSwagger "github.com/swaggo/http-swagger"
@@ -27,6 +28,19 @@ func NewAPI(log *zap.Logger) *API {
 	return &API{log: log}
 }
 
+//	@title			OSM Search Engine API
+//	@version		1.0
+//	@description	This is a openstreetmap search engine server.
+
+//	@contact.name	Lintang Birda Saputra
+//	@contact.url	_
+//	@contact.email	lintang.birda.saputra@mail.ugm.ac.id
+
+//	@license.name	BSD License
+//	@license.url	https://opensource.org/license/bsd-2-clause
+
+// @host		localhost
+// @BasePath	/api
 func (api *API) Run(
 	ctx context.Context,
 	config http_server.Config,
@@ -48,7 +62,7 @@ func (api *API) Run(
 
 	})
 
-	router.GET("/doc/:any", swaggerHandler)
+	router.GET("/doc/*any", swaggerHandler)
 
 	group := router_helper.NewRouteGroup(router, "/api")
 

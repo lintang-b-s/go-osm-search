@@ -2,17 +2,15 @@ package zap
 
 import (
 	"os"
-	"osm-search/pkg/logger/config"
 	"time"
 
+	"github.com/lintang-b-s/osm-search/pkg/logger/config"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
 
-
-
 func New(cfg config.Configuration) (*zap.Logger, error) {
-	
+
 	logLevel := setLogLevel(cfg.Level)
 
 	encoderCfg := zapcore.EncoderConfig{
@@ -30,7 +28,7 @@ func New(cfg config.Configuration) (*zap.Logger, error) {
 	}
 
 	log := zap.New(zapcore.NewCore(zapcore.NewConsoleEncoder(encoderCfg), zapcore.AddSync(os.Stdout), logLevel))
-	
+
 	log.Sync()
 	return log, nil
 }
