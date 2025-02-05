@@ -2,6 +2,7 @@ package index
 
 import (
 	"context"
+	"sort"
 	"sync"
 	"testing"
 
@@ -396,6 +397,10 @@ func TestSpimiBatchIndex(t *testing.T) {
 		expectedOsmObjects []datastructure.Node
 
 		nodeMap map[int64]*osm.Node
+
+		expectedPostings map[string][]int
+		expectedTermIDs  []int
+		expectedTermSize int
 	}{
 		{
 			inputWays: []geo.OSMWay{
@@ -439,8 +444,11 @@ func TestSpimiBatchIndex(t *testing.T) {
 					Lat: 5.0, Lon: 5.0},
 				{ID: 10, TagMap: map[string]string{"addr:street": "Jalan Dani",
 					"name": "Jalan Dani",
+				}, Lat: 6.0, Lon: 6.0},
+				{ID: 11, TagMap: map[string]string{"addr:street": "Jalan Dani Jadul",
+					"name": "Jalan Dani Jadul",
+				}, Lat: 6.0, Lon: 6.0,
 				},
-					Lat: 6.0, Lon: 6.0},
 			},
 
 			nodeMap: map[int64]*osm.Node{
@@ -502,7 +510,36 @@ func TestSpimiBatchIndex(t *testing.T) {
 					Lat: 6.0, Lon: 6.0, Address: "Jalan Dani",
 					Tipe: "",
 				},
+				{ID: 10, Name: "Jalan Dani Jadul",
+					Lat: 6.0, Lon: 6.0, Address: "Jalan Dani Jadul",
+					Tipe: "",
+				},
 			},
+
+			expectedTermIDs: []int{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19},
+			expectedPostings: map[string][]int{
+				"jalan":   {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
+				"sentosa": {0},
+				"harap":   {0},
+				"dunia":   {1},
+				"baru":    {1},
+				"mulwo":   {2},
+				"apel":    {2, 3},
+				"kebun":   {3},
+				"jeruk":   {3},
+				"pantai":  {4},
+				"ancol":   {4},
+				"gambir":  {5},
+				"pasar":   {6},
+				"minggu":  {6},
+				"adi":     {7},
+				"sucipto": {7},
+				"ahmad":   {8},
+				"yani":    {8},
+				"dan":     {9, 10},
+				"jadul":   {10},
+			},
+			expectedTermSize: 20,
 		},
 	}
 
@@ -545,25 +582,54 @@ func TestSpimiBatchIndex(t *testing.T) {
 			}
 			nodes, errResults := spimi.SpimiBatchIndex(context.Background(), spatialIndex, []geo.OsmRelation{})
 			assert.Nil(t, errResults)
+
+			docIDOriginalMap := make(map[int]int, len(c.expectedOsmObjects))
 			for _, node := range nodes {
 				isThere := false
 
 				for _, expectedNode := range c.expectedOsmObjects {
-					if node.ID == expectedNode.ID {
+					if node.Name == expectedNode.Name {
 						isThere = true
 						assert.Equal(t, expectedNode.Name, node.Name)
 						assert.Equal(t, expectedNode.Lat, node.Lat)
 						assert.Equal(t, expectedNode.Lon, node.Lon)
 						assert.Equal(t, expectedNode.Address, node.Address)
 						assert.Equal(t, expectedNode.Tipe, node.Tipe)
+						docIDOriginalMap[expectedNode.ID] = node.ID
 					}
 				}
 
 				assert.True(t, true, isThere)
 			}
+
+			// test posting list merged index
+			mergedIndex := NewInvertedIndex("merged_name_index", spimi.outputDir, spimi.workingDir)
+
+			err = mergedIndex.OpenReader()
+			if err != nil {
+				t.Error(err)
+			}
+			defer mergedIndex.Close()
+
+			indexIterator := NewInvertedIndexIterator(mergedIndex).IterateInvertedIndex()
+			idx := 0
+			for item, err := range indexIterator {
+				termID := item.GetTermID()
+				termSize := item.GetTermSize()
+				postingList := item.GetPostingList()
+
+				assert.Equal(t, c.expectedTermIDs[idx], termID)
+				idx++
+				assert.Equal(t, c.expectedTermSize, termSize)
+
+				termIDOriginal := spimi.TermIDMap.GetStr(termID)
+				for i, posting := range c.expectedPostings[termIDOriginal] {
+					c.expectedPostings[termIDOriginal][i] = docIDOriginalMap[posting]
+				}
+				sort.Ints(c.expectedPostings[termIDOriginal])
+				assert.Equal(t, c.expectedPostings[termIDOriginal], postingList)
+				assert.Nil(t, err)
+			}
 		}
 	})
 }
-
-
-
