@@ -3,7 +3,10 @@ package main
 import (
 	"context"
 	"flag"
+	"log"
 	"os"
+	"runtime/pprof"
+	"strings"
 
 	"github.com/lintang-b-s/osm-search/pkg/geo"
 	"github.com/lintang-b-s/osm-search/pkg/index"
@@ -14,15 +17,30 @@ import (
 )
 
 var (
-	mapFile   = flag.String("f", "jabodetabek.osm.pbf", "openstreeetmap file")
-	outputDir = flag.String("o", "lintang", "output directory buat simpan inverted index, ngram, dll")
+	mapFile    = flag.String("f", "jabodetabek.osm.pbf", "openstreeetmap file")
+	outputDir  = flag.String("o", "lintang", "output directory buat simpan inverted index, ngram, dll")
+	cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
+	memprofile = flag.String("memprofile", "", "write memory profile to this file")
 )
 
 func main() {
 	flag.Parse()
+	if *cpuprofile != "" {
+		// https://go.dev/blog/pprof
+		//./bin/osm-search-indexer -f "jabodetabek_big.osm.pbf" -cpuprofile=osmsearchcpu.prof -memprofile=osmsearchmem.mprof
+		f, err := os.Create(*cpuprofile)
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer f.Close()
+
+		pprof.StartCPUProfile(f)
+		defer pprof.StopCPUProfile()
+
+	}
 
 	if _, err := os.Stat(*outputDir); os.IsNotExist(err) {
-		os.Mkdir(*outputDir, 0755)
+		os.Mkdir(*outputDir, 0700)
 	}
 
 	ways, onylySearchNodes, nodeMap, tagIDMap, spatialIndex, osmRelations, err := geo.ParseOSM(*mapFile)
@@ -62,6 +80,17 @@ func main() {
 		panic(err)
 	}
 
+	if *memprofile != "" {
+		*memprofile = strings.Replace(*memprofile, ".mprof", "_indexing.mprof", -1)
+		f, err := os.Create(*memprofile)
+		if err != nil {
+			log.Fatal(err)
+		}
+		pprof.WriteHeapProfile(f)
+		f.Close()
+
+	}
+
 	cleanup := func() {
 		err = invertedIndex.Close()
 		if err != nil {
@@ -75,5 +104,17 @@ func main() {
 	err = invertedIndex.BuildSpellCorrectorAndNgram(ctx, allSearchNodes, spatialIndex, osmRelations)
 	if err != nil {
 		panic(err)
+	}
+
+	if *memprofile != "" {
+		*memprofile = strings.Replace(*memprofile, ".mprof", "_spell.mprof", -1)
+
+		f, err := os.Create(*memprofile)
+		if err != nil {
+			log.Fatal(err)
+		}
+		pprof.WriteHeapProfile(f)
+		f.Close()
+
 	}
 }

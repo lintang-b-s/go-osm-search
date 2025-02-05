@@ -864,12 +864,12 @@ func (Idx *DynamicIndex) SaveMeta() error {
 
 	var metadataFile *os.File
 	if Idx.workingDir != "/" {
-		metadataFile, err = os.OpenFile(Idx.workingDir+"/"+Idx.outputDir+"/"+"meta.metadata", os.O_RDWR|os.O_CREATE, 0666)
+		metadataFile, err = os.OpenFile(Idx.workingDir+"/"+Idx.outputDir+"/"+"meta.metadata", os.O_RDWR|os.O_CREATE, 0700)
 		if err != nil {
 			return err
 		}
 	} else {
-		metadataFile, err = os.OpenFile(Idx.outputDir+"/"+"meta.metadata", os.O_RDWR|os.O_CREATE, 0666)
+		metadataFile, err = os.OpenFile(Idx.outputDir+"/"+"meta.metadata", os.O_RDWR|os.O_CREATE, 0700)
 		if err != nil {
 			return err
 		}
@@ -891,12 +891,12 @@ func (Idx *DynamicIndex) LoadMeta() error {
 	var metadataFile *os.File
 	var err error
 	if Idx.workingDir != "/" {
-		metadataFile, err = os.OpenFile(Idx.workingDir+"/"+Idx.outputDir+"/"+"meta.metadata", os.O_RDWR|os.O_CREATE, 0666)
+		metadataFile, err = os.OpenFile(Idx.workingDir+"/"+Idx.outputDir+"/"+"meta.metadata", os.O_RDWR|os.O_CREATE, 0700)
 		if err != nil {
 			return err
 		}
 	} else {
-		metadataFile, err = os.OpenFile(Idx.outputDir+"/"+"meta.metadata", os.O_RDWR|os.O_CREATE, 0666)
+		metadataFile, err = os.OpenFile(Idx.outputDir+"/"+"meta.metadata", os.O_RDWR|os.O_CREATE, 0700)
 		if err != nil {
 			return err
 		}

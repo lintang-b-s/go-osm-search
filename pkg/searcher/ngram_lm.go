@@ -395,12 +395,12 @@ func (lm *NGramLanguageModel) SaveNGramData() error {
 	var ngramFile *os.File
 
 	if pwd != "/" {
-		ngramFile, err = os.OpenFile(pwd+"/"+lm.outputDir+"/"+"ngram.index", os.O_RDWR|os.O_CREATE, 0666)
+		ngramFile, err = os.OpenFile(pwd+"/"+lm.outputDir+"/"+"ngram.index", os.O_RDWR|os.O_CREATE, 0700)
 		if err != nil {
 			return err
 		}
 	} else {
-		ngramFile, err = os.OpenFile(lm.outputDir+"/"+"ngram.index", os.O_RDWR|os.O_CREATE, 0666)
+		ngramFile, err = os.OpenFile(lm.outputDir+"/"+"ngram.index", os.O_RDWR|os.O_CREATE, 0700)
 		if err != nil {
 			return err
 		}
@@ -424,12 +424,12 @@ func (lm *NGramLanguageModel) LoadNGramData() error {
 	}
 	var ngramFile *os.File
 	if pwd != "/" {
-		ngramFile, err = os.OpenFile(pwd+"/"+lm.outputDir+"/"+"ngram.index", os.O_RDONLY|os.O_CREATE, 0666)
+		ngramFile, err = os.OpenFile(pwd+"/"+lm.outputDir+"/"+"ngram.index", os.O_RDONLY|os.O_CREATE, 0700)
 		if err != nil {
 			return err
 		}
 	} else {
-		ngramFile, err = os.OpenFile(lm.outputDir+"/"+"ngram.index", os.O_RDONLY|os.O_CREATE, 0666)
+		ngramFile, err = os.OpenFile(lm.outputDir+"/"+"ngram.index", os.O_RDONLY|os.O_CREATE, 0700)
 		if err != nil {
 			return err
 		}

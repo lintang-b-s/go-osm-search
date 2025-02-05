@@ -15,7 +15,7 @@ func prepare(t *testing.T) {
 	_, err := os.Stat("test")
 
 	if errors.Is(err, fs.ErrNotExist) {
-		err := os.Mkdir("test", 0755)
+		err := os.Mkdir("test", 0700)
 		if err != nil {
 			t.Error(err)
 		}
@@ -483,13 +483,11 @@ func TestEstimateQueryProbabilities(t *testing.T) {
 
 		probs := lm.EstimateQueriesProbabilities([][]int{query, queryTwo}, 4)
 
-		for i := 0; i < len(probs); i++ {
-			probs[i] = math.Round(probs[i])
-		}
+		
 
-		expectedProbOne = math.Round(expectedProbOne)
-		expectedProbTwo = math.Round(expectedProbTwo)
-		assert.Equal(t, []float64{expectedProbOne, expectedProbTwo}, probs)
+		
+		assert.InDelta(t,expectedProbOne, probs[0], 0.1)
 
+		assert.InDelta(t,expectedProbTwo, probs[1], 0.1)
 	})
 }

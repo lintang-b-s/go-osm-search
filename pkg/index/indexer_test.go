@@ -21,7 +21,7 @@ func init() {
 	_, err := os.Stat("test")
 
 	if errors.Is(err, fs.ErrNotExist) {
-		err := os.Mkdir("test", 0755)
+		err := os.Mkdir("test", 0700)
 		if err != nil {
 			panic(err)
 		}
@@ -666,7 +666,7 @@ func TestGetFullAdress(t *testing.T) {
 			Name:        "Kelurahan Mangga Besar",
 			AdminLevel:  "7",
 			PostalCode:  "11180",
-			BoundaryLat: []float64{-6.150087792302976, -6.149334703275599, -6.139710940139253, -6.142485523543515},
+			BoundaryLat: []float64{-6.150087792302976, -6.149334703270099, -6.139710940139253, -6.142485523543515},
 			BoundaryLon: []float64{106.81683956211604, 106.82018827886075, 106.82100794970584, 106.81445004620737},
 		},
 		{
@@ -732,7 +732,7 @@ func TestGetFullAdress(t *testing.T) {
 			Name:        "DKI Jakarta",
 			AdminLevel:  "4",
 			PostalCode:  "banyak",
-			BoundaryLat: []float64{-6.337443118166669, -6.36878821684634, -6.090705089605275, -6.101613067086238},
+			BoundaryLat: []float64{-6.337003118166669, -6.36878821684634, -6.090705089605275, -6.101613067086238},
 			BoundaryLon: []float64{106.75911197706, 106.91269214098934, 106.97576970831747, 106.6768368892407},
 		},
 	}
@@ -744,7 +744,7 @@ func TestGetFullAdress(t *testing.T) {
 	kelurahans := []osmBoundary{
 		{place: datastructure.OSMObject{ID: 0, Lat: -6.144336098110183, Lon: 106.81768539406508}},
 		{place: datastructure.OSMObject{ID: 1, Lat: -6.164757271285033, Lon: 106.8148880181382}},
-		{place: datastructure.OSMObject{ID: 2, Lat: -6.216727645737386, Lon: 106.83972388707552}},
+		{place: datastructure.OSMObject{ID: 2, Lat: -6.216727645737386, Lon: 106.83972388707002}},
 	}
 	kecamatans := []osmBoundary{
 		{place: datastructure.OSMObject{ID: 3, Lat: -6.169973964189839, Lon: 106.81693941209289}},

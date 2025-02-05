@@ -383,12 +383,12 @@ func TestNearestNeighbor(t *testing.T) {
 			},
 			{
 				ID:  1001,
-				Lat: -7.755002453207869,
+				Lat: -7.700002453207869,
 				Lon: 110.37712514761436,
 			},
 		}
 
-		for i := 8; i < 500; i++ {
+		for i := 8; i < 100000; i++ {
 			lat, lon := randomLatLon(-6.107481038495567, -5.995288834299442, 106.13128828884481, 107.0509652831274)
 			itemsData = append(itemsData, OSMObject{
 				ID:  i,
@@ -405,7 +405,7 @@ func TestNearestNeighbor(t *testing.T) {
 		myLocation := Point{-7.760335932763678, 110.37671195413539}
 
 		result := rt.ImprovedNearestNeighbor(myLocation)
-		assert.Equal(t, 1001, result.Leaf.ID)
+		assert.Equal(t, 1, result.Leaf.ID)
 
 	})
 }
@@ -460,7 +460,6 @@ func BenchmarkInsert(b *testing.B) {
 		item := itemsData[randInt]
 		rt.InsertLeaf(item.GetBound(), item)
 	}
-
 }
 
 func BenchmarkImprovedNearestNeighbor(b *testing.B) {

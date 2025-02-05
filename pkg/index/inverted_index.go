@@ -59,7 +59,7 @@ func (Idx *InvertedIndex) GetAverageFieldLength() float64 {
 }
 
 func (Idx *InvertedIndex) OpenWriter() error {
-	file, err := os.OpenFile(Idx.indexFilePath, os.O_RDWR|os.O_CREATE, 0666)
+	file, err := os.OpenFile(Idx.indexFilePath, os.O_RDWR|os.O_CREATE, 0700)
 	if err != nil {
 		return err
 	}
@@ -74,7 +74,7 @@ func (Idx *InvertedIndex) Close() error {
 			return err
 		}
 
-		metadataFile, err := os.OpenFile(Idx.metadataFilePath, os.O_RDWR|os.O_CREATE, 0666)
+		metadataFile, err := os.OpenFile(Idx.metadataFilePath, os.O_RDWR|os.O_CREATE, 0700)
 		if err != nil {
 			return err
 		}
@@ -99,9 +99,9 @@ func (Idx *InvertedIndex) Close() error {
 
 		var bufferSizeFile *os.File
 		if pwd != "/" {
-			bufferSizeFile, err = os.OpenFile(pwd+"/"+Idx.dirName+"/"+Idx.indexName+"_size.metadata", os.O_RDWR|os.O_CREATE, 0666)
+			bufferSizeFile, err = os.OpenFile(pwd+"/"+Idx.dirName+"/"+Idx.indexName+"_size.metadata", os.O_RDWR|os.O_CREATE, 0700)
 		} else {
-			bufferSizeFile, err = os.OpenFile(Idx.dirName+"/"+Idx.indexName+"_size.metadata", os.O_RDWR|os.O_CREATE, 0666)
+			bufferSizeFile, err = os.OpenFile(Idx.dirName+"/"+Idx.indexName+"_size.metadata", os.O_RDWR|os.O_CREATE, 0700)
 		}
 		if err != nil {
 			return err
@@ -129,13 +129,13 @@ func (Idx *InvertedIndex) Close() error {
 }
 
 func (Idx *InvertedIndex) OpenReader() error {
-	file, err := os.OpenFile(Idx.indexFilePath, os.O_RDONLY|os.O_CREATE, 0666)
+	file, err := os.OpenFile(Idx.indexFilePath, os.O_RDONLY|os.O_CREATE, 0700)
 	if err != nil {
 		return err
 	}
 	Idx.indexFile = file
 
-	metadataFile, err := os.OpenFile(Idx.metadataFilePath, os.O_RDONLY|os.O_CREATE, 0666)
+	metadataFile, err := os.OpenFile(Idx.metadataFilePath, os.O_RDONLY|os.O_CREATE, 0700)
 	if err != nil {
 		return err
 	}
@@ -148,9 +148,9 @@ func (Idx *InvertedIndex) OpenReader() error {
 
 	var bufferSizeFile *os.File
 	if pwd != "/" {
-		bufferSizeFile, err = os.OpenFile(pwd+"/"+Idx.dirName+"/"+Idx.indexName+"_size.metadata", os.O_RDONLY|os.O_CREATE, 0666)
+		bufferSizeFile, err = os.OpenFile(pwd+"/"+Idx.dirName+"/"+Idx.indexName+"_size.metadata", os.O_RDONLY|os.O_CREATE, 0700)
 	} else {
-		bufferSizeFile, err = os.OpenFile(Idx.dirName+"/"+Idx.indexName+"_size.metadata", os.O_RDONLY|os.O_CREATE, 0666)
+		bufferSizeFile, err = os.OpenFile(Idx.dirName+"/"+Idx.indexName+"_size.metadata", os.O_RDONLY|os.O_CREATE, 0700)
 	}
 
 	if err != nil {

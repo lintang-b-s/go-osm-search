@@ -169,7 +169,7 @@ result:
          .          .    155:}
          .          .    156:
          .          .    157:func (d *DocumentStore) SaveMeta() error {
-         .          .    158:   metaFile, err := os.OpenFile(d.OutputDir+"/"+DOCUMENT_METADATA_FILENAME, os.O_CREATE|os.O_RDWR, 0666)
+         .          .    158:   metaFile, err := os.OpenFile(d.OutputDir+"/"+DOCUMENT_METADATA_FILENAME, os.O_CREATE|os.O_RDWR, 0700)
 ROUTINE ======================== github.com/lintang-b-s/osm-search/pkg.(*DynamicIndex).GetDocsCount in /home/lintangbs/Documents/explore/software/project/personal/github.com/lintang-b-s/osm-search/pkg/inverted_index.go
       10ms       10ms (flat, cum) 0.059% of Total
          .          .    567:func (Idx *DynamicIndex) GetDocsCount() int {

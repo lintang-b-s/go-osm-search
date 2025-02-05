@@ -14,7 +14,7 @@ func prepare(t *testing.T) {
 	_, err := os.Stat("test")
 
 	if errors.Is(err, fs.ErrNotExist) {
-		err := os.Mkdir("test", 0755)
+		err := os.Mkdir("test", 0700)
 		if err != nil {
 			t.Error(err)
 		}

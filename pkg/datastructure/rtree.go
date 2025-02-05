@@ -777,29 +777,74 @@ type Point struct {
 // minDist computes the square of the distance from a point to a rectangle. If the point is contained in the rectangle then the distance is zero.
 func (p Point) minDist(r RtreeBoundingBox) float64 {
 
-	sum := 0.0
-
 	// Edges[0] = {minLat, maxLat}
 	// Edges[1] = {minLon, maxLon}
-
+	sum := 0.0
+	rLat, rLon := 0.0, 0.0
 	if p.Lat < r.Edges[0][0] {
-		sum += (p.Lat - r.Edges[0][0]) * (p.Lat - r.Edges[0][0])
+		rLat = r.Edges[0][0]
 	} else if p.Lat > r.Edges[0][1] {
-		sum += (p.Lat - r.Edges[0][1]) * (p.Lat - r.Edges[0][1])
+		rLat = r.Edges[0][1]
+	} else {
+		rLat = p.Lat
 	}
 
 	if p.Lon < r.Edges[1][0] {
-		sum += (p.Lon - r.Edges[1][0]) * (p.Lon - r.Edges[1][0])
+		rLon = r.Edges[1][0]
 	} else if p.Lon > r.Edges[1][1] {
-		sum += (p.Lon - r.Edges[1][1]) * (p.Lon - r.Edges[1][1])
+		rLon = r.Edges[1][1]
+	} else {
+		rLon = p.Lon
 	}
+
+	sum = haversineDistance(p.Lat, p.Lon, rLat, rLon)
 
 	return sum
 }
 
-// type RtreeLeafData interface {
-// 	GetBound() RtreeBoundingBox
-// }
+// https://infolab.usc.edu/csci599/Fall2007/papers/a-1.pdf. cmiiw
+func (p Point) minMaxDist(r RtreeBoundingBox) float64 {
+
+	rmk := 0.0
+	rMi := 0.0
+
+	// lat dimension
+	if p.Lat <= (r.Edges[0][0]+r.Edges[0][1])/2.0 {
+		rmk = r.Edges[0][0]
+	} else {
+		rmk = r.Edges[0][1]
+	}
+
+	minMaxDistLatDim := math.Pow(p.Lat-rmk, 2)
+
+	if p.Lon >= (r.Edges[1][0]+r.Edges[1][1])/2.0 {
+		rMi = r.Edges[1][0]
+	} else {
+		rMi = r.Edges[1][1]
+	}
+	minMaxDistLatDim += math.Pow(p.Lon-rMi, 2)
+
+	// lon dimension
+	if p.Lon <= (r.Edges[1][0]+r.Edges[1][1])/2.0 {
+		rmk = r.Edges[1][0]
+	} else {
+		rmk = r.Edges[1][1]
+	}
+
+	minMaxDistLonDim := math.Pow(p.Lon-rmk, 2)
+
+	if p.Lat >= (r.Edges[0][0]+r.Edges[0][1])/2.0 {
+		rMi = r.Edges[0][0]
+	} else {
+		rMi = r.Edges[0][1]
+	}
+	minMaxDistLonDim += math.Pow(p.Lat-rMi, 2)
+
+	if minMaxDistLatDim < minMaxDistLonDim {
+		return minMaxDistLatDim
+	}
+	return minMaxDistLonDim
+}
 
 type OSMObject struct {
 	ID  int
@@ -866,7 +911,7 @@ func (rt *Rtree) fastNNearestNeighbors(k int, p Point, n *RtreeNode,
 	if n.IsLeaf {
 
 		for _, item := range n.Items {
-			dist := p.minDist(item.getBound())
+			dist := haversineDistance(p.Lat, p.Lon, item.Leaf.Lat, item.Leaf.Lon)
 
 			if dist < nearestDist {
 				nearestLists, nNearestDists = fastInsertToNearestLists(nearestLists, *item, dist, k, nNearestDists)
@@ -934,7 +979,7 @@ func (rt *Rtree) nearestNeighbor(p Point, n *RtreeNode,
 	if n.IsLeaf {
 		for _, item := range n.Items {
 
-			dist := p.minDist(item.getBound())
+			dist := haversineDistance(p.Lat, p.Lon, item.Leaf.Lat, item.Leaf.Lon)
 
 			if dist < nnDistTemp {
 				nnDistTemp = dist
@@ -942,23 +987,30 @@ func (rt *Rtree) nearestNeighbor(p Point, n *RtreeNode,
 			}
 		}
 	} else {
-		dists := make([]float64, 0, len(n.Items))
+		minMaxDistM := math.Inf(1)
 		for _, e := range n.Items {
-			dists = append(dists, p.minDist(e.getBound()))
+			minMaxDistM = math.Min(minMaxDistM, p.minMaxDist(e.getBound()))
 		}
 
-		entries := make([]*RtreeNode, len(n.Items))
-		copy(entries, n.Items)
-		sort.Sort(activeBranchSlice{entries, dists})
+		last := len(n.Items)
+		for i := 0; i < last; i++ {
 
-		for i := 0; i < len(entries); i++ {
-
-			if dists[i] > nnDistTemp {
-				break
-			} else {
-				// recursion to children node entry e.
-				nearest, nnDistTemp = rt.nearestNeighbor(p, entries[i], nearest, nnDistTemp)
+			//an MBR M with MINDIST(P,M) greater than the
+			//MINMAXDIST(P,M’) of another MBR M’ is discarded because it cannot contain the NN
+			if p.minDist(n.Items[i].getBound()) <= minMaxDistM {
+				nearest, nnDistTemp = rt.nearestNeighbor(p, n.Items[i], nearest, nnDistTemp)
+				for j := i + 1; j < last; j++ {
+					// upward pruning
+					if p.minDist(n.Items[j].getBound()) > nnDistTemp {
+						//every MBR M with MINDIST(P,M) greater than
+						// the actual distance from P to a given object O is
+						// discarded because it cannot enclose an object nearer
+						// than O (theorem 1). We use this in upward pruning.
+						last = j
+					}
+				}
 			}
+
 		}
 	}
 	return nearest, nnDistTemp
@@ -975,12 +1027,12 @@ func SerializeRtreeData(workingDir string, outputDir string, items []OSMObject) 
 
 	var rtreeFile *os.File
 	if workingDir != "/" {
-		rtreeFile, err = os.OpenFile(workingDir+"/"+outputDir+"/"+"rtree.dat", os.O_RDWR|os.O_CREATE, 0666)
+		rtreeFile, err = os.OpenFile(workingDir+"/"+outputDir+"/"+"rtree.dat", os.O_RDWR|os.O_CREATE, 0700)
 		if err != nil {
 			return err
 		}
 	} else {
-		rtreeFile, err = os.OpenFile(outputDir+"/"+"rtree.dat", os.O_RDWR|os.O_CREATE, 0666)
+		rtreeFile, err = os.OpenFile(outputDir+"/"+"rtree.dat", os.O_RDWR|os.O_CREATE, 0700)
 		if err != nil {
 			return err
 		}
