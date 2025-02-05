@@ -261,7 +261,7 @@ func (it *InvertedIndexIterator) IterateInvertedIndex() iter.Seq2[IndexIteratorI
 			}
 
 			postingList := compress.DecodePostingsList(buf)
-			item := NewIndexIteratorItem(termID, len(it.invertedIndex.terms)+1, postingList)
+			item := NewIndexIteratorItem(termID, len(it.invertedIndex.terms), postingList)
 
 			if !yield(item, nil) {
 				return
@@ -289,9 +289,9 @@ func (Idx *InvertedIndex) ExitAndRemove() error {
 func (Idx *InvertedIndex) GetAproximateMetadataBufferSize() int {
 	allLen := 4 * 3 // 4 byte* 3
 	termsSize := 4 * len(Idx.terms)
-	postingMetadata := 4 * 6 * len(Idx.postingMetadata)
-	docTermCountDict := 4 * 3 * len(Idx.lenFieldInDoc)
-	return allLen + termsSize + postingMetadata + docTermCountDict + 2
+	postingMetadata := 4 * 4 * len(Idx.postingMetadata)
+	docTermCountDict := 4 * 2 * len(Idx.lenFieldInDoc)
+	return allLen + termsSize + postingMetadata + docTermCountDict + 8
 }
 
 func (Idx *InvertedIndex) SerializeMetadata() []byte {

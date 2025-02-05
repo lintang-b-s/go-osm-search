@@ -976,7 +976,7 @@ func (Idx *DynamicIndex) GetFullAdress(street, postalCode, houseNumber string, c
 
 	if street != "" {
 		address += street
-	} else {
+	} else if osmSpatialIdx.StreetRtree.Size > 0 {
 		// pick nearest street
 		street := osmSpatialIdx.StreetRtree.ImprovedNearestNeighbor(centerItem)
 
@@ -989,7 +989,10 @@ func (Idx *DynamicIndex) GetFullAdress(street, postalCode, houseNumber string, c
 	}
 
 	// kelurahan
-	kelurahans := osmSpatialIdx.KelurahanRtree.Search(boundingBox)
+	kelurahans := []datastructure.RtreeNode{}
+	if osmSpatialIdx.KelurahanRtree.Size > 0 {
+		kelurahans = osmSpatialIdx.KelurahanRtree.Search(boundingBox)
+	}
 	kelurahan := ""
 
 	for _, currKelurahan := range kelurahans {
@@ -1013,8 +1016,10 @@ func (Idx *DynamicIndex) GetFullAdress(street, postalCode, houseNumber string, c
 	}
 
 	// // kecamatan
-
-	kecamatans := osmSpatialIdx.KecamatanRtree.Search(boundingBox)
+	kecamatans := []datastructure.RtreeNode{}
+	if osmSpatialIdx.KecamatanRtree.Size > 0 {
+		kecamatans = osmSpatialIdx.KecamatanRtree.Search(boundingBox)
+	}
 	kecamatan := ""
 
 	for _, currKecamatan := range kecamatans {
@@ -1037,7 +1042,10 @@ func (Idx *DynamicIndex) GetFullAdress(street, postalCode, houseNumber string, c
 
 	// // city
 	// NOTES: yang city sama province harus NNeihgbor (Search gak ada hasilnya)
-	cities := osmSpatialIdx.KotaKabupatenRtree.FastNNearestNeighbors(2, centerItem)
+	cities := []datastructure.RtreeNode{}
+	if osmSpatialIdx.KotaKabupatenRtree.Size > 0 {
+		cities = osmSpatialIdx.KotaKabupatenRtree.FastNNearestNeighbors(2, centerItem)
+	}
 
 	city := ""
 
@@ -1058,7 +1066,11 @@ func (Idx *DynamicIndex) GetFullAdress(street, postalCode, houseNumber string, c
 	}
 
 	// // provinsi
-	provinsis := osmSpatialIdx.ProvinsiRtree.FastNNearestNeighbors(2, centerItem)
+	provinsis := []datastructure.RtreeNode{}
+	if osmSpatialIdx.ProvinsiRtree.Size > 0 {
+		provinsis = osmSpatialIdx.ProvinsiRtree.FastNNearestNeighbors(2, centerItem)
+
+	}
 	provinsi := ""
 
 	for i := 0; i < len(provinsis); i++ {
@@ -1082,7 +1094,7 @@ func (Idx *DynamicIndex) GetFullAdress(street, postalCode, houseNumber string, c
 	// // postalCode
 	if postalCode != "" {
 		address += ", " + postalCode
-	} else {
+	} else if osmSpatialIdx.KelurahanRtree.Size > 0 {
 		nearestWayKelurahan := osmSpatialIdx.KelurahanRtree.Search(boundingBox)
 		for _, currKelurahan := range nearestWayKelurahan {
 			kelurahanRel := osmRelations[currKelurahan.Leaf.ID]

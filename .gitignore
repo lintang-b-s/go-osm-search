@@ -19,3 +19,5 @@ latihanCompressAndBufferPool/
 
 bin/
 .vscode/
+
+test/

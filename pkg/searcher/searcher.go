@@ -252,22 +252,27 @@ func (se *Searcher) scoreBM25Field(allPostingsNameField map[int][]int,
 		uniqueDocContainingTerm := make(map[int]struct{})
 
 		// name field
-		namePostingsList := allPostingsNameField[qTermID]
+		namePostingsList, ok := allPostingsNameField[qTermID]
 
 		tfTermDocNameField := make(map[int]float64, len(namePostingsList))
-		for _, docID := range namePostingsList {
-			tfTermDocNameField[docID]++ // conunt(t,d)
-			uniqueDocContainingTerm[docID] = struct{}{}
 
+		if ok {
+			for _, docID := range namePostingsList {
+				tfTermDocNameField[docID]++ // conunt(t,d)
+				uniqueDocContainingTerm[docID] = struct{}{}
+			}
 		}
 
 		// address field
-		addressPostingsList := allPostingsAddressField[qTermID]
+		addressPostingsList, ok := allPostingsAddressField[qTermID]
 
 		tfTermDocAddressField := make(map[int]float64, len(addressPostingsList))
-		for _, docID := range addressPostingsList {
-			tfTermDocAddressField[docID]++ // conunt(t,d)
-			uniqueDocContainingTerm[docID] = struct{}{}
+
+		if ok {
+			for _, docID := range addressPostingsList {
+				tfTermDocAddressField[docID]++ // conunt(t,d)
+				uniqueDocContainingTerm[docID] = struct{}{}
+			}
 		}
 
 		// score untuk doc yang include term di name field

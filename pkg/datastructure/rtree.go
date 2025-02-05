@@ -368,6 +368,7 @@ func (node *RtreeNode) getBound() RtreeBoundingBox {
 }
 
 type Rtree struct {
+	// semuanya exported biar bisa diencode gobencoder
 	Root          *RtreeNode
 	Size          int
 	MinChildItems int
