@@ -191,7 +191,7 @@ func (lm *NGramLanguageModel) countQuadgram(data [][]int) {
 	for _, doc := range data {
 
 		doc = lm.addStartEndToken(doc, 4)
-		
+
 		m := len(doc) - 4 + 1
 		for i := 0; i < m; i++ {
 			var nGram [4]int
@@ -298,7 +298,7 @@ func (lm *NGramLanguageModel) estimateProbability(nextWord int, previousNGram []
 }
 
 // estimate probability of a sequence of words in query.
-func (lm *NGramLanguageModel) estimateQueryProbability(query []int, originalQuery []int) float64 {
+func (lm *NGramLanguageModel) estimateQueryProbability(query []int) float64 {
 	probability := 0.0
 
 	for i := 4; i < len(query); i++ {
@@ -309,12 +309,12 @@ func (lm *NGramLanguageModel) estimateQueryProbability(query []int, originalQuer
 	return probability
 }
 
-func (lm *NGramLanguageModel) EstimateQueriesProbabilities(queries [][]int, n int, originalQuery []int) []float64 {
+func (lm *NGramLanguageModel) EstimateQueriesProbabilities(queries [][]int, n int) []float64 {
 
 	var sentencesProbabilities = make([]float64, 0, len(queries))
 	for _, sentence := range queries {
 		sentence = lm.addStartEndToken(sentence, n)
-		probability := lm.estimateQueryProbability(sentence, originalQuery)
+		probability := lm.estimateQueryProbability(sentence)
 		sentencesProbabilities = append(sentencesProbabilities, probability)
 	}
 	return sentencesProbabilities
