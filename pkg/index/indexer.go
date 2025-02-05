@@ -1083,20 +1083,12 @@ func (Idx *DynamicIndex) GetFullAdress(street, postalCode, houseNumber string, c
 	if postalCode != "" {
 		address += ", " + postalCode
 	} else {
-		nearest := osmSpatialIdx.PostalCodeRtree.ImprovedNearestNeighbor(centerItem)
-		nearestWay := Idx.IndexedData.Ways[nearest.Leaf.ID]
-		nearestWayNode := Idx.IndexedData.Ctr.GetNode(nearestWay.NodeIDs[0])
-
-		nearestWayBB := datastructure.NewRtreeBoundingBox(2, []float64{nearestWayNode.Lat - 0.0001, nearestWayNode.Lon - 0.0001},
-			[]float64{nearestWayNode.Lat + 0.0001, nearestWayNode.Lon + 0.0001})
-
-		nearestWayKelurahan := osmSpatialIdx.KelurahanRtree.Search(nearestWayBB)
-
+		nearestWayKelurahan := osmSpatialIdx.KelurahanRtree.Search(boundingBox)
 		for _, currKelurahan := range nearestWayKelurahan {
 			kelurahanRel := osmRelations[currKelurahan.Leaf.ID]
 			inside := geo.IsPointInsidePolygonWindingNum(centerLat, centerLon, kelurahanRel.BoundaryLat, kelurahanRel.BoundaryLon)
 			if inside {
-				address += ", " + nearestWay.TagMap["addr:postcode"]
+				address += ", " + kelurahanRel.PostalCode
 				break
 			}
 		}

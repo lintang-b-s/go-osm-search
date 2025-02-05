@@ -28,7 +28,7 @@ const (
 const (
 	DELTA = 1.0
 	K1    = 1.2
-	B     = 0.75
+	B     = 0.98
 	// param BM25F
 	K1_BM25F       = 10
 	NAME_WEIGHT    = 20
@@ -249,12 +249,16 @@ func (se *Searcher) scoreBM25Field(allPostingsNameField map[int][]int,
 
 	for _, qTermID := range allQueryTermIDs {
 
+		uniqueDocContainingTerm := make(map[int]struct{})
+
 		// name field
 		namePostingsList := allPostingsNameField[qTermID]
 
 		tfTermDocNameField := make(map[int]float64, len(namePostingsList))
 		for _, docID := range namePostingsList {
 			tfTermDocNameField[docID]++ // conunt(t,d)
+			uniqueDocContainingTerm[docID] = struct{}{}
+
 		}
 
 		// address field
@@ -263,22 +267,20 @@ func (se *Searcher) scoreBM25Field(allPostingsNameField map[int][]int,
 		tfTermDocAddressField := make(map[int]float64, len(addressPostingsList))
 		for _, docID := range addressPostingsList {
 			tfTermDocAddressField[docID]++ // conunt(t,d)
+			uniqueDocContainingTerm[docID] = struct{}{}
 		}
 
 		// score untuk doc yang include term di name field
 
-		uniqueDocContainingTerm := make(map[int]struct{}, len(tfTermDocNameField)+len(tfTermDocAddressField))
 		idf := math.Log10(docCount-float64(len(uniqueDocContainingTerm))+0.5) - math.Log10(float64(len(uniqueDocContainingTerm))+0.5) // log(N-df_t+0.5/df_t+0.5)
 
 		for docID, tftd := range tfTermDocNameField {
 			weightTD := NAME_WEIGHT * (tftd / (1 + NAME_B*((float64(nameLenDF[docID])/averageNameLenDF)-1)))
-			uniqueDocContainingTerm[docID] = struct{}{}
 			documentScore[docID] += (weightTD / (K1_BM25F + weightTD)) * idf
 		}
 
 		for docID, tftd := range tfTermDocAddressField {
 			weightTD := ADDRESS_WEIGHT * (tftd / (1 + NAME_B*((float64(addressLenDF[docID])/averageAddressLenDF)-1)))
-			uniqueDocContainingTerm[docID] = struct{}{}
 			documentScore[docID] += (weightTD / (K1_BM25F + weightTD)) * idf
 		}
 
@@ -455,7 +457,7 @@ func (se *Searcher) Autocomplete(query string, k, offset int) ([]datastructure.N
 			return []datastructure.Node{}, err
 		}
 
-		scoredDocs := se.scoreBM25PlusAutocomplete(allPostings, queryTerms, docIDsRes)
+		scoredDocs := se.scoreBM25FAutocomplete(allPostings, queryTerms, docIDsRes)
 
 		// relDocIDs = append(relDocIDs, docIDsRes...)
 
@@ -481,36 +483,32 @@ func (se *Searcher) Autocomplete(query string, k, offset int) ([]datastructure.N
 	return relevantDocs, nil
 }
 
-func (se *Searcher) scoreBM25PlusAutocomplete(allPostings map[int][]int, queryTermIDs []int,
+func (se *Searcher) scoreBM25FAutocomplete(allPostings map[int][]int, queryTermIDs []int,
 	intersectedDocIDs []int) []DocWithScore {
-	// param bm25+
-	delta := 1.0 // delta bm25+
-	k1 := 1.5
-	b := 0.75
 
 	documentScore := make(map[int]float64)
 
 	docsCount := float64(se.Idx.GetDocsCount())
-	docWordCount := se.Idx.GetDocWordCount()
 
-	avgDocLength := se.Idx.GetAverageDocLength()
+	nameLenDF := se.MainIndexNameField.GetLenFieldInDoc()
+	averageNameLenDF := se.MainIndexNameField.GetAverageFieldLength()
 
 	for _, postings := range allPostings {
-		// iterate semua term di query, hitung tf-idf query dan tf-idf document, accumulate skor cosine di docScore
 
 		tfTermDoc := make(map[int]float64)
 		for _, docID := range postings {
 			tfTermDoc[docID]++ // conunt(t,d)
 		}
 
-		idf := math.Log10(docsCount+1) - math.Log10(float64(len(tfTermDoc))) // log(N/df_t)
+		idf := math.Log10(docsCount-float64(len(tfTermDoc))+0.5) - math.Log10(float64(len(tfTermDoc))+0.5) // log(N-df_t+0.5/df_t+0.5)
 
 		for i := 0; i < len(intersectedDocIDs); i++ {
 			docID := intersectedDocIDs[i]
 			tftd := tfTermDoc[docID]
 
-			documentScore[docID] += idf * (delta +
-				((k1+1)+tftd)/(k1*(1-b+b*float64(docWordCount[docID])/avgDocLength)+tftd))
+			weightTD := NAME_WEIGHT * (tftd / (1 + NAME_B*((float64(nameLenDF[docID])/averageNameLenDF)-1)))
+			documentScore[docID] += (weightTD / (K1_BM25F + weightTD)) * idf
+
 		}
 	}
 
