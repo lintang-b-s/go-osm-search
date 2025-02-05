@@ -536,7 +536,6 @@ func (rt *Rtree) chooseSubtree(node *RtreeNode, bound RtreeBoundingBox) *RtreeNo
 	// such that they are minimum bounding boxes
 	// enclosing their children rectangles
 
-	// node.Bound.stretch(bound)
 	node.Bound = stretch(node.Bound, bound)
 
 	var chosen *RtreeNode

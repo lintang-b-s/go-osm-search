@@ -2,6 +2,9 @@ package index
 
 import (
 	"context"
+	"errors"
+	"io/fs"
+	"os"
 	"sort"
 	"sync"
 	"testing"
@@ -13,6 +16,18 @@ import (
 	"github.com/stretchr/testify/assert"
 	bolt "go.etcd.io/bbolt"
 )
+
+func init() {
+	_, err := os.Stat("test")
+
+	if errors.Is(err, fs.ErrNotExist) {
+		err := os.Mkdir("test", 0666)
+		if err != nil {
+			panic(err)
+		}
+	}
+
+}
 
 func TestSpimiParseOSMNode(t *testing.T) {
 	cases := []struct {

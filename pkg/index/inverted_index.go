@@ -252,9 +252,13 @@ func (it *InvertedIndexIterator) IterateInvertedIndex() iter.Seq2[IndexIteratorI
 			termID := it.invertedIndex.terms[it.invertedIndex.currTermPosition]
 			it.invertedIndex.currTermPosition += 1
 			startPosition, _, lengthInBytes := it.invertedIndex.postingMetadata[termID][0], it.invertedIndex.postingMetadata[termID][1], it.invertedIndex.postingMetadata[termID][2]
-			it.invertedIndex.indexFile.Seek(int64(startPosition), 0)
+			_, err := it.invertedIndex.indexFile.Seek(int64(startPosition), 0)
+			if err != nil {
+				yield(NewIndexIteratorItem(-1, -1, []int{}), fmt.Errorf("error when iterating inverted index: %w", err))
+				return
+			}
 			buf := make([]byte, lengthInBytes)
-			_, err := it.invertedIndex.indexFile.Read(buf)
+			_, err = it.invertedIndex.indexFile.Read(buf)
 			if err != nil {
 				yield(NewIndexIteratorItem(-1, -1, []int{}), fmt.Errorf("error when iterating inverted index: %w", err))
 				return
