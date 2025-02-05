@@ -758,13 +758,13 @@ func (rt *Rtree) search(node *RtreeNode, bound RtreeBoundingBox,
 			continue
 		}
 
-			if overlaps(e.getBound(), bound) {
-				// S2. [Search leaf node.] If T is a leaf, check
-				// all entries E to determine whether E.I
-				// overlaps S. If so, E is a qualifying
-				// record
-				results = append(results, *e)
-			
+		if overlaps(e.getBound(), bound) {
+			// S2. [Search leaf node.] If T is a leaf, check
+			// all entries E to determine whether E.I
+			// overlaps S. If so, E is a qualifying
+			// record
+			results = append(results, *e)
+
 		}
 	}
 	return results
@@ -909,7 +909,7 @@ func (rt *Rtree) ImprovedNearestNeighbor(p Point) RtreeNode {
 	nnDistTemp := math.Inf(1)
 	root := rt.Root
 
-	rt.nearestNeighbor(p, root, &nearest, &nnDistTemp)
+	nearest, _ = rt.nearestNeighbor(p, root, nearest, nnDistTemp)
 	return nearest
 }
 
@@ -930,16 +930,16 @@ func (s activeBranchSlice) Less(i, j int) bool {
 }
 
 func (rt *Rtree) nearestNeighbor(p Point, n *RtreeNode,
-	nearest *RtreeNode, nnDistTemp *float64) {
+	nearest RtreeNode, nnDistTemp float64) (RtreeNode, float64) {
 
 	if n.IsLeaf {
 		for _, item := range n.Items {
 
 			dist := p.minDist(item.getBound())
 
-			if dist < *nnDistTemp {
-				*nnDistTemp = dist
-				*nearest = *item
+			if dist < nnDistTemp {
+				nnDistTemp = dist
+				nearest = *item
 			}
 		}
 	} else {
@@ -954,14 +954,15 @@ func (rt *Rtree) nearestNeighbor(p Point, n *RtreeNode,
 
 		for i := 0; i < len(entries); i++ {
 
-			if dists[i] > *nnDistTemp {
+			if dists[i] > nnDistTemp {
 				break
 			} else {
 				// recursion to children node entry e.
-				rt.nearestNeighbor(p, entries[i], nearest, nnDistTemp)
+				nearest, nnDistTemp = rt.nearestNeighbor(p, entries[i], nearest, nnDistTemp)
 			}
 		}
 	}
+	return nearest, nnDistTemp
 }
 
 func SerializeRtreeData(workingDir string, outputDir string, items []OSMObject) error {

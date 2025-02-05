@@ -1041,10 +1041,9 @@ func (Idx *DynamicIndex) GetFullAdress(street, postalCode, houseNumber string, c
 	}
 
 	// // city
-	// NOTES: yang city sama province harus NNeihgbor (Search gak ada hasilnya)
 	cities := []datastructure.RtreeNode{}
 	if osmSpatialIdx.KotaKabupatenRtree.Size > 0 {
-		cities = osmSpatialIdx.KotaKabupatenRtree.FastNNearestNeighbors(2, centerItem)
+		cities = osmSpatialIdx.KotaKabupatenRtree.Search(boundingBox)
 	}
 
 	city := ""
@@ -1068,7 +1067,7 @@ func (Idx *DynamicIndex) GetFullAdress(street, postalCode, houseNumber string, c
 	// // provinsi
 	provinsis := []datastructure.RtreeNode{}
 	if osmSpatialIdx.ProvinsiRtree.Size > 0 {
-		provinsis = osmSpatialIdx.ProvinsiRtree.FastNNearestNeighbors(2, centerItem)
+		provinsis = osmSpatialIdx.ProvinsiRtree.Search(boundingBox)
 
 	}
 	provinsi := ""
@@ -1108,9 +1107,9 @@ func (Idx *DynamicIndex) GetFullAdress(street, postalCode, houseNumber string, c
 	}
 	// country
 	if osmSpatialIdx.CountryRtree.Size != 0 {
-		country := osmSpatialIdx.CountryRtree.ImprovedNearestNeighbor(centerItem)
+		country := osmSpatialIdx.CountryRtree.Search(boundingBox)
 
-		countryRel := osmRelations[country.Leaf.ID]
+		countryRel := osmRelations[country[0].Leaf.ID]
 		address += ", " + countryRel.Name
 	}
 
