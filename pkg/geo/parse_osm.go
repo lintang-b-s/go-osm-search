@@ -314,7 +314,6 @@ func ParseOSM(mapfile string) ([]OSMWay, []OSMNode, NodeMapContainer, *pkg.IDMap
 	for relID, rel := range relations {
 
 		boundaryLat, boundaryLon := []float64{}, []float64{}
-		sortedBoundaryLat, sortedBoundaryLon := []float64{}, []float64{}
 		for _, relway := range rel.ways {
 			wway, ok := boundaryWayMap[relway]
 			if !ok {
@@ -333,6 +332,8 @@ func ParseOSM(mapfile string) ([]OSMWay, []OSMNode, NodeMapContainer, *pkg.IDMap
 
 		relations[relID].BoundaryLat = append(relations[relID].BoundaryLat, boundaryLat...)
 		relations[relID].BoundaryLon = append(relations[relID].BoundaryLon, boundaryLon...)
+
+		sortedBoundaryLat, sortedBoundaryLon := make([]float64, len(boundaryLat)), make([]float64, len(boundaryLon))
 
 		copy(sortedBoundaryLat, boundaryLat)
 		copy(sortedBoundaryLon, boundaryLon)
