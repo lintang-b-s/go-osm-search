@@ -749,7 +749,7 @@ func (rt *Rtree) search(node *RtreeNode, bound RtreeBoundingBox,
 			continue
 		}
 
-		if !e.isLeafNode() {
+		if !node.isLeafNode() {
 			// S1. [Search subtrees.] If T is not a leaf,
 			// check each entry E to determine
 			// whether E.I overlaps S. For all overlapping entries, invoke Search on the tree
@@ -758,14 +758,13 @@ func (rt *Rtree) search(node *RtreeNode, bound RtreeBoundingBox,
 			continue
 		}
 
-		for _, leaf := range e.Items {
-			if overlaps(leaf.getBound(), bound) {
+			if overlaps(e.getBound(), bound) {
 				// S2. [Search leaf node.] If T is a leaf, check
 				// all entries E to determine whether E.I
 				// overlaps S. If so, E is a qualifying
 				// record
-				results = append(results, *leaf)
-			}
+				results = append(results, *e)
+			
 		}
 	}
 	return results

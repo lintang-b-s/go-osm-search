@@ -1004,7 +1004,7 @@ func (Idx *DynamicIndex) GetFullAdress(street, postalCode, houseNumber string, c
 			continue
 		}
 
-		inside := geo.IsPointInsidePolygonWindingNum(centerLat, centerLon, kelurahanRel.BoundaryLat, kelurahanRel.BoundaryLon)
+		inside := geo.IsPointInPolygon(centerLat, centerLon, kelurahanRel.BoundaryLat, kelurahanRel.BoundaryLon)
 		if inside {
 			kelurahan = kelurahanRel.Name
 			break
@@ -1028,7 +1028,7 @@ func (Idx *DynamicIndex) GetFullAdress(street, postalCode, houseNumber string, c
 			continue
 		}
 
-		inside := geo.IsPointInsidePolygonWindingNum(centerLat, centerLon, kecamatanRel.BoundaryLat, kecamatanRel.BoundaryLon)
+		inside := geo.IsPointInPolygon(centerLat, centerLon, kecamatanRel.BoundaryLat, kecamatanRel.BoundaryLon)
 		if inside {
 			kecamatan = kecamatanRel.Name
 			break
@@ -1054,7 +1054,7 @@ func (Idx *DynamicIndex) GetFullAdress(street, postalCode, houseNumber string, c
 		if len(cityRel.BoundaryLat) == 0 {
 			continue
 		}
-		inside := geo.IsPointInsidePolygonWindingNum(centerLat, centerLon, cityRel.BoundaryLat, cityRel.BoundaryLon)
+		inside := geo.IsPointInPolygon(centerLat, centerLon, cityRel.BoundaryLat, cityRel.BoundaryLon)
 		if inside {
 			city = cityRel.Name
 			break
@@ -1080,7 +1080,7 @@ func (Idx *DynamicIndex) GetFullAdress(street, postalCode, houseNumber string, c
 			continue
 		}
 
-		inside := geo.IsPointInsidePolygonWindingNum(centerLat, centerLon, provinsiRel.BoundaryLat, provinsiRel.BoundaryLon)
+		inside := geo.IsPointInPolygon(centerLat, centerLon, provinsiRel.BoundaryLat, provinsiRel.BoundaryLon)
 		if inside {
 			provinsi = provinsiRel.Name
 			// yang inii harus tanpa break
@@ -1098,7 +1098,7 @@ func (Idx *DynamicIndex) GetFullAdress(street, postalCode, houseNumber string, c
 		nearestWayKelurahan := osmSpatialIdx.KelurahanRtree.Search(boundingBox)
 		for _, currKelurahan := range nearestWayKelurahan {
 			kelurahanRel := osmRelations[currKelurahan.Leaf.ID]
-			inside := geo.IsPointInsidePolygonWindingNum(centerLat, centerLon, kelurahanRel.BoundaryLat, kelurahanRel.BoundaryLon)
+			inside := geo.IsPointInPolygon(centerLat, centerLon, kelurahanRel.BoundaryLat, kelurahanRel.BoundaryLon)
 			if inside {
 				address += ", " + kelurahanRel.PostalCode
 				break

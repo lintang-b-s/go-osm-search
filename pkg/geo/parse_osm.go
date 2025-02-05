@@ -95,7 +95,6 @@ type OSMSpatialIndex struct {
 	KotaKabupatenRtree *datastructure.Rtree
 	ProvinsiRtree      *datastructure.Rtree
 	CountryRtree       *datastructure.Rtree
-	PostalCodeRtree    *datastructure.Rtree
 }
 
 type OsmRelation struct {
@@ -116,7 +115,6 @@ func ParseOSM(mapfile string) ([]OSMWay, []OSMNode, NodeMapContainer, *pkg.IDMap
 	kotaKabupatenRtree := datastructure.NewRtree(25, 50, 2)
 	provinsiRtree := datastructure.NewRtree(25, 50, 2)
 	countryRtree := datastructure.NewRtree(25, 50, 2)
-	postalCodeRtree := datastructure.NewRtree(25, 50, 2)
 
 	f, err := os.Open(mapfile)
 
@@ -316,6 +314,7 @@ func ParseOSM(mapfile string) ([]OSMWay, []OSMNode, NodeMapContainer, *pkg.IDMap
 	for relID, rel := range relations {
 
 		boundaryLat, boundaryLon := []float64{}, []float64{}
+		sortedBoundaryLat, sortedBoundaryLon := []float64{}, []float64{}
 		for _, relway := range rel.ways {
 			wway, ok := boundaryWayMap[relway]
 			if !ok {
@@ -334,9 +333,13 @@ func ParseOSM(mapfile string) ([]OSMWay, []OSMNode, NodeMapContainer, *pkg.IDMap
 
 		relations[relID].BoundaryLat = append(relations[relID].BoundaryLat, boundaryLat...)
 		relations[relID].BoundaryLon = append(relations[relID].BoundaryLon, boundaryLon...)
-		sort.Float64s(boundaryLat)
-		sort.Float64s(boundaryLon)
-		centerLat, centerLon := boundaryLat[len(boundaryLat)/2], boundaryLon[len(boundaryLon)/2]
+
+		copy(sortedBoundaryLat, boundaryLat)
+		copy(sortedBoundaryLon, boundaryLon)
+
+		sort.Float64s(sortedBoundaryLat)
+		sort.Float64s(sortedBoundaryLon)
+		centerLat, centerLon := sortedBoundaryLat[len(sortedBoundaryLat)/2], sortedBoundaryLon[len(sortedBoundaryLon)/2]
 
 		rtreeLeaf := datastructure.OSMObject{
 			ID:  relID,
@@ -345,8 +348,8 @@ func ParseOSM(mapfile string) ([]OSMWay, []OSMNode, NodeMapContainer, *pkg.IDMap
 		}
 
 		// // bound = [minLat, minLon, maxLat, maxLon]
-		bound := datastructure.NewRtreeBoundingBox(2, []float64{boundaryLat[0], boundaryLon[0]},
-			[]float64{boundaryLat[len(boundaryLat)-1], boundaryLon[len(boundaryLon)-1]})
+		bound := datastructure.NewRtreeBoundingBox(2, []float64{sortedBoundaryLat[0], sortedBoundaryLon[0]},
+			[]float64{sortedBoundaryLat[len(sortedBoundaryLat)-1], sortedBoundaryLon[len(sortedBoundaryLon)-1]})
 
 		// insert r-tree per administrative level
 		if rel.AdminLevel == "7" {
@@ -382,10 +385,6 @@ func ParseOSM(mapfile string) ([]OSMWay, []OSMNode, NodeMapContainer, *pkg.IDMap
 			Lon: midLon,
 		}
 
-		if _, ok := way.TagMap["addr:postcode"]; ok {
-			postalCodeRtree.InsertLeaf(rtreeLeaf.GetBound(), rtreeLeaf)
-		}
-
 		highway, ok := way.TagMap["highway"]
 		if ok && (highway == "motorway" ||
 			highway == "trunk" ||
@@ -414,7 +413,6 @@ func ParseOSM(mapfile string) ([]OSMWay, []OSMNode, NodeMapContainer, *pkg.IDMap
 		KotaKabupatenRtree: kotaKabupatenRtree,
 		ProvinsiRtree:      provinsiRtree,
 		CountryRtree:       countryRtree,
-		PostalCodeRtree:    postalCodeRtree,
 	}
 
 	bar.Add(1)
