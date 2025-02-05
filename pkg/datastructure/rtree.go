@@ -754,7 +754,7 @@ func (rt *Rtree) search(node *RtreeNode, bound RtreeBoundingBox,
 			// check each entry E to determine
 			// whether E.I overlaps S. For all overlapping entries, invoke Search on the tree
 			// whose root node is pointed to by E.p
-			rt.search(e, bound, results)
+			results = rt.search(e, bound, results)
 			continue
 		}
 
