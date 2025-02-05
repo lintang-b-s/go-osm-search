@@ -21,7 +21,7 @@ func init() {
 	_, err := os.Stat("test")
 
 	if errors.Is(err, fs.ErrNotExist) {
-		err := os.Mkdir("test", 0666)
+		err := os.Mkdir("test", 0755)
 		if err != nil {
 			panic(err)
 		}

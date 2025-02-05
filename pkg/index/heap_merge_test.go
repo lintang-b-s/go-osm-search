@@ -8,12 +8,13 @@ import (
 )
 
 func TestMergeKArray(t *testing.T) {
+	prepare(t)
 	t.Run("success merge k sorted index", func(t *testing.T) {
 		pwd, err := os.Getwd()
 		if err != nil {
 			t.Error(err)
 		}
-		prepare(t)
+
 		// inverted index 1
 		invIndex := NewInvertedIndex("test", "test", pwd)
 		err = invIndex.OpenWriter()

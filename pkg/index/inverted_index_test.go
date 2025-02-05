@@ -14,7 +14,7 @@ func prepare(t *testing.T) {
 	_, err := os.Stat("test")
 
 	if errors.Is(err, fs.ErrNotExist) {
-		err := os.Mkdir("test", 0666)
+		err := os.Mkdir("test", 0755)
 		if err != nil {
 			t.Error(err)
 		}
@@ -27,14 +27,18 @@ func prepare(t *testing.T) {
 	indexFilePath := pwd + "/" + "test" + "/" + "test" + ".index"
 	metadataFilePath := pwd + "/" + "test" + "/" + "test" + ".metadata"
 
-	err = os.Remove(indexFilePath)
-	if err != nil {
-		t.Error(err)
+	_, err = os.Stat(indexFilePath)
+	if err == nil {
+		err = os.Remove(indexFilePath)
+		if err != nil {
+			t.Error(err)
+		}
+		err = os.Remove(metadataFilePath)
+		if err != nil {
+			t.Error(err)
+		}
 	}
-	err = os.Remove(metadataFilePath)
-	if err != nil {
-		t.Error(err)
-	}
+
 }
 
 func TestAppendPostingsList(t *testing.T) {
@@ -247,7 +251,7 @@ func TestIterateInvertedIndex(t *testing.T) {
 		item, err, valid := next()
 		assert.Error(t, err)
 		assert.Equal(t, NewIndexIteratorItem(-1, -1, []int{}), item)
-		assert.True(t,valid)
+		assert.True(t, valid)
 	})
 
 }
