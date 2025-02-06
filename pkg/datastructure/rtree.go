@@ -448,7 +448,7 @@ func (rt *Rtree) linearPickSeeds(l *RtreeNode) (*RtreeNode, *RtreeNode) {
 
 		lWidth := highestLowSide - lowestHighSide
 
-		widthAlongDimension := distsLowSide[0] - distsHighSide[len(distsHighSide)-1]
+		widthAlongDimension := distsHighSide[len(distsHighSide)-1] - distsLowSide[0]
 
 		if lWidth/widthAlongDimension > greatestNormalizedSeparation {
 			greatestNormalizedSeparation = lWidth / widthAlongDimension
@@ -597,6 +597,7 @@ func (rt *Rtree) NearestNeighboursPQ(k int, p Point) []OSMObject {
 
 	return nearestLists
 }
+
 // https://dl.acm.org/doi/pdf/10.1145/320248.320255
 func (rt *Rtree) nearestNeigboursPQ(p Point, callback func(OSMObject) bool) {
 	pq := NewMinHeap()

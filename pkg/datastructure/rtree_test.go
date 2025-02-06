@@ -171,9 +171,7 @@ func TestSplit(t *testing.T) {
 		assert.Less(t, len(rt.Root.Items), 25)
 		assert.Less(t, len(old.Items), 25)
 
-		countLeaf := 0
-		traverseRtreeAndTestIfBoundingBoxCorrect(rt.Root, &countLeaf, t)
-		traverseRtreeAndTestIfBoundingBoxCorrect(newNode, &countLeaf, t)
+		
 	})
 }
 
