@@ -1,5 +1,5 @@
 # osm-search
-Openstreetmap Full Text Search (support Autocomplete & Spell Corrector Up to 2 Edit Distance per-word) and Reverse Geocoder without any external API/external database. by default uses BM25F as the ranking function.
+Openstreetmap Full Text Search (support Autocomplete & Spell Corrector Up to 2 Edit Distance per-word), Reverse Geocoder, Nearest Places without any external API/external database. Search Engine by default uses BM25F as the ranking function. Nearest neighbours query using R-tree data structure.
 
 # Quick Start
 ## Indexing
