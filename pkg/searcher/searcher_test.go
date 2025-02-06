@@ -42,7 +42,7 @@ func LoadIndex() (*Searcher, *bolt.DB) {
 		log.Fatal(err)
 	}
 
-	searcher := NewSearcher(invertedIndex, bboltKV, spellCorrector, BM25_PLUS)
+	searcher := NewSearcher(invertedIndex, bboltKV, spellCorrector, BM25_FIELD)
 	return searcher, db
 }
 
@@ -270,26 +270,24 @@ func BenchmarkAutocomplete(b *testing.B) {
 
 }
 
-// func BenchmarkGetPostingList(b *testing.B) {
-// 	searcher, db := LoadIndex()
-// 	defer db.Close()
-// 	err := searcher.LoadMainIndex()
-// 	if err != nil {
-// 		log.Fatal(err)
-// 	}
-// 	defer searcher.Close()
+func BenchmarkReverseGeocoding(b *testing.B) {
 
-// 	rand.Seed(time.Now().UnixNano())
-// 	b.ResetTimer()
+	searcher, db := LoadIndex()
+	defer db.Close()
+	err := searcher.LoadMainIndex()
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer searcher.Close()
 
-// 	for n := 0; n < b.N; n++ {
-// 		for i := 0; i < 5; i++ {
-// 			termID := rand.Intn(10000)
-// 			_, err = searcher.MainIndex.GetPostingList(termID)
-// 			if err != nil {
-// 				b.Fatal(err)
-// 			}
-// 		}
+	rand.Seed(time.Now().UnixNano())
+	b.ResetTimer()
 
-// 	}
-// }
+	for n := 0; n < b.N; n++ {
+		_, err := searcher.ReverseGeocoding(-6.1754, 106.8272)
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+	
+}

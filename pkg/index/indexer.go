@@ -27,7 +27,7 @@ type SpellCorrectorI interface {
 	Preprocessdata(tokenizedDocs [][]string)
 	GetWordCandidates(mispelledWord string, editDistance int) ([]int, error)
 	GetCorrectQueryCandidates(allPossibleQueryTerms [][]int) [][]int
-	GetCorrectSpellingSuggestion(allCorrectQueryCandidates [][]int, originalQueryTermIDs []int) ([]int, error)
+	GetCorrectSpellingSuggestion(allCorrectQueryCandidates [][]int ) ([]int, error)
 	GetMatchedWordBasedOnPrefix(prefixWord string) ([]int, error)
 	GetMatchedWordsAutocomplete(allQueryCandidates [][]int, originalQueryTerms []int) ([][]int, error)
 }

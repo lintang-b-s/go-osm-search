@@ -17,7 +17,9 @@ import (
 	_ "github.com/lintang-b-s/osm-search/cmd/server/docs"
 
 	_ "github.com/swaggo/http-swagger"
+
 	httpSwagger "github.com/swaggo/http-swagger"
+	_ "net/http/pprof"
 )
 
 type API struct {
@@ -64,6 +66,8 @@ func (api *API) Run(
 
 	router.GET("/doc/*any", swaggerHandler)
 
+	router.Handler(http.MethodGet, "/debug/pprof/*item", http.DefaultServeMux)
+	
 	group := router_helper.NewRouteGroup(router, "/api")
 
 	searcherRoutes := controllers.New(searchService, log)

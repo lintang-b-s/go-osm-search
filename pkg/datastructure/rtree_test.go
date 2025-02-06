@@ -392,7 +392,7 @@ func TestNearestNeighbor(t *testing.T) {
 	})
 }
 
-// BenchmarkNNearestNeighbors-12    	   27590	     43422 ns/op	  100456 B/op	      13 allocs/op
+
 func BenchmarkNNearestNeighbors(b *testing.B) {
 	itemsData := []OSMObject{}
 

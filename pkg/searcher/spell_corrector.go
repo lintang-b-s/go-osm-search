@@ -136,7 +136,7 @@ func (sc SpellCorrector) GetCorrectQueryCandidates(allPossibleQueryTerms [][]int
 	return temp
 }
 
-func (sc *SpellCorrector) GetCorrectSpellingSuggestion(allCorrectQueryCandidates [][]int, originalQueryTerms []int) ([]int, error) {
+func (sc *SpellCorrector) GetCorrectSpellingSuggestion(allCorrectQueryCandidates [][]int) ([]int, error) {
 
 	correctQueriesProbabilities := sc.NGram.EstimateQueriesProbabilities(allCorrectQueryCandidates, 4)
 
@@ -219,8 +219,8 @@ func (sc *SpellCorrector) GetMatchedWordsAutocomplete(allQueryCandidates [][]int
 		matchedQuery = append(matchedQuery, allQueryCandidates[qcan.IDx])
 	}
 
-	if len(matchedQuery) >= 5 {
-		return matchedQuery[:5], nil
+	if len(matchedQuery) >= 3 {
+		return matchedQuery[:3], nil
 	}
 
 	return matchedQuery, nil

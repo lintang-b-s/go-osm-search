@@ -143,7 +143,6 @@ func (se *Searcher) FreeFormQuery(query string, k, offset int) ([]datastructure.
 
 	// {{term1,term1OneEdit}, {term2, term2Edit}, ...}
 	allPossibleQueryTerms := make([][]int, len(queryTerms))
-	originalQueryTerms := make([]int, 0, len(queryTerms))
 
 	queryWordCount := make(map[int]int, len(queryTerms))
 
@@ -151,11 +150,8 @@ func (se *Searcher) FreeFormQuery(query string, k, offset int) ([]datastructure.
 		tokenizedTerm := pkg.Stemmer.Stem(term)
 		isInVocab := se.TermIDMap.IsInVocabulary(tokenizedTerm)
 
-		originalQueryTerms = append(originalQueryTerms, se.TermIDMap.GetID(tokenizedTerm))
-
 		if !isInVocab {
 
-			// bisa dibuat concurrent
 			correctionOne, err := se.SpellCorrector.GetWordCandidates(tokenizedTerm, 1)
 			if err != nil {
 				return []datastructure.Node{}, err
@@ -173,7 +169,7 @@ func (se *Searcher) FreeFormQuery(query string, k, offset int) ([]datastructure.
 	}
 
 	allCorrectQueryCandidates := se.SpellCorrector.GetCorrectQueryCandidates(allPossibleQueryTerms)
-	correctQuery, err := se.SpellCorrector.GetCorrectSpellingSuggestion(allCorrectQueryCandidates, originalQueryTerms)
+	correctQuery, err := se.SpellCorrector.GetCorrectSpellingSuggestion(allCorrectQueryCandidates)
 
 	if err != nil {
 		return []datastructure.Node{}, err
@@ -227,7 +223,6 @@ func (se *Searcher) FreeFormQuery(query string, k, offset int) ([]datastructure.
 			return []datastructure.Node{}, err
 		}
 		relevantDocs = append(relevantDocs, doc)
-
 	}
 
 	return relevantDocs, nil
@@ -236,7 +231,6 @@ func (se *Searcher) FreeFormQuery(query string, k, offset int) ([]datastructure.
 // https://trec.nist.gov/pubs/trec13/papers/microsoft-cambridge.web.hard.pdf
 func (se *Searcher) scoreBM25Field(allPostingsNameField map[int][]int,
 	allPostingsAddressField map[int][]int, allQueryTermIDs []int) []DocWithScore {
-	// param bm25+
 
 	documentScore := make(map[int]float64)
 
@@ -249,11 +243,12 @@ func (se *Searcher) scoreBM25Field(allPostingsNameField map[int][]int,
 
 	for _, qTermID := range allQueryTermIDs {
 
-		uniqueDocContainingTerm := make(map[int]struct{})
+		namePostingsList, ok := allPostingsNameField[qTermID]
+		addressPostingsList, ok := allPostingsAddressField[qTermID]
+
+		uniqueDocContainingTerm := make(map[int]struct{}, len(namePostingsList)+len(addressPostingsList))
 
 		// name field
-		namePostingsList, ok := allPostingsNameField[qTermID]
-
 		tfTermDocNameField := make(map[int]float64, len(namePostingsList))
 
 		if ok {
@@ -264,7 +259,6 @@ func (se *Searcher) scoreBM25Field(allPostingsNameField map[int][]int,
 		}
 
 		// address field
-		addressPostingsList, ok := allPostingsAddressField[qTermID]
 
 		tfTermDocAddressField := make(map[int]float64, len(addressPostingsList))
 
@@ -602,6 +596,7 @@ func shuntingYardRPN(tokens []int) []int {
 
 				for len(stack) != 0 && precedence[token] < precedence[operator] {
 					output = append(output, operator)
+
 					n = len(stack) - 1
 					stack = stack[:n]
 					if len(stack) != 0 {

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"math"
 	"os"
-	"sort"
 )
 
 type RtreeBoundingBox struct {
@@ -260,34 +259,6 @@ func (rt *Rtree) adjustTree(l, ll *RtreeNode) (*RtreeNode, *RtreeNode) {
 	return rt.adjustTree(p, nil)
 }
 
-func (rt *Rtree) insertSort(dists []float64, dist float64, sorted []*RtreeNode,
-	obj *RtreeNode, max int) ([]*RtreeNode, []float64) {
-
-	idx := sort.SearchFloat64s(dists, dist)
-	for idx < len(sorted) && dist >= dists[idx] {
-		idx++
-	}
-
-	if idx >= max {
-		return sorted, dists
-	}
-
-	if len(sorted) < max {
-		dists = append(dists, 0)
-		sorted = append(sorted, &RtreeNode{})
-	}
-
-	copy(dists, dists[:idx])
-	copy(dists[idx+1:], dists[idx:len(dists)-1])
-	dists[idx] = dist
-
-	copy(sorted, sorted[:idx])
-	copy(sorted[idx+1:], sorted[idx:len(sorted)-1])
-	sorted[idx] = obj
-
-	return sorted, dists
-}
-
 func (rt *Rtree) splitNode(l *RtreeNode) (*RtreeNode, *RtreeNode) {
 	//QSl. [Pick first entry for each group.]
 	// Apply Algorithm PickSeeds to choose
@@ -429,31 +400,47 @@ func (rt *Rtree) linearPickSeeds(l *RtreeNode) (*RtreeNode, *RtreeNode) {
 
 	greatestNormalizedSeparation := math.Inf(-1)
 	for axis := 0; axis < rt.Dimensions; axis++ {
-		distsLowSide := make([]float64, 0, len(l.Items))
-		lowSide := make([]*RtreeNode, 0, len(l.Items))
+		lowestHighSide := math.Inf(1)
+		highestLowSide := math.Inf(-1)
 
-		highSide := make([]*RtreeNode, 0, len(l.Items))
-		distsHighSide := make([]float64, 0, len(l.Items))
+		highestHighSide := math.Inf(-1)
+		lowestLowSide := math.Inf(1)
+
+		lowestHighSideIdx := 0
+		highestLowSideIdx := 0
 
 		for i := 0; i < len(l.Items); i++ {
 			lowSideEdge := l.Items[i].Bound.Edges[axis][0]
-			lowSide, distsLowSide = rt.insertSort(distsLowSide, lowSideEdge, lowSide, l.Items[i], len(l.Items))
+			if lowSideEdge > highestLowSide {
+				highestLowSide = lowSideEdge
+				highestLowSideIdx = i
+			}
+
+			if lowSideEdge < lowestLowSide {
+				lowestLowSide = lowSideEdge
+			}
 
 			highSideEdge := l.Items[i].Bound.Edges[axis][1]
-			highSide, distsHighSide = rt.insertSort(distsHighSide, highSideEdge, highSide, l.Items[i], len(l.Items))
-		}
 
-		highestLowSide := distsLowSide[len(lowSide)-1]
-		lowestHighSide := distsHighSide[0]
+			if highSideEdge < lowestHighSide {
+				lowestHighSide = highSideEdge
+				lowestHighSideIdx = i
+			}
+
+			if highSideEdge > highestHighSide {
+				highestHighSide = highSideEdge
+			}
+
+		}
 
 		lWidth := highestLowSide - lowestHighSide
 
-		widthAlongDimension := distsHighSide[len(distsHighSide)-1] - distsLowSide[0]
+		widthAlongDimension := highestHighSide - lowestLowSide
 
 		if lWidth/widthAlongDimension > greatestNormalizedSeparation {
 			greatestNormalizedSeparation = lWidth / widthAlongDimension
-			entryOne = lowSide[len(lowSide)-1]
-			entryTwo = highSide[0]
+			entryOne = l.Items[highestLowSideIdx]
+			entryTwo = l.Items[lowestHighSideIdx]
 		}
 	}
 
@@ -623,7 +610,7 @@ func (rt *Rtree) nearestNeigboursPQ(p Point, callback func(OSMObject) bool) {
 			for _, item := range element.Item.(*RtreeNode).Items {
 				distToObject := euclideanDistance(p.Lat, p.Lon, item.Leaf.Lat, item.Leaf.Lon)
 
-				if distToObject > distToElement {
+				if distToObject >= distToElement {
 					pq.Insert(NewPriorityQueueNodeRtree2(distToObject, &item.Leaf))
 				}
 			}
