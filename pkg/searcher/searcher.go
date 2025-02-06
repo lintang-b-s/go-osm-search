@@ -676,7 +676,7 @@ func (se *Searcher) processQuery(rpnDeque Deque) ([]int, error) {
 
 func (se *Searcher) ReverseGeocoding(lat, lon float64) (datastructure.Node, error) {
 	result := se.osmRtree.ImprovedNearestNeighbor(datastructure.Point{lat, lon})
-	doc, err := se.DocStore.GetDoc(result.Leaf.ID)
+	doc, err := se.DocStore.GetDoc(result.ID)
 	if err != nil {
 		return datastructure.Node{}, fmt.Errorf("error when get doc: %w", err)
 	}

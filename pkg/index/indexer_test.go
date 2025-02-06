@@ -807,7 +807,7 @@ func TestGetFullAdress(t *testing.T) {
 	t.Run("Test Get Full Address", func(t *testing.T) {
 		for _, c := range cases {
 			for _, street := range streets {
-				streetRtree.InsertLeaf(street.place.GetBound(), street.place)
+				streetRtree.InsertR(street.place.GetBound(), street.place)
 			}
 
 			for _, kelurahan := range kelurahans {
@@ -819,7 +819,7 @@ func TestGetFullAdress(t *testing.T) {
 				sort.Float64s(boundaryLon)
 				bound := datastructure.NewRtreeBoundingBox(2, []float64{boundaryLat[0], boundaryLon[0]},
 					[]float64{boundaryLat[len(boundaryLat)-1], boundaryLon[len(boundaryLon)-1]})
-				kelurahanRtree.InsertLeaf(bound, kelurahan.place)
+				kelurahanRtree.InsertR(bound, kelurahan.place)
 			}
 
 			for _, kecamatan := range kecamatans {
@@ -831,7 +831,7 @@ func TestGetFullAdress(t *testing.T) {
 				sort.Float64s(boundaryLon)
 				bound := datastructure.NewRtreeBoundingBox(2, []float64{boundaryLat[0], boundaryLon[0]},
 					[]float64{boundaryLat[len(boundaryLat)-1], boundaryLon[len(boundaryLon)-1]})
-				kecamatanRtree.InsertLeaf(bound, kecamatan.place)
+				kecamatanRtree.InsertR(bound, kecamatan.place)
 			}
 
 			for _, kotaKabupaten := range kotaKabupatens {
@@ -843,7 +843,7 @@ func TestGetFullAdress(t *testing.T) {
 				sort.Float64s(boundaryLon)
 				bound := datastructure.NewRtreeBoundingBox(2, []float64{boundaryLat[0], boundaryLon[0]},
 					[]float64{boundaryLat[len(boundaryLat)-1], boundaryLon[len(boundaryLon)-1]})
-				kotaKabupatenRtree.InsertLeaf(bound, kotaKabupaten.place)
+				kotaKabupatenRtree.InsertR(bound, kotaKabupaten.place)
 			}
 
 			for _, provinsi := range provinsis {
@@ -855,7 +855,7 @@ func TestGetFullAdress(t *testing.T) {
 				sort.Float64s(boundaryLon)
 				bound := datastructure.NewRtreeBoundingBox(2, []float64{boundaryLat[0], boundaryLon[0]},
 					[]float64{boundaryLat[len(boundaryLat)-1], boundaryLon[len(boundaryLon)-1]})
-				provinsiRtree.InsertLeaf(bound, provinsi.place)
+				provinsiRtree.InsertR(bound, provinsi.place)
 			}
 
 			osmSpatialIndex := geo.OSMSpatialIndex{

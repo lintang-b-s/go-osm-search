@@ -15,7 +15,7 @@ func NewHeapMergeItem(termID int, metadata []int, postings []int) HeapMergeItem 
 }
 
 type Item interface {
-	int | HeapMergeItem 
+	int | HeapMergeItem | interface{}
 }
 
 type Rank interface {
@@ -109,6 +109,53 @@ func (pq *minPriorityQueue[Item, Rank]) Push(x interface{}) {
 }
 
 func (pq *minPriorityQueue[Item, Rank]) Pop() interface{} {
+	old := *pq
+	n := len(old)
+	no := old[n-1]
+	no.index = -1
+	*pq = old[0 : n-1]
+	return no
+}
+
+type PriorityQueueNodeRtree struct {
+	rank  float64
+	index int
+	item  BoundedItem
+}
+
+func NewPriorityQueueNodeRtree(rank float64, item BoundedItem) *PriorityQueueNodeRtree {
+	return &PriorityQueueNodeRtree{rank: rank, item: item}
+}
+
+// Min Priority queue
+type minPriorityQueueRtree []*PriorityQueueNodeRtree
+
+func NewMinPriorityQueueRtree() minPriorityQueueRtree {
+	return minPriorityQueueRtree{}
+}
+
+func (pq minPriorityQueueRtree) Len() int {
+	return len(pq)
+}
+
+func (pq minPriorityQueueRtree) Less(i, j int) bool {
+	return pq[i].rank < pq[j].rank
+}
+
+func (pq minPriorityQueueRtree) Swap(i, j int) {
+	pq[i], pq[j] = pq[j], pq[i]
+	pq[i].index = i
+	pq[j].index = j
+}
+
+func (pq *minPriorityQueueRtree) Push(x interface{}) {
+	n := len(*pq)
+	no := x.(*PriorityQueueNodeRtree)
+	no.index = n
+	*pq = append(*pq, no)
+}
+
+func (pq *minPriorityQueueRtree) Pop() interface{} {
 	old := *pq
 	n := len(old)
 	no := old[n-1]

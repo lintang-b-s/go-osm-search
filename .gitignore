@@ -21,3 +21,6 @@ bin/
 .vscode/
 
 test/
+
+*.prof
+*.mprof

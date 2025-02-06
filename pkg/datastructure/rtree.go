@@ -9,22 +9,6 @@ import (
 	"sort"
 )
 
-// cuma rewrite dari implementatasi c++ ini: https://github.com/virtuald/r-star-tree/
-// + add N-nearest neighbors & Search.
-// https://infolab.usc.edu/csci599/Fall2001/paper/rstar-tree.pdf
-// https://dl.acm.org/doi/10.1145/971697.602266
-
-func assertt(condition bool, msg string) {
-	if !condition {
-		panic(msg)
-	}
-}
-
-const (
-	CHOOSE_SUBTREE_P = 32
-	REINSERT_P       = 0.3
-)
-
 type RtreeBoundingBox struct {
 	// number of dimensions
 	Dim int
@@ -40,46 +24,6 @@ func NewRtreeBoundingBox(dim int, minVal []float64, maxVal []float64) RtreeBound
 	}
 
 	return b
-}
-
-// reset forces all edges to extremes so we can stretch them later.
-func reset(b RtreeBoundingBox) RtreeBoundingBox {
-	newBB := NewRtreeBoundingBox(b.Dim, make([]float64, b.Dim), make([]float64, b.Dim))
-	for axis := 0; axis < b.Dim; axis++ {
-		newBB.Edges[axis][0] = math.MaxFloat64
-		newBB.Edges[axis][1] = math.Inf(-1)
-	}
-	return newBB
-}
-
-// // maximumBounds returns a new bounding box that has the maximum boundaries.
-// func maximumBounds(dim int) RtreeBoundingBox {
-// 	bound := RtreeBoundingBox{
-// 		Dim:   dim,
-// 		Edges: make([][2]float64, dim),
-// 	}
-// 	bound.reset()
-// 	return bound
-// }
-
-// stretch fits another box inside this box, returns true if a stretch occurred.
-func stretch(b RtreeBoundingBox, bb RtreeBoundingBox) RtreeBoundingBox {
-
-	newBB := NewRtreeBoundingBox(b.Dim, make([]float64, b.Dim), make([]float64, b.Dim))
-	for axis := 0; axis < b.Dim; axis++ {
-		if b.Edges[axis][0] > bb.Edges[axis][0] {
-			newBB.Edges[axis][0] = bb.Edges[axis][0]
-		} else {
-			newBB.Edges[axis][0] = b.Edges[axis][0]
-		}
-
-		if b.Edges[axis][1] < bb.Edges[axis][1] {
-			newBB.Edges[axis][1] = bb.Edges[axis][1]
-		} else {
-			newBB.Edges[axis][1] = b.Edges[axis][1]
-		}
-	}
-	return newBB
 }
 
 func boundingBox(b RtreeBoundingBox, bb RtreeBoundingBox) RtreeBoundingBox {
@@ -102,17 +46,6 @@ func boundingBox(b RtreeBoundingBox, bb RtreeBoundingBox) RtreeBoundingBox {
 	return newBound
 }
 
-// edgeDeltas returns the sum of all (high - low) for each dimension. (margin)
-func edgeDeltas(b RtreeBoundingBox) float64 {
-	//  Here the margin is the sum of the lengths of the
-	// edges of a rectangle
-	distance := 0.0
-	for axis := 0; axis < b.Dim; axis++ {
-		distance += b.Edges[axis][1] - b.Edges[axis][0]
-	}
-	return distance
-}
-
 // area calculates the area (in N dimensions) of a bounding box.
 func area(b RtreeBoundingBox) float64 {
 	area := 1.0
@@ -120,41 +53,6 @@ func area(b RtreeBoundingBox) float64 {
 		area *= b.Edges[axis][1] - b.Edges[axis][0]
 	}
 	return area
-}
-
-// encloses determines if b fully contains bb. return true if bb is fully contained in b.
-func encloses(b RtreeBoundingBox, bb RtreeBoundingBox) bool {
-	for axis := 0; axis < b.Dim; axis++ {
-
-		if bb.Edges[axis][0] < b.Edges[axis][0] || b.Edges[axis][1] < bb.Edges[axis][1] {
-			/*
-				____________________
-				|	b			    |
-				|		________________
-				|	   |	   		  	|
-				|	   | bb	   		  	|
-				|	   |________________|
-				|					|
-				|___________________|
-
-				or
-
-
-					____________________
-					|	bb			    |
-					|		________________
-					|	   |	   		  	|
-					|	   | b   		  	|
-					|	   |________________|
-					|					|
-					|___________________|
-			*/
-
-			return false
-		}
-	}
-
-	return true
 }
 
 // overlaps checks if two bounding boxes overlap.
@@ -187,96 +85,6 @@ func overlaps(b RtreeBoundingBox, bb RtreeBoundingBox) bool {
 	return true
 }
 
-// overlap calculates total overlapping region area (0 if no overlap).
-func overlap(b RtreeBoundingBox, bb RtreeBoundingBox) float64 {
-	area := 1.0
-
-	for axis := 0; axis < b.Dim && area != 0; axis++ {
-		bMin := b.Edges[axis][0]
-		bMax := b.Edges[axis][1]
-		bbMin := bb.Edges[axis][0]
-		bbMax := bb.Edges[axis][1]
-
-		if bMin < bbMin {
-			if bbMax < bMax {
-				/*
-					____________________
-					|	b				|
-					|		_______		|
-					|	   |	   |	|
-					|	   | bb	   |	|
-					|	   |_______|	|
-					|					|
-					|___________________|
-				*/
-				area *= float64(bbMax - bbMin)
-			} else {
-
-				/*
-					____________________
-					|	b			    |
-					|		________________
-					|	   |	   		  	|
-					|	   | bb	   		  	|
-					|	   |________________|
-					|					|
-					|___________________|
-				*/
-				area *= float64(bMax - bbMin)
-			}
-			continue
-		} else if bMin < bbMax {
-
-			if bMax < bbMax {
-				/*
-					____________________
-					|	bb				|
-					|		_______		|
-					|	   |	   |	|
-					|	   | b	   |	|
-					|	   |_______|	|
-					|					|
-					|___________________|
-				*/
-				area *= float64(bMax - bMin)
-			} else {
-				/*
-					____________________
-					|	bb			    |
-					|		________________
-					|	   |	   		  	|
-					|	   | b	   		  	|
-					|	   |________________|
-					|					|
-					|___________________|
-				*/
-				area *= float64(bbMax - bMin)
-			}
-			continue
-		}
-		// no overlap
-		return 0.0
-	}
-
-	return area
-}
-
-// distanceFromCenter  distances between the center of the bounding box and the center of the entry bb.
-func (b *RtreeBoundingBox) distanceFromCenter(bb RtreeBoundingBox) float64 {
-	// b = bounding box  of node N
-	// bb = bounding box of the entry E (entries in the node)
-	distance := 0.0
-
-	// euclidian
-	for axis := 0; axis < b.Dim; axis++ {
-		centerB := float64(b.Edges[axis][0]+b.Edges[axis][1]) / 2.0
-		centerBB := float64(bb.Edges[axis][0]+bb.Edges[axis][1]) / 2.0
-		distance += math.Pow(centerB-centerBB, 2)
-	}
-
-	return distance
-}
-
 // isBBSame determines if two bounding boxes are identical
 func (b *RtreeBoundingBox) isBBSame(bb RtreeBoundingBox) bool {
 	for axis := 0; axis < b.Dim; axis++ {
@@ -288,60 +96,10 @@ func (b *RtreeBoundingBox) isBBSame(bb RtreeBoundingBox) bool {
 	return true
 }
 
-func stretchBoundingBox(mBound RtreeBoundingBox, item BoundedItem) RtreeBoundingBox {
-	return stretch(mBound, item.getBound())
-}
-
-func sortBoundedItemsByFirstEdge(mAxis int, items []*RtreeNode) {
-	sort.Slice(items, func(i, j int) bool {
-		return items[i].getBound().Edges[mAxis][0] < items[j].getBound().Edges[mAxis][0]
-	})
-}
-
-func sortBoundedItemsBySecondEdge(mAxis int, items []*RtreeNode) {
-	sort.Slice(items, func(i, j int) bool {
-		return items[i].getBound().Edges[mAxis][1] < items[j].getBound().Edges[mAxis][1]
-	})
-}
-
-func sortIncreasingBoundedItemsByDistanceFromCenter(mCenter RtreeBoundingBox, items []*RtreeNode) {
-	sort.Slice(items, func(i, j int) bool {
-		return mCenter.distanceFromCenter(items[i].getBound()) < mCenter.distanceFromCenter(items[j].getBound())
-	})
-}
-
-func sortDecreasingBoundedItemsByDistanceFromCenter(mCenter RtreeBoundingBox, items []*RtreeNode) {
-	sort.Slice(items, func(i, j int) bool {
-		return mCenter.distanceFromCenter(items[i].getBound()) > mCenter.distanceFromCenter(items[j].getBound())
-	})
-}
-
-func sortBoundedItemsByAreaEnlargement(bbarea float64, items []*RtreeNode) {
-	sort.Slice(items, func(i, j int) bool {
-		return bbarea-area(items[i].getBound()) < bbarea-area(items[j].getBound())
-
-	})
-}
-
-func sortIncreasingBoundedItemsByOverlapEnlargement(items []*RtreeNode, center RtreeBoundingBox) {
-	sort.Slice(items, func(i, j int) bool {
-
-		return overlap(items[i].getBound(), center) < overlap(items[j].getBound(), center)
-		// return items[i].getBound().overlap(center) < items[j].getBound().overlap(center)
-	})
-}
-
-func sortDecreasingBoundedItemsByOverlapEnlargement(items []*RtreeNode, center RtreeBoundingBox) {
-	sort.Slice(items, func(i, j int) bool {
-		return overlap(items[i].getBound(), center) > overlap(items[j].getBound(), center)
-
-		// return items[i].getBound().overlap(center) > items[j].getBound().overlap(center)
-	})
-}
-
 type BoundedItem interface {
-	getBound() RtreeBoundingBox
+	GetBound() RtreeBoundingBox
 	isLeafNode() bool
+	IsData() bool
 }
 
 // rtree node. can be either a leaf node or a internal node or leafData.
@@ -363,12 +121,26 @@ func (node *RtreeNode) isLeafNode() bool {
 	return node.IsLeaf
 }
 
-func (node *RtreeNode) getBound() RtreeBoundingBox {
+func (node *RtreeNode) GetBound() RtreeBoundingBox {
 	return node.Bound
 }
 
+func (node *RtreeNode) ComputeBB() RtreeBoundingBox {
+	if len(node.Items) == 1 {
+		return node.Items[0].GetBound()
+	}
+	bb := boundingBox(node.Items[0].GetBound(), node.Items[1].GetBound())
+	for i := 2; i < len(node.Items); i++ {
+		bb = boundingBox(bb, node.Items[i].GetBound())
+	}
+	return bb
+}
+
+func (node *RtreeNode) IsData() bool {
+	return false
+}
+
 type Rtree struct {
-	// semuanya exported biar bisa diencode gobencoder
 	Root          *RtreeNode
 	Size          int
 	MinChildItems int
@@ -378,6 +150,7 @@ type Rtree struct {
 }
 
 func NewRtree(minChildItems, maxChildItems, dimensions int) *Rtree {
+
 	return &Rtree{
 		Root:          nil,
 		Size:          0,
@@ -386,214 +159,337 @@ func NewRtree(minChildItems, maxChildItems, dimensions int) *Rtree {
 		MaxChildItems: maxChildItems,
 		Dimensions:    dimensions,
 	}
+
 }
 
-func (rt *Rtree) InsertLeaf(bound RtreeBoundingBox, leaf OSMObject) {
-
+func (rt *Rtree) InsertR(bound RtreeBoundingBox, leaf OSMObject) {
+	if rt.Root == nil {
+		rt.Root = &RtreeNode{
+			IsLeaf: true,
+			Items:  make([]*RtreeNode, 0, rt.MaxChildItems),
+		}
+	}
 	newLeaf := &RtreeNode{}
 	newLeaf.Bound = bound
 	newLeaf.Leaf = leaf
 
-	if rt.Root == nil {
-		rt.Root = &RtreeNode{}
-		rt.Root.IsLeaf = true // set root as leaf node
+	leafNode := rt.chooseLeaf(rt.Root, leaf.GetBound())
+	leafNode.Items = append(leafNode.Items, newLeaf)
 
-		rt.Root.Items = make([]*RtreeNode, 0, rt.MinChildItems)
+	newLeaf.Parent = leafNode
 
-		rt.Root.Items = append(rt.Root.Items, newLeaf) // add new leaf data to the root
-		rt.Root.Bound = bound
-	} else {
-		rt.insertInternal(newLeaf, rt.Root, true)
-	}
 	rt.Size++
 
-}
-
-func (rt *Rtree) insertInternal(leaf *RtreeNode, root *RtreeNode, firstInsert bool) *RtreeNode {
-
-	// I1: Invoke ChooseSubtree. with the level as a parameter,
-	// to find an appropriate node N, in which to place the new entry E
-
-	leafNode := rt.chooseSubtree(root, leaf.Bound)
-
-	// if this node is a leafNode then add the leaf data to the  leafNode
-	//I2: accommodate E in N.
-	leafNode.Items = append(leafNode.Items, leaf)
-
-	// I2: if node N has M+1 entries. invoke OverflowTreatment
-	// with the level of N as a parameter [for reinsertion or split]
+	var l, ll *RtreeNode
+	l = leafNode
 	if len(leafNode.Items) > rt.MaxChildItems {
-		rt.overflowTreatment(leafNode, firstInsert)
-
+		l, ll = rt.splitNode(leafNode)
 	}
 
-	return nil
-}
+	p, pp := rt.adjustTree(l, ll)
+	if pp != nil {
+		// 14. [Grow tree taller.] If node split propagation caused the root to split,
+		// create a new root whose children are
+		// the two resulting nodes.
+		rt.Root = &RtreeNode{}
+		pp.Bound = pp.ComputeBB()
 
-func (rt *Rtree) overflowTreatment(level *RtreeNode, firstInsert bool) {
-	// OT1: If the level is not the root level and this is the first
-	// call of OverflowTreatment in the given level
-	// during the Insertion of one data rectangle, then
-	// invoke Reinsert
-	if level != rt.Root && firstInsert {
-		rt.reinsert(level)
-		return
-	}
-
-	//else invoke Split
-	newNode := rt.split(level)
-
-	// I3:  If OverflowTreatment caused a split of the root, create a
-	// new root whose children are the two resulting nodes (old root & newNode).
-	if level == rt.Root {
-		// benar
-		newRoot := &RtreeNode{}
-		newRoot.IsLeaf = false
-
-		newRoot.Items = make([]*RtreeNode, 0, rt.MinChildItems)
-		newRoot.Items = append(newRoot.Items, rt.Root)
-		newRoot.Items = append(newRoot.Items, newNode)
-		rt.Root.Parent = newRoot
-		newNode.Parent = newRoot
-
+		rt.Root.Items = []*RtreeNode{p, pp}
+		p.Parent = rt.Root
+		pp.Parent = rt.Root
 		rt.Height++
 
-		// I4: Adjust all covering rectangles in the insertion path
-		// such that they are minimum bounding boxes
-		// enclosing their children rectangles
-		newRoot.Bound = NewRtreeBoundingBox(rt.Dimensions, make([]float64, rt.Dimensions), make([]float64, rt.Dimensions))
+		rt.Root.Bound = rt.Root.ComputeBB()
+	}
+}
 
-		newRoot.Bound = reset(newRoot.Bound)
-		for i := 0; i < len(newRoot.Items); i++ {
-			newRoot.Bound = stretchBoundingBox(newRoot.Bound, newRoot.Items[i])
+func (rt *Rtree) adjustTree(l, ll *RtreeNode) (*RtreeNode, *RtreeNode) {
+	//ATI. [Initialize.] Set N=L. If L was split
+	// previously, set NN to be the resulting
+	// second node.
+	n := l
+	var nn *RtreeNode
+	if ll != nil {
+		nn = ll
+	}
+
+	if n == rt.Root {
+		n.Bound = n.ComputeBB()
+		//AT2. [Check if done.] If N is the root, stop.
+		return n, nn
+	}
+	//AT3. [Adjust covering rectangle in parent
+	// entry.] Let P be the parent node of
+	// N, and let EN be N's entry in P.
+	// Adjust En.I s o that it tightly encloses
+	// all entry rectangles in N
+	p := n.Parent
+	en := n.Items[0]
+
+	for i := 0; i < len(p.Items); i++ {
+		if p.Items[i] == n {
+			en = n
+		}
+	}
+
+	en.Bound = n.ComputeBB()
+
+	//AT4. [Propagate node split upward.] If N
+	// has a partner NN resulting from an
+	// earlier split, create a new entry ENN
+	// with ENN.p pointing to NN and Enn.I
+	// enclosing all rectangles in NN. Add
+	//Enn to P if there is room Otherwise,
+	//invoke SplitNode to produce P and
+	// PP containing Em and all P ’s old
+	// entries.
+	//AT5. [Move up to next level.] Set N=P and
+	//set NN-PP if a split occurred.
+	//Repeat from AT2.
+
+	if nn != nil {
+		enn := nn
+		enn.Bound = nn.ComputeBB()
+
+		p.Items = append(p.Items, enn)
+		if len(p.Items) > rt.MaxChildItems {
+			return rt.adjustTree(rt.splitNode(p))
+		}
+	}
+
+	return rt.adjustTree(p, nil)
+}
+
+func (rt *Rtree) insertSort(dists []float64, dist float64, sorted []*RtreeNode,
+	obj *RtreeNode, max int) ([]*RtreeNode, []float64) {
+
+	idx := sort.SearchFloat64s(dists, dist)
+	for idx < len(sorted) && dist >= dists[idx] {
+		idx++
+	}
+
+	if idx >= max {
+		return sorted, dists
+	}
+
+	if len(sorted) < max {
+		dists = append(dists, 0)
+		sorted = append(sorted, &RtreeNode{})
+	}
+
+	copy(dists, dists[:idx])
+	copy(dists[idx+1:], dists[idx:len(dists)-1])
+	dists[idx] = dist
+
+	copy(sorted, sorted[:idx])
+	copy(sorted[idx+1:], sorted[idx:len(sorted)-1])
+	sorted[idx] = obj
+
+	return sorted, dists
+}
+
+func (rt *Rtree) splitNode(l *RtreeNode) (*RtreeNode, *RtreeNode) {
+	//QSl. [Pick first entry for each group.]
+	// Apply Algorithm PickSeeds to choose
+	// two entries to be the first elements
+	// of the groups. Assign each to a group
+	firstEntryGroupOne, firstEntryGroupTwo := rt.linearPickSeeds(l)
+
+	remaining := make([]*RtreeNode, 0, len(l.Items)-2)
+	for i := 0; i < len(l.Items); i++ {
+		if l.Items[i] != firstEntryGroupOne && l.Items[i] != firstEntryGroupTwo {
+			remaining = append(remaining, l.Items[i])
+		}
+	}
+
+	groupOne := l
+	groupOne.Items = []*RtreeNode{firstEntryGroupOne}
+	groupOne.Parent = l.Parent
+	firstEntryGroupOne.Parent = groupOne
+
+	groupTwo := &RtreeNode{
+		Parent: l.Parent,
+		Items:  []*RtreeNode{firstEntryGroupTwo},
+		IsLeaf: l.IsLeaf,
+	}
+	firstEntryGroupTwo.Parent = groupTwo
+
+	//QS2. [Check if done.] If all entries have
+	// been assigned, stop. If one group has
+	// so few entries that all the rest must
+	// be assigned to it in order for it to
+	// have the minimum number m , assign
+	// them and stop.
+	for len(remaining) > 0 {
+		// QS3. [Select entry to assign.] Invoke Algorithm PickNext to choose the next
+		// entry to assign. Add it to the group
+		// whose covering rectangle will have to
+		// be enlarged least to accommodate it.
+		// Resolve ties by adding the entry to
+		// the group with smaller area, then to
+		// the one with fewer entries, then to
+		// either. Repeat from QS2.
+
+		nextEntryIdx := rt.pickNext(groupOne, groupTwo, remaining)
+		groupOneBB := groupOne.ComputeBB()
+		groupTwoBB := groupTwo.ComputeBB()
+
+		bbGroupOne := boundingBox(groupOneBB, remaining[nextEntryIdx].GetBound())
+		enlargementOne := area(bbGroupOne) - area(groupOneBB)
+
+		bbGroupTwo := boundingBox(groupTwoBB, remaining[nextEntryIdx].GetBound())
+		enlargementTwo := area(bbGroupTwo) - area(groupTwoBB)
+
+		if len(groupOne.Items)+len(l.Items) <= rt.MinChildItems {
+			groupOne.Items = append(groupOne.Items, remaining[nextEntryIdx])
+			remaining[nextEntryIdx].Parent = groupOne
+		} else if len(groupTwo.Items)+len(l.Items) <= rt.MinChildItems {
+			groupTwo.Items = append(groupTwo.Items, remaining[nextEntryIdx])
+			remaining[nextEntryIdx].Parent = groupTwo
+		} else {
+			if enlargementOne < enlargementTwo ||
+				(enlargementOne == enlargementTwo && area(bbGroupOne) < area(bbGroupTwo)) ||
+				(enlargementOne == enlargementTwo && area(bbGroupOne) == area(bbGroupTwo) &&
+					len(groupOne.Items) < len(groupTwo.Items)) {
+				groupOne.Items = append(groupOne.Items, remaining[nextEntryIdx])
+				remaining[nextEntryIdx].Parent = groupOne
+			} else if enlargementOne > enlargementTwo ||
+				(enlargementOne == enlargementTwo && area(bbGroupOne) > area(bbGroupTwo)) ||
+				(enlargementOne == enlargementTwo && area(bbGroupOne) == area(bbGroupTwo) &&
+					len(groupOne.Items) > len(groupTwo.Items)) {
+				groupTwo.Items = append(groupTwo.Items, remaining[nextEntryIdx])
+				remaining[nextEntryIdx].Parent = groupTwo
+			}
 		}
 
-		rt.Root = newRoot
-		return
+		remaining = append(remaining[:nextEntryIdx], remaining[nextEntryIdx+1:]...)
 	}
 
-	newNode.Parent = level.Parent
-	level.Parent.Items = append(level.Parent.Items, newNode)
-
-	level.Parent.Bound = reset(level.Parent.Bound)
-	for i := 0; i < len(level.Parent.Items); i++ {
-		level.Parent.Bound = stretch(level.Parent.Bound, level.Parent.Items[i].getBound())
-	}
-
-	// I3: If OverflowTreatment was called and a split was
-	// performed, propagate OverflowTreatment upwards
-	// If necessary
-	// return newNode
-	if len(level.Parent.Items) > rt.MaxChildItems {
-		rt.overflowTreatment(level.Parent, firstInsert)
-	}
+	return groupOne, groupTwo
 }
 
-func (rt *Rtree) reinsert(node *RtreeNode) {
-	var removedItems []*RtreeNode
+func (rt *Rtree) pickNext(groupOne, groupTwo *RtreeNode, remaining []*RtreeNode) int {
+	/*
+		PN1. [Determine cost of putting each
+		entry in each group.] For each entry
+		E not yet in a group, calculate d1=
+		the area increase required in the
+		covering rectangle of Group 1 to
+		include E.I. Calculate d2 similarly
+		for Group 2
 
-	nItems := len(node.Items)
-	var p int
-	if float64(nItems)*REINSERT_P > 0 {
-		// The experiments have
-		// shown that p = 30% of M for leaf nodes as well as for nonleaf nodes yields the best performance
-		p = int(float64(nItems) * REINSERT_P)
-	} else {
-		p = 1
+		PN2. [Find entry with greatest preference
+		for one group.] Choose any entry
+		with the maximum difference
+		between d 1 and d 2
+	*/
+	chosen := 0
+	maxDiff := math.Inf(-1)
+	groupOneBB := groupOne.GetBound()
+	groupTwoBB := groupTwo.GetBound()
+	for i := 0; i < len(remaining); i++ {
+		enBBGroupOne := boundingBox(groupOneBB, remaining[i].GetBound())
+		d1 := area(enBBGroupOne) - area(groupOneBB)
+
+		enBBGroupTwo := boundingBox(groupTwoBB, remaining[i].GetBound())
+		d2 := area(enBBGroupTwo) - area(groupTwoBB)
+
+		d := math.Abs(d1 - d2)
+
+		if d > maxDiff {
+			chosen = i
+			maxDiff = d
+		}
 	}
-
-	assertt(nItems == rt.MaxChildItems+1, "nItems must be equal to maxChildItems + 1")
-
-	// (Reinsertion) RI1: For all M+1 entries of a node N, compute the distance
-	//	between the centers of their rectangles and the center
-	// of the bounding rectangle of N
-
-	// RI2: Sort the entries in decreasing order of their distances
-	// computed in RI1
-	sortDecreasingBoundedItemsByDistanceFromCenter(node.Bound, node.Items[:len(node.Items)-p])
-
-	// RI3: Remove the first p entries from N and adjust the
-	// bounding rectangle of N
-	removedItems = node.Items[p:]
-	node.Items = node.Items[:p]
-
-	// adjust the bounding rectangle of N
-	node.Bound = reset(node.Bound)
-	for i := 0; i < len(node.Items); i++ {
-		node.Bound = stretchBoundingBox(node.Bound, node.Items[i])
-	}
-
-	// RI4: In the sort, defined in RI2, starting with the maximum
-	// distance (= far reinsert) or minimum distance (= close
-	// reinsert), invoke Insert to reinsert the entries
-	for _, removedItem := range removedItems {
-		rt.insertInternal(removedItem, rt.Root, false)
-	}
+	return chosen
 }
 
-func (rt *Rtree) chooseSubtree(node *RtreeNode, bound RtreeBoundingBox) *RtreeNode {
-	// Insert I4: Adjust all covering rectangles in the insertion path
-	// such that they are minimum bounding boxes
-	// enclosing their children rectangles
+/*
+LPSl.[Find extreme rectangles along all
+dimensions.] Along each dimension,
+find the entry whose rectangle has
+the highest low side, and the one
+with the lowest high side. Record the
+separation.
 
-	node.Bound = stretch(node.Bound, bound)
+LPS2. [Adjust for shape of the rectangle
+cluster.] Normalize the separations
+by dividing by the width of the entire
+set along the corresponding dimension.
 
-	var chosen *RtreeNode
+LPS3. [Select the most extreme pair.]
+Choose the pair with the greatest
+normalized separation along any
+dimension.
+*/
+func (rt *Rtree) linearPickSeeds(l *RtreeNode) (*RtreeNode, *RtreeNode) {
 
-	// CS2: If N 1s a leaf, return N
+	entryOne := l.Items[0]
+	entryTwo := l.Items[1]
+
+	greatestNormalizedSeparation := math.Inf(-1)
+	for axis := 0; axis < rt.Dimensions; axis++ {
+		distsLowSide := make([]float64, 0, len(l.Items))
+		lowSide := make([]*RtreeNode, 0, len(l.Items))
+
+		highSide := make([]*RtreeNode, 0, len(l.Items))
+		distsHighSide := make([]float64, 0, len(l.Items))
+
+		for i := 0; i < len(l.Items); i++ {
+			lowSideEdge := l.Items[i].Bound.Edges[axis][0]
+			lowSide, distsLowSide = rt.insertSort(distsLowSide, lowSideEdge, lowSide, l.Items[i], len(l.Items))
+
+			highSideEdge := l.Items[i].Bound.Edges[axis][1]
+			highSide, distsHighSide = rt.insertSort(distsHighSide, highSideEdge, highSide, l.Items[i], len(l.Items))
+		}
+
+		highestLowSide := distsLowSide[len(lowSide)-1]
+		lowestHighSide := distsHighSide[0]
+
+		lWidth := highestLowSide - lowestHighSide
+
+		widthAlongDimension := distsLowSide[0] - distsHighSide[len(distsHighSide)-1]
+
+		if lWidth/widthAlongDimension > greatestNormalizedSeparation {
+			greatestNormalizedSeparation = lWidth / widthAlongDimension
+			entryOne = lowSide[len(lowSide)-1]
+			entryTwo = highSide[0]
+		}
+	}
+
+	return entryOne, entryTwo
+}
+
+/*
+CLl. [Initialize.] Set N to be the root
+node.
+CL2. [Leaf check.] If N is a leaf, return N.
+CL3. [Choose subtree.] If Af is not a leaf,
+let F be the entry in N whose rectangle F.I needs least enlargement to
+include E.I. Resolve ties by choosing
+the entry with the rectangle of smallest area.
+CL4. [Descend until a leaf is reached.] Set
+N to be the child node pointed to by
+F.p and repeat from CL2.
+*/
+func (rt *Rtree) chooseLeaf(node *RtreeNode, bound RtreeBoundingBox) *RtreeNode {
+
 	if node.isLeafNode() {
 		return node
 	}
-
-	// If the child pointers in N point to leaves (leaves = leaf node)
-	if node.Items[0].isLeafNode() {
-
-		// If the childpointers in N point to leaves [determine
-		// the minimum overlap cost],
-		// choose the entry in N whose rectangle needs least
-		// overlap enlargement to include the new data
-		// rectangle Resolve ties by choosing the entry
-		// whose rectangle needs least area enlargement
-
-		minOverlapEnlargement := math.MaxFloat64
-		idxEntryWithMinOverlapEnlargement := 0
-		for i, item := range node.Items {
-			itembb := item.getBound()
-			// bb := itembb.BoundingBox(bound)
-			bb := boundingBox(itembb, bound)
-
-			// enlargement := item.getBound().overlap(bound)
-			enlargement := overlap(item.getBound(), bound)
-
-			if enlargement < minOverlapEnlargement || (enlargement == minOverlapEnlargement &&
-				area(bb)-area(item.getBound()) < area(bb)-area(node.Items[idxEntryWithMinOverlapEnlargement].getBound())) {
-				minOverlapEnlargement = enlargement
-				idxEntryWithMinOverlapEnlargement = i
-			}
-		}
-		chosen = node.Items[idxEntryWithMinOverlapEnlargement]
-		return rt.chooseSubtree(chosen, bound)
-	}
-
-	// (ChooseSubtree) CS2: if the childpointers in N do not point to leaves
-	// [determine the minimum area cost],
-	// choose the entry in N whose rectangle needs least
-	// area enlargement to include the new data
-	// rectangle Resolve ties by choosing the entry
-	// with the rectangle of smallest area.
+	var chosen *RtreeNode
 
 	minAreaEnlargement := math.MaxFloat64
 	idxEntryWithMinAreaEnlargement := 0
 	for i, item := range node.Items {
-		itembb := item.getBound()
-		// bb := itembb.BoundingBox(bound)
+		itembb := item.GetBound()
+
 		bb := boundingBox(itembb, bound)
 
-		// enlargement := bb.area() - item.getBound().area()
-		enlargement := area(bb) - area(item.getBound())
+		enlargement := area(bb) - area(itembb)
 		if enlargement < minAreaEnlargement ||
 			(enlargement == minAreaEnlargement &&
-				area(bb) < area(node.Items[idxEntryWithMinAreaEnlargement].getBound())) {
+				area(bb) < area(node.Items[idxEntryWithMinAreaEnlargement].GetBound())) {
 			minAreaEnlargement = enlargement
 			idxEntryWithMinAreaEnlargement = i
 		}
@@ -601,138 +497,7 @@ func (rt *Rtree) chooseSubtree(node *RtreeNode, bound RtreeBoundingBox) *RtreeNo
 
 	chosen = node.Items[idxEntryWithMinAreaEnlargement]
 
-	return rt.chooseSubtree(chosen, bound)
-}
-
-func (rt *Rtree) split(node *RtreeNode) *RtreeNode {
-	newNode := &RtreeNode{}
-
-	newNode.IsLeaf = node.IsLeaf
-
-	nItems := len(node.Items)
-	distributionCount := nItems - 2*rt.MinChildItems + 1
-	minSplitMargin := math.MaxFloat64
-
-	splitIndex := 0 // split index for the first group (m-1)+k
-
-	firstGroup := RtreeBoundingBox{}  // first group [0,(m-1)+k) entries
-	secondGroup := RtreeBoundingBox{} // second group [(m-1)+k,n) entries
-	assertt(nItems == rt.MaxChildItems+1, "nItems must be equal to maxChildItems + 1")
-	assertt(distributionCount > 0, "distributionCount must be greater than 0")
-	assertt(rt.MinChildItems+distributionCount-1 <= nItems, "rt.MinChildItems + distributionCount - 1 must be less than or equal to nItems")
-
-	// the entries are first sorted by the lower
-	// value, then sorted by the upper value of then rectangles For
-	// each sort M-2m+2 distributions of the M+1 entries into two
-	// groups are determined.
-
-	// CSA1: For each axis
-	// Sort the entries by the lower then by the upper
-	// value of their rectangles and determine all
-	// distributins as described above Compute S. the
-	// sum of all margin-values of the different
-	// distributions
-	for axis := 0; axis < rt.Dimensions; axis++ {
-		margin := 0.0
-		overlapVal := 0.0
-
-		distribIndex := 0
-
-		minArea := math.MaxFloat64
-		minOverlap := math.MaxFloat64
-
-		// ChooseSplitAxis (CSA1): Sort the items by the lower then by the upper
-		// edge of their bounding box on this particular axis and
-		// determine all distributions as described . Compute S. the
-		// sum of all margin-values of the different
-		// distributions
-
-		// lower edge == 0 , upper edge == 1
-		for edge := 0; edge < 2; edge++ {
-
-			// Sort the entries by the lower then by the upper
-			// value of their rectangles
-			if edge == 0 {
-				sortBoundedItemsByFirstEdge(axis, node.Items)
-			} else {
-				sortBoundedItemsBySecondEdge(axis, node.Items)
-			}
-
-			//  where the k-th distribution (k = 1,....,(M-2m+2))
-			// 0-indexed jadi k=0,....,(M-2m+1)
-			for k := 0; k < distributionCount; k++ {
-				// k  = distribution value.
-				bbArea := 0.0
-
-				// calculate bounding box of the first group
-
-				firstGroup = reset(firstGroup)
-				for i := 0; i < (rt.MinChildItems-1)+k; i++ { // (m-1)+k entries
-
-					firstGroup = stretch(firstGroup, node.Items[i].getBound())
-				}
-
-				// calculate bounding box of the second group
-
-				secondGroup = reset(secondGroup)
-				for i := (rt.MinChildItems - 1) + k; i < len(node.Items); i++ {
-
-					secondGroup = stretch(secondGroup, node.Items[i].getBound())
-				}
-
-				// margin  = area[bb(first group)] +area[bb(second group)]
-				// Compute S. the sum of all margin-values of the different  distributions.
-				margin += edgeDeltas(firstGroup) + edgeDeltas(secondGroup)
-				// area = margin[bb(first group)] + margin[bb(second group)]
-				bbArea += area(firstGroup) + area(secondGroup)
-				// overlap = area[bb(first group) n bb(second group)]. n = overlap
-				overlap(firstGroup, secondGroup)
-
-				//(ChooseSplitIndex) CSI1: Along the chosen split axis, choose the distribution with the minimum overlap-value
-				// Resolve ties by choosing the distribution with
-				// minimum area-value
-				if overlapVal < minOverlap || overlapVal == minOverlap && bbArea < minArea {
-					distribIndex = (rt.MinChildItems - 1) + k //(m-1)+k // k = distribution value
-					minOverlap = overlapVal
-					minArea = bbArea
-				}
-			}
-		}
-
-		// CSA2: Choose the axis with the minimum S as split axis. S =  the sum of all margin-values of the different  distributions.
-		if margin < minSplitMargin {
-			minSplitMargin = margin
-			splitIndex = distribIndex
-		}
-
-	}
-
-	// S3: Distribute the items into two groups
-
-	// distribute the end of the array node.Items to the newNode. and erase them from the original node.
-	newNode.Items = make([]*RtreeNode, 0, len(node.Items)-splitIndex)
-	// insert elements [(m-1)+k,len(node.Items)) of the array node.Items to the newNode.Items
-	for i := splitIndex; i < len(node.Items); i++ {
-		newNode.Items = append(newNode.Items, node.Items[i])
-	}
-	node.Items = node.Items[:splitIndex] // erase the end [(m-1)+k,len(node.Items)) of the array node.Items
-
-	// adjust the bounding box.
-
-	node.Bound = reset(node.Bound)
-	for i := 0; i < len(node.Items); i++ {
-		node.Bound = stretch(node.Bound, node.Items[i].getBound())
-	}
-
-	// adjust the bounding box.
-	newNode.Bound = NewRtreeBoundingBox(rt.Dimensions, make([]float64, rt.Dimensions), make([]float64, rt.Dimensions))
-
-	newNode.Bound = reset(newNode.Bound)
-	for i := 0; i < len(newNode.Items); i++ {
-		newNode.Bound = stretch(newNode.Bound, newNode.Items[i].getBound())
-	}
-
-	return newNode
+	return rt.chooseLeaf(chosen, bound)
 }
 
 func (rt *Rtree) Search(bound RtreeBoundingBox) []RtreeNode {
@@ -744,7 +509,7 @@ func (rt *Rtree) search(node *RtreeNode, bound RtreeBoundingBox,
 	results []RtreeNode) []RtreeNode {
 	for _, e := range node.Items {
 
-		if !overlaps(e.getBound(), bound) {
+		if !overlaps(e.GetBound(), bound) {
 			continue
 		}
 
@@ -757,7 +522,7 @@ func (rt *Rtree) search(node *RtreeNode, bound RtreeBoundingBox,
 			continue
 		}
 
-		if overlaps(e.getBound(), bound) {
+		if overlaps(e.GetBound(), bound) {
 			// S2. [Search leaf node.] If T is a leaf, check
 			// all entries E to determine whether E.I
 			// overlaps S. If so, E is a qualifying
@@ -797,53 +562,9 @@ func (p Point) minDist(r RtreeBoundingBox) float64 {
 		rLon = p.Lon
 	}
 
-	sum = haversineDistance(p.Lat, p.Lon, rLat, rLon)
+	sum += euclideanDistance(p.Lat, p.Lon, rLat, rLon)
 
 	return sum
-}
-
-// https://infolab.usc.edu/csci599/Fall2007/papers/a-1.pdf. cmiiw
-func (p Point) minMaxDist(r RtreeBoundingBox) float64 {
-
-	rmk := 0.0
-	rMi := 0.0
-
-	// lat dimension
-	if p.Lat <= (r.Edges[0][0]+r.Edges[0][1])/2.0 {
-		rmk = r.Edges[0][0]
-	} else {
-		rmk = r.Edges[0][1]
-	}
-
-	minMaxDistLatDim := math.Pow(p.Lat-rmk, 2)
-
-	if p.Lon >= (r.Edges[1][0]+r.Edges[1][1])/2.0 {
-		rMi = r.Edges[1][0]
-	} else {
-		rMi = r.Edges[1][1]
-	}
-	minMaxDistLatDim += math.Pow(p.Lon-rMi, 2)
-
-	// lon dimension
-	if p.Lon <= (r.Edges[1][0]+r.Edges[1][1])/2.0 {
-		rmk = r.Edges[1][0]
-	} else {
-		rmk = r.Edges[1][1]
-	}
-
-	minMaxDistLonDim := math.Pow(p.Lon-rmk, 2)
-
-	if p.Lat >= (r.Edges[0][0]+r.Edges[0][1])/2.0 {
-		rMi = r.Edges[0][0]
-	} else {
-		rMi = r.Edges[0][1]
-	}
-	minMaxDistLonDim += math.Pow(p.Lat-rMi, 2)
-
-	if minMaxDistLatDim < minMaxDistLonDim {
-		return minMaxDistLatDim
-	}
-	return minMaxDistLonDim
 }
 
 type OSMObject struct {
@@ -856,163 +577,105 @@ func (o *OSMObject) GetBound() RtreeBoundingBox {
 	return NewRtreeBoundingBox(2, []float64{o.Lat - 0.0001, o.Lon - 0.0001}, []float64{o.Lat + 0.0001, o.Lon + 0.0001})
 }
 
-type activeBranch struct {
-	entry BoundedItem
-	Dist  float64
+func (o *OSMObject) isLeafNode() bool {
+	return false
 }
 
-func (rt *Rtree) FastNNearestNeighbors(k int, p Point) []RtreeNode {
-	nearestsLists := make([]RtreeNode, 0, k)
-
-	root := rt.Root
-
-	dists := make([]float64, 0, k)
-
-	nearestsLists, _ = rt.fastNNearestNeighbors(k, p, root, nearestsLists, dists)
-
-	return nearestsLists
+func (o *OSMObject) IsData() bool {
+	return true
 }
 
-func fastInsertToNearestLists(nearestLists []RtreeNode, obj RtreeNode, dist float64, k int,
-	dists []float64) ([]RtreeNode, []float64) {
-	idx := sort.SearchFloat64s(dists, dist)
-	for idx < len(nearestLists) && dist >= dists[idx] {
-		idx++
+func (rt *Rtree) NearestNeighboursPQ(k int, p Point) []OSMObject {
+	nearestLists := make([]OSMObject, 0, k)
+
+	callback := func(n OSMObject) bool {
+		nearestLists = append(nearestLists, n)
+		return len(nearestLists) < k
 	}
 
-	if idx >= k {
-		return nearestLists, dists
-	}
+	rt.nearestNeigboursPQ(p, callback)
 
-	if len(nearestLists) < k {
-		dists = append(dists, 0)
-		nearestLists = append(nearestLists, RtreeNode{})
-	}
-
-	copy(dists, dists[:idx])
-	copy(dists[idx+1:], dists[idx:len(dists)-1])
-	dists[idx] = dist
-
-	copy(nearestLists, nearestLists[:idx])
-	copy(nearestLists[idx+1:], nearestLists[idx:len(nearestLists)-1])
-	nearestLists[idx] = obj
-
-	return nearestLists, dists
+	return nearestLists
 }
+// https://dl.acm.org/doi/pdf/10.1145/320248.320255
+func (rt *Rtree) nearestNeigboursPQ(p Point, callback func(OSMObject) bool) {
+	pq := NewMinHeap()
+	pq.Insert(NewPriorityQueueNodeRtree2(0, rt.Root))
 
-func (rt *Rtree) fastNNearestNeighbors(k int, p Point, n *RtreeNode,
-	nearestLists []RtreeNode, nNearestDists []float64) ([]RtreeNode, []float64) {
+	for pq.Size() > 0 {
 
-	var nearestDist float64 = math.Inf(1)
-	if len(nearestLists) > 0 {
-		nearestDist = nNearestDists[0]
-	}
-
-	if n.IsLeaf {
-
-		for _, item := range n.Items {
-			dist := haversineDistance(p.Lat, p.Lon, item.Leaf.Lat, item.Leaf.Lon)
-
-			if dist < nearestDist {
-				nearestLists, nNearestDists = fastInsertToNearestLists(nearestLists, *item, dist, k, nNearestDists)
+		element, ok := pq.ExtractMin()
+		if !ok {
+			return
+		}
+		if element.Item.IsData() {
+			first, _ := pq.GetMin()
+			for element == first {
+				first, _ = pq.ExtractMin()
 			}
-		}
-	} else {
-		dists := make([]float64, 0, len(n.Items))
-		for _, e := range n.Items {
-			dists = append(dists, p.minDist(e.getBound()))
-		}
+			if !callback(*element.Item.(*OSMObject)) {
+				return
+			}
+		} else if element.Item.isLeafNode() {
+			distToElement := p.minDist(element.Item.GetBound())
 
-		entries := make([]*RtreeNode, len(n.Items))
-		copy(entries, n.Items)
-		sort.Sort(activeBranchSlice{entries, dists})
+			for _, item := range element.Item.(*RtreeNode).Items {
+				distToObject := euclideanDistance(p.Lat, p.Lon, item.Leaf.Lat, item.Leaf.Lon)
 
-		var cutBranchIdx int
-		if len(nNearestDists) >= k {
-			for i := 0; i < len(entries); i++ {
-				if dists[i] > nNearestDists[len(nNearestDists)-1] {
-					cutBranchIdx = i
+				if distToObject > distToElement {
+					pq.Insert(NewPriorityQueueNodeRtree2(distToObject, &item.Leaf))
 				}
 			}
-			entries = entries[:cutBranchIdx]
+		} else {
+			for _, item := range element.Item.(*RtreeNode).Items {
 
-		}
-
-		for i := 0; i < len(entries); i++ {
-			// recursion to children node entry e.
-			nearestLists, nNearestDists = rt.fastNNearestNeighbors(k, p, entries[i], nearestLists, nNearestDists)
+				pq.Insert(NewPriorityQueueNodeRtree2(p.minDist(item.GetBound()), item))
+			}
 		}
 	}
-	return nearestLists, nNearestDists
 }
 
-func (rt *Rtree) ImprovedNearestNeighbor(p Point) RtreeNode {
-
-	nearest := RtreeNode{}
+func (rt *Rtree) ImprovedNearestNeighbor(p Point) OSMObject {
 
 	nnDistTemp := math.Inf(1)
-	root := rt.Root
 
-	nearest, _ = rt.nearestNeighbor(p, root, nearest, nnDistTemp)
+	nearest, _ := rt.nearestNeighbor(p, nnDistTemp)
 	return nearest
 }
 
-type activeBranchSlice struct {
-	entries []*RtreeNode
-	dists   []float64
-}
+// https://rutgers-db.github.io/cs541-fall19/slides/notes4.pdf
+func (rt *Rtree) nearestNeighbor(p Point, nnDistTemp float64) (OSMObject, float64) {
+	nearest := OSMObject{}
+	pq := NewMinHeap()
 
-func (s activeBranchSlice) Len() int { return len(s.entries) }
+	pq.Insert(NewPriorityQueueNodeRtree2(p.minDist(rt.Root.GetBound()), rt.Root))
 
-func (s activeBranchSlice) Swap(i, j int) {
-	s.entries[i], s.entries[j] = s.entries[j], s.entries[i]
-	s.dists[i], s.dists[j] = s.dists[j], s.dists[i]
-}
-
-func (s activeBranchSlice) Less(i, j int) bool {
-	return s.dists[i] < s.dists[j]
-}
-
-func (rt *Rtree) nearestNeighbor(p Point, n *RtreeNode,
-	nearest RtreeNode, nnDistTemp float64) (RtreeNode, float64) {
-
-	if n.IsLeaf {
-		for _, item := range n.Items {
-
-			dist := haversineDistance(p.Lat, p.Lon, item.Leaf.Lat, item.Leaf.Lon)
-
-			if dist < nnDistTemp {
-				nnDistTemp = dist
-				nearest = *item
-			}
+	bestDist := math.Inf(1)
+	smallestMinDist, _ := pq.GetMin()
+	for bestDist > smallestMinDist.Rank {
+		currR, ok := pq.ExtractMin()
+		if !ok {
+			break
 		}
-	} else {
-		minMaxDistM := math.Inf(1)
-		for _, e := range n.Items {
-			minMaxDistM = math.Min(minMaxDistM, p.minMaxDist(e.getBound()))
-		}
-
-		last := len(n.Items)
-		for i := 0; i < last; i++ {
-
-			//an MBR M with MINDIST(P,M) greater than the
-			//MINMAXDIST(P,M’) of another MBR M’ is discarded because it cannot contain the NN
-			if p.minDist(n.Items[i].getBound()) <= minMaxDistM {
-				nearest, nnDistTemp = rt.nearestNeighbor(p, n.Items[i], nearest, nnDistTemp)
-				for j := i + 1; j < last; j++ {
-					// upward pruning
-					if p.minDist(n.Items[j].getBound()) > nnDistTemp {
-						//every MBR M with MINDIST(P,M) greater than
-						// the actual distance from P to a given object O is
-						// discarded because it cannot enclose an object nearer
-						// than O (theorem 1). We use this in upward pruning.
-						last = j
+		for _, item := range currR.Item.(*RtreeNode).Items {
+			if !item.isLeafNode() {
+				pq.Insert(NewPriorityQueueNodeRtree2(p.minDist(item.GetBound()), item))
+			} else {
+				for _, leafData := range item.Items {
+					dist := euclideanDistance(p.Lat, p.Lon, leafData.Leaf.Lat, leafData.Leaf.Lon)
+					if dist < bestDist {
+						bestDist = dist
+						nearest = leafData.Leaf
 					}
 				}
 			}
-
+		}
+		smallestMinDist, ok = pq.GetMin()
+		if !ok {
+			break
 		}
 	}
+
 	return nearest, nnDistTemp
 }
 
@@ -1079,7 +742,7 @@ func (rt *Rtree) Deserialize(workingDir string, outputDir string) error {
 	}
 
 	for _, item := range items {
-		rt.InsertLeaf(item.GetBound(), item)
+		rt.InsertR(item.GetBound(), item)
 	}
 
 	return nil

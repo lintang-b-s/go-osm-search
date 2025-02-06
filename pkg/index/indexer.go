@@ -980,7 +980,7 @@ func (Idx *DynamicIndex) GetFullAdress(street, postalCode, houseNumber string, c
 		// pick nearest street
 		street := osmSpatialIdx.StreetRtree.ImprovedNearestNeighbor(centerItem)
 
-		streetName, _, _, _, _ := geo.GetNameAddressTypeFromOSMWay(Idx.IndexedData.Ways[street.Leaf.ID].TagMap)
+		streetName, _, _, _, _ := geo.GetNameAddressTypeFromOSMWay(Idx.IndexedData.Ways[street.ID].TagMap)
 		address += streetName
 	}
 

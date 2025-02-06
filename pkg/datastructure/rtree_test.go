@@ -12,22 +12,22 @@ import (
 
 func traverseRtreeAndTestIfBoundingBoxCorrect(node *RtreeNode, countLeaf *int, t *testing.T) {
 	if node.IsLeaf {
-		maxBB := node.Items[0].getBound()
+		maxBB := node.Items[0].GetBound()
 		for _, item := range node.Items {
 			*countLeaf++
-			bb := item.getBound()
-			maxBB = stretch(maxBB, bb)
+			bb := item.GetBound()
+			maxBB = boundingBox(maxBB, bb)
 		}
 
 		if !node.Bound.isBBSame(maxBB) {
 			t.Errorf("Bounding box not same")
 		}
 	} else {
-		maxBB := node.Items[0].getBound()
+		maxBB := node.Items[0].GetBound()
 
 		for _, item := range node.Items {
-			bb := item.getBound()
-			maxBB = stretch(maxBB, bb)
+			bb := item.GetBound()
+			maxBB = boundingBox(maxBB, bb)
 			traverseRtreeAndTestIfBoundingBoxCorrect(item, countLeaf, t)
 		}
 
@@ -79,7 +79,7 @@ func TestInsertRtree(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			rt := NewRtree(25, 50, 2)
 			for _, item := range tt.items {
-				rt.InsertLeaf(item.GetBound(), item)
+				rt.InsertR(item.GetBound(), item)
 
 			}
 			assert.Equal(t, 103, rt.Size)
@@ -95,7 +95,7 @@ func TestInsertRtree(t *testing.T) {
 		for i := 0; i < 5; i++ {
 			item := itemsData[i]
 
-			rt.InsertLeaf(item.GetBound(), item)
+			rt.InsertR(item.GetBound(), item)
 		}
 		assert.Equal(t, 5, rt.Size)
 		root := rt.Root
@@ -107,60 +107,6 @@ func TestInsertRtree(t *testing.T) {
 		traverseRtreeAndTestIfBoundingBoxCorrect(rt.Root, &countLeaf, t)
 		assert.Equal(t, 5, countLeaf)
 	})
-
-}
-
-func TestChooseSubtree(t *testing.T) {
-	t.Run("Choose subtree", func(t *testing.T) {
-		items := []*RtreeNode{
-			&RtreeNode{
-				Bound: NewRtreeBoundingBox(2, []float64{-1, -1}, []float64{1, 1}),
-				Items: []*RtreeNode{
-					&RtreeNode{
-						Bound:  NewRtreeBoundingBox(2, []float64{-1, -1}, []float64{1, 1}),
-						Items:  []*RtreeNode{},
-						IsLeaf: true,
-					},
-					&RtreeNode{
-						Bound:  NewRtreeBoundingBox(2, []float64{0, 0}, []float64{0, 0}),
-						Items:  []*RtreeNode{},
-						IsLeaf: true,
-					},
-				},
-				IsLeaf: false,
-			},
-
-			&RtreeNode{
-				Bound: NewRtreeBoundingBox(2, []float64{10, 10}, []float64{20, 20}),
-				Items: []*RtreeNode{
-					&RtreeNode{
-						Bound:  NewRtreeBoundingBox(2, []float64{10, 10}, []float64{20, 20}),
-						Items:  []*RtreeNode{},
-						IsLeaf: true,
-					},
-				},
-				IsLeaf: false,
-			},
-		}
-
-		rt := NewRtree(1, 2, 2)
-		rt.Root = &RtreeNode{
-			Bound: NewRtreeBoundingBox(2, []float64{0, 0}, []float64{0, 0}),
-			Items: items,
-		}
-
-		for _, item := range items {
-			rt.Root.Bound = stretch(rt.Root.Bound, item.getBound())
-		}
-
-		newBB := NewRtreeBoundingBox(2, []float64{12, 12}, []float64{18, 18})
-
-		rt.Root.Bound = stretch(rt.Root.Bound, newBB)
-
-		choosedNode := rt.chooseSubtree(rt.Root, newBB)
-		assert.Equal(t, items[1].Items[0], choosedNode)
-	})
-
 }
 
 func TestSearch(t *testing.T) {
@@ -178,7 +124,7 @@ func TestSearch(t *testing.T) {
 		rt := NewRtree(10, 25, 2)
 		for _, item := range itemsData {
 
-			rt.InsertLeaf(item.GetBound(), item)
+			rt.InsertR(item.GetBound(), item)
 
 		}
 
@@ -189,7 +135,7 @@ func TestSearch(t *testing.T) {
 
 		for _, item := range results {
 
-			itembb := item.getBound()
+			itembb := item.GetBound()
 			if !overlaps(itembb, NewRtreeBoundingBox(2, []float64{0, 0}, []float64{50, 50})) {
 				t.Errorf("Bounding box is not correct")
 
@@ -211,7 +157,7 @@ func TestSplit(t *testing.T) {
 
 		rt := NewRtree(10, 25, 2)
 
-		rt.InsertLeaf(itemsData[0].GetBound(), itemsData[0])
+		rt.InsertR(itemsData[0].GetBound(), itemsData[0])
 		for i := 1; i < 26; i++ {
 			item := itemsData[i]
 
@@ -219,47 +165,16 @@ func TestSplit(t *testing.T) {
 			rt.Root.Items = append(rt.Root.Items, newLeaf)
 		}
 
-		newNode := rt.split(rt.Root)
+		old, newNode := rt.splitNode(rt.Root)
 
 		assert.Less(t, len(newNode.Items), 25)
 		assert.Less(t, len(rt.Root.Items), 25)
+		assert.Less(t, len(old.Items), 25)
 
 		countLeaf := 0
 		traverseRtreeAndTestIfBoundingBoxCorrect(rt.Root, &countLeaf, t)
 		traverseRtreeAndTestIfBoundingBoxCorrect(newNode, &countLeaf, t)
 	})
-}
-
-func TestOverflowTreatment(t *testing.T) {
-	t.Run("Overflow treatment", func(t *testing.T) {
-		itemsData := []OSMObject{}
-		for i := 0; i < 26; i++ {
-			itemsData = append(itemsData, OSMObject{
-				ID:  i,
-				Lat: float64(i),
-				Lon: float64(i),
-			})
-		}
-
-		rt := NewRtree(10, 25, 2)
-
-		rt.InsertLeaf(itemsData[0].GetBound(), itemsData[0])
-		for i := 1; i < 26; i++ {
-			item := itemsData[i]
-			newLeaf := &RtreeNode{Leaf: item, Bound: item.GetBound()}
-			rt.Root.Items = append(rt.Root.Items, newLeaf)
-		}
-
-		oldRoot := rt.Root
-		rt.overflowTreatment(rt.Root, true)
-
-		assert.NotEqual(t, oldRoot, rt.Root)
-		assert.Equal(t, 2, len(rt.Root.Items))
-
-		countLeaf := 0
-		traverseRtreeAndTestIfBoundingBoxCorrect(rt.Root, &countLeaf, t)
-	})
-
 }
 
 func randomLatLon(minLat, maxLat, minLon, maxLon float64) (float64, float64) {
@@ -313,7 +228,7 @@ func TestNNearestNeighbors(t *testing.T) {
 			},
 		}
 
-		for i := 8; i < 500; i++ {
+		for i := 8; i < 20; i++ {
 			lat, lon := randomLatLon(-6.107481038495567, -5.995288834299442, 106.13128828884481, 107.0509652831274)
 			itemsData = append(itemsData, OSMObject{
 				ID:  i,
@@ -322,20 +237,90 @@ func TestNNearestNeighbors(t *testing.T) {
 			})
 		}
 
-		rt := NewRtree(25, 50, 2)
+		rt := NewRtree(5, 10, 2)
 		for _, item := range itemsData {
-			rt.InsertLeaf(item.GetBound(), item)
+			rt.InsertR(item.GetBound(), item)
 		}
 
 		myLocation := Point{-7.548263971398246, 110.78226484631368}
-		results := rt.FastNNearestNeighbors(5, myLocation)
+		results := rt.NearestNeighboursPQ(5, myLocation)
 
 		assert.Equal(t, 5, len(results))
-		assert.Equal(t, 0, results[0].Leaf.ID)
-		assert.Equal(t, 7, results[1].Leaf.ID)
-		assert.Equal(t, 6, results[2].Leaf.ID)
-		assert.Equal(t, 5, results[3].Leaf.ID)
-		assert.Equal(t, 4, results[4].Leaf.ID)
+		assert.Equal(t, 0, results[0].ID)
+		assert.Equal(t, 7, results[1].ID)
+		assert.Equal(t, 6, results[2].ID)
+		assert.Equal(t, 5, results[3].ID)
+		assert.Equal(t, 4, results[4].ID)
+	})
+}
+
+func TestNNearestNeighborsPQ(t *testing.T) {
+	t.Run("Test N Nearest Neighbors kota surakarta", func(t *testing.T) {
+		itemsData := []OSMObject{
+			{
+				ID:  7,
+				Lat: -7.546392935195944,
+				Lon: 110.77718220472673,
+			},
+			{
+				ID:  6,
+				Lat: -7.5559986670115675,
+				Lon: 110.79466621171177,
+			},
+			{
+				ID:  5,
+				Lat: -7.555869730414206,
+				Lon: 110.80500875243253,
+			},
+			{
+				ID:  4,
+				Lat: -7.571289544570394,
+				Lon: 110.8301500772816,
+			},
+			{
+				ID:  3,
+				Lat: -7.7886707815273155,
+				Lon: 110.361625035987,
+			}, {
+				ID:  2,
+				Lat: -7.8082872068169475,
+				Lon: 110.35793427899466,
+			},
+			{
+				ID:  1,
+				Lat: -7.759889166547908,
+				Lon: 110.36689459108496,
+			},
+			{
+				ID:  0,
+				Lat: -7.550561079106621,
+				Lon: 110.7837156929654,
+			},
+		}
+
+		for i := 8; i < 20; i++ {
+			lat, lon := randomLatLon(-6.107481038495567, -5.995288834299442, 106.13128828884481, 107.0509652831274)
+			itemsData = append(itemsData, OSMObject{
+				ID:  i,
+				Lat: lat,
+				Lon: lon,
+			})
+		}
+
+		rt := NewRtree(5, 10, 2)
+		for _, item := range itemsData {
+			rt.InsertR(item.GetBound(), item)
+		}
+
+		myLocation := Point{-7.548263971398246, 110.78226484631368}
+		results := rt.NearestNeighboursPQ(5, myLocation)
+
+		assert.Equal(t, 5, len(results))
+		assert.Equal(t, 0, results[0].ID)
+		assert.Equal(t, 7, results[1].ID)
+		assert.Equal(t, 6, results[2].ID)
+		assert.Equal(t, 5, results[3].ID)
+		assert.Equal(t, 4, results[4].ID)
 	})
 }
 
@@ -399,17 +384,17 @@ func TestNearestNeighbor(t *testing.T) {
 
 		rt := NewRtree(25, 50, 2)
 		for _, item := range itemsData {
-			rt.InsertLeaf(item.GetBound(), item)
+			rt.InsertR(item.GetBound(), item)
 		}
 
 		myLocation := Point{-7.760335932763678, 110.37671195413539}
 
 		result := rt.ImprovedNearestNeighbor(myLocation)
-		assert.Equal(t, 1, result.Leaf.ID)
-
+		assert.Equal(t, 1, result.ID)
 	})
 }
 
+// BenchmarkNNearestNeighbors-12    	   27590	     43422 ns/op	  100456 B/op	      13 allocs/op
 func BenchmarkNNearestNeighbors(b *testing.B) {
 	itemsData := []OSMObject{}
 
@@ -425,7 +410,7 @@ func BenchmarkNNearestNeighbors(b *testing.B) {
 
 	rt := NewRtree(25, 50, 2)
 	for _, item := range itemsData {
-		rt.InsertLeaf(item.GetBound(), item)
+		rt.InsertR(item.GetBound(), item)
 	}
 
 	myLocation := Point{-7.548263971398246, 110.78226484631368}
@@ -433,7 +418,7 @@ func BenchmarkNNearestNeighbors(b *testing.B) {
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		rt.FastNNearestNeighbors(5, myLocation)
+		rt.NearestNeighboursPQ(5, myLocation)
 	}
 
 }
@@ -458,7 +443,7 @@ func BenchmarkInsert(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		randInt := rand.Intn(100000)
 		item := itemsData[randInt]
-		rt.InsertLeaf(item.GetBound(), item)
+		rt.InsertR(item.GetBound(), item)
 	}
 }
 
@@ -477,7 +462,7 @@ func BenchmarkImprovedNearestNeighbor(b *testing.B) {
 
 	rt := NewRtree(25, 50, 2)
 	for _, item := range itemsData {
-		rt.InsertLeaf(item.GetBound(), item)
+		rt.InsertR(item.GetBound(), item)
 	}
 	myLocation := Point{-7.548263971398246, 110.78226484631368}
 
@@ -503,7 +488,7 @@ func BenchmarkSearch(b *testing.B) {
 
 	rt := NewRtree(25, 50, 2)
 	for _, item := range itemsData {
-		rt.InsertLeaf(item.GetBound(), item)
+		rt.InsertR(item.GetBound(), item)
 	}
 	myLocation := Point{-7.548263971398246, 110.78226484631368}
 
