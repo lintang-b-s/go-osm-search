@@ -44,7 +44,7 @@ func TestHaversine(t *testing.T) {
 
 	t.Run("success haversine distance", func(t *testing.T) {
 		for _, c := range cases {
-			dist := haversineDistance(c.latOne, c.longOne, c.latTwo, c.longTwo)
+			dist := HaversineDistance(c.latOne, c.longOne, c.latTwo, c.longTwo)
 			assert.InDelta(t, c.expectedDist, dist, 0.1)
 		}
 	})

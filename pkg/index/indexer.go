@@ -27,7 +27,7 @@ type SpellCorrectorI interface {
 	Preprocessdata(tokenizedDocs [][]string)
 	GetWordCandidates(mispelledWord string, editDistance int) ([]int, error)
 	GetCorrectQueryCandidates(allPossibleQueryTerms [][]int) [][]int
-	GetCorrectSpellingSuggestion(allCorrectQueryCandidates [][]int ) ([]int, error)
+	GetCorrectSpellingSuggestion(allCorrectQueryCandidates [][]int) ([]int, error)
 	GetMatchedWordBasedOnPrefix(prefixWord string) ([]int, error)
 	GetMatchedWordsAutocomplete(allQueryCandidates [][]int, originalQueryTerms []int) ([][]int, error)
 }
@@ -40,7 +40,6 @@ type BboltDBI interface {
 	SaveDocs(nodes []datastructure.Node) error
 }
 
-// https://nlp.stanford.edu/IR-book/pdf/04const.pdf (4.3 Single-pass in-memory indexing)
 type DynamicIndex struct {
 	TermIDMap                 *pkg.IDMap
 	workingDir                string
@@ -53,6 +52,7 @@ type DynamicIndex struct {
 	spellCorrectorBuilder     SpellCorrectorI
 	IndexedData               IndexedData
 	documentStore             BboltDBI //DocumentStoreI
+	OSMFeatureMap             *pkg.IDMap
 }
 
 type IndexedData struct {
@@ -92,6 +92,7 @@ func NewDynamicIndex(outputDir string, maxPostingListSize int,
 		spellCorrectorBuilder:     spell,
 		IndexedData:               indexedData,
 		documentStore:             boltDB,
+		OSMFeatureMap:             pkg.NewIDMap(),
 	}
 	if server {
 		err := idx.LoadMeta()
@@ -187,10 +188,16 @@ func (Idx *DynamicIndex) SpimiBatchIndex(ctx context.Context, osmSpatialIdx geo.
 			searchNodes = append(searchNodes, datastructure.NewNode(nodeIDX, name, centerLat,
 				centerLon, address, tipe, city))
 
+			osmFeature := getOSMFeature(way.TagMap)
+			osmFeatureInt := make(map[int]int, len(osmFeature))
+			for k, v := range osmFeature {
+				osmFeatureInt[Idx.OSMFeatureMap.GetID(k)] = Idx.OSMFeatureMap.GetID(v)
+			}
 			rtreeItem := datastructure.OSMObject{
 				ID:  nodeIDX,
 				Lat: centerLat,
 				Lon: centerLon,
+				Tag: osmFeatureInt,
 			}
 			osmData = append(osmData, rtreeItem)
 
@@ -327,10 +334,16 @@ func (Idx *DynamicIndex) SpimiBatchIndex(ctx context.Context, osmSpatialIdx geo.
 			searchNodes = append(searchNodes, datastructure.NewNode(nodeIDX, name, node.Lat,
 				node.Lon, address, tipe, city))
 
+			osmFeature := getOSMFeature(node.TagMap)
+			osmFeatureInt := make(map[int]int, len(osmFeature))
+			for k, v := range osmFeature {
+				osmFeatureInt[Idx.OSMFeatureMap.GetID(k)] = Idx.OSMFeatureMap.GetID(v)
+			}
 			rtreeItem := datastructure.OSMObject{
 				ID:  nodeIDX,
 				Lat: node.Lat,
 				Lon: node.Lon,
+				Tag: osmFeatureInt,
 			}
 			osmData = append(osmData, rtreeItem)
 
@@ -835,16 +848,19 @@ func (Idx *DynamicIndex) BuildSpellCorrectorAndNgram(ctx context.Context, allSea
 }
 
 type SpimiIndexMetadata struct {
-	TermIDMap    *pkg.IDMap
-	DocWordCount map[int]int
-	DocsCount    int
+	TermIDMap     *pkg.IDMap
+	DocWordCount  map[int]int
+	DocsCount     int
+	OSMFeatureMap *pkg.IDMap
 }
 
-func NewSpimiIndexMetadata(termIDMap *pkg.IDMap, docWordCount map[int]int, docsCount int) SpimiIndexMetadata {
+func NewSpimiIndexMetadata(termIDMap *pkg.IDMap, docWordCount map[int]int, docsCount int,
+	osmFeatureMap *pkg.IDMap) SpimiIndexMetadata {
 	return SpimiIndexMetadata{
-		TermIDMap:    termIDMap,
-		DocWordCount: docWordCount,
-		DocsCount:    docsCount,
+		TermIDMap:     termIDMap,
+		DocWordCount:  docWordCount,
+		DocsCount:     docsCount,
+		OSMFeatureMap: osmFeatureMap,
 	}
 }
 func (Idx *DynamicIndex) Close() error {
@@ -855,7 +871,7 @@ func (Idx *DynamicIndex) Close() error {
 // SaveMeta is a function to save the metadata of the main inverted index to disk.
 func (Idx *DynamicIndex) SaveMeta() error {
 	// save to disk
-	SpimiMeta := NewSpimiIndexMetadata(Idx.TermIDMap, Idx.docWordCount, Idx.docsCount)
+	SpimiMeta := NewSpimiIndexMetadata(Idx.TermIDMap, Idx.docWordCount, Idx.docsCount, Idx.OSMFeatureMap)
 
 	buf, err := msgpack.Marshal(&SpimiMeta)
 	if err != nil {
@@ -925,6 +941,7 @@ func (Idx *DynamicIndex) LoadMeta() error {
 	Idx.TermIDMap = save.TermIDMap
 	Idx.docWordCount = save.DocWordCount
 	Idx.docsCount = save.DocsCount
+	Idx.OSMFeatureMap = save.OSMFeatureMap
 
 	for i := 0; i < Idx.docsCount; i++ {
 		Idx.averageDocLength += float64(Idx.docWordCount[i])
@@ -959,6 +976,10 @@ func (Idx *DynamicIndex) GetTermIDMap() *pkg.IDMap {
 
 func (Idx *DynamicIndex) BuildVocabulary() {
 	Idx.TermIDMap.BuildVocabulary()
+}
+
+func (Idx *DynamicIndex) GetOSMFeatureMap() *pkg.IDMap {
+	return Idx.OSMFeatureMap
 }
 
 func (Idx *DynamicIndex) GetFullAdress(street, postalCode, houseNumber string, centerLat, centerLon float64,
@@ -1114,4 +1135,14 @@ func (Idx *DynamicIndex) GetFullAdress(street, postalCode, houseNumber string, c
 	}
 
 	return address, city
+}
+
+func getOSMFeature(tagMap map[string]string) map[string]string {
+	featureTag := make(map[string]string)
+	for key, value := range tagMap {
+		if _, ok := geo.ValidSearchTags[key]; ok {
+			featureTag[key+"="+value] = ""
+		}
+	}
+	return featureTag
 }

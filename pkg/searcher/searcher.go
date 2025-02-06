@@ -45,6 +45,7 @@ type DynamicIndexer interface {
 	GetTermIDMap() *pkg.IDMap
 	GetAverageDocLength() float64
 	BuildVocabulary()
+	GetOSMFeatureMap() *pkg.IDMap
 }
 
 type SearcherDocStore interface {
@@ -676,6 +677,20 @@ func (se *Searcher) ReverseGeocoding(lat, lon float64) (datastructure.Node, erro
 		return datastructure.Node{}, fmt.Errorf("error when get doc: %w", err)
 	}
 	return doc, nil
+}
+
+func (se *Searcher) NearestNeighboursRadiusWithFeatureFilter(k, offset int, lat, lon, radius float64, featureType string) ([]datastructure.Node, error) {
+	osmFeatureMap := se.Idx.GetOSMFeatureMap()
+	result := se.osmRtree.NearestNeighboursRadiusFilterOSM(k, offset, datastructure.NewPoint(lat, lon), radius, osmFeatureMap.GetID(featureType))
+	docs := []datastructure.Node{}
+	for _, r := range result {
+		doc, err := se.DocStore.GetDoc(r.ID)
+		if err != nil {
+			return []datastructure.Node{}, fmt.Errorf("error when get doc: %w", err)
+		}
+		docs = append(docs, doc)
+	}
+	return docs, nil
 }
 
 func PostingListIntersection2(a, b []int) []int {

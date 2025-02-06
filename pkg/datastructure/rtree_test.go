@@ -171,7 +171,6 @@ func TestSplit(t *testing.T) {
 		assert.Less(t, len(rt.Root.Items), 25)
 		assert.Less(t, len(old.Items), 25)
 
-		
 	})
 }
 
@@ -226,7 +225,7 @@ func TestNNearestNeighbors(t *testing.T) {
 			},
 		}
 
-		for i := 8; i < 20; i++ {
+		for i := 8; i < 100000; i++ {
 			lat, lon := randomLatLon(-6.107481038495567, -5.995288834299442, 106.13128828884481, 107.0509652831274)
 			itemsData = append(itemsData, OSMObject{
 				ID:  i,
@@ -235,7 +234,7 @@ func TestNNearestNeighbors(t *testing.T) {
 			})
 		}
 
-		rt := NewRtree(5, 10, 2)
+		rt := NewRtree(25, 50, 2)
 		for _, item := range itemsData {
 			rt.InsertR(item.GetBound(), item)
 		}
@@ -296,7 +295,7 @@ func TestNNearestNeighborsPQ(t *testing.T) {
 			},
 		}
 
-		for i := 8; i < 20; i++ {
+		for i := 8; i < 1000000; i++ {
 			lat, lon := randomLatLon(-6.107481038495567, -5.995288834299442, 106.13128828884481, 107.0509652831274)
 			itemsData = append(itemsData, OSMObject{
 				ID:  i,
@@ -305,7 +304,7 @@ func TestNNearestNeighborsPQ(t *testing.T) {
 			})
 		}
 
-		rt := NewRtree(5, 10, 2)
+		rt := NewRtree(25, 50, 2)
 		for _, item := range itemsData {
 			rt.InsertR(item.GetBound(), item)
 		}
@@ -392,6 +391,99 @@ func TestNearestNeighbor(t *testing.T) {
 	})
 }
 
+func TestNearestNeighborRadiusFilterOsmFeature(t *testing.T) {
+	t.Run("Test N Nearest Neighbors dengan tag tertentu dan radius 3km", func(t *testing.T) {
+		itemsData := []OSMObject{
+			{
+				ID:  7,
+				Lat: -7.546392935195944,
+				Lon: 110.77718220472673,
+				Tag: map[int]int{1: 1},
+			},
+			{
+				ID:  6,
+				Lat: -7.5559986670115675,
+				Lon: 110.79466621171177,
+				Tag: map[int]int{1: 1},
+			},
+			{
+				ID:  5,
+				Lat: -7.555869730414206,
+				Lon: 110.80500875243253,
+				Tag: map[int]int{1: 1},
+			},
+			{
+				ID:  4,
+				Lat: -7.571289544570394,
+				Lon: 110.8301500772816,
+				Tag: map[int]int{1: 1},
+			},
+			{
+				ID:  3,
+				Lat: -7.7886707815273155,
+				Lon: 110.361625035987,
+				Tag: map[int]int{10: 10},
+			}, {
+				ID:  2,
+				Lat: -7.8082872068169475,
+				Lon: 110.35793427899466,
+				Tag: map[int]int{10: 10},
+			},
+			{
+				ID:  1,
+				Lat: -7.759889166547908,
+				Lon: 110.36689459108496,
+				Tag: map[int]int{1: 1},
+			},
+			{
+				ID:  1000,
+				Lat: -7.550561079106621,
+				Lon: 110.7837156929654,
+				Tag: map[int]int{10: 10},
+			},
+			{
+				ID:  1001,
+				Lat: -7.700002453207869,
+				Lon: 110.37712514761436,
+				Tag: map[int]int{1: 1},
+			},
+			{
+				ID:  1002,
+				Lat: -7.760860864556355,
+				Lon: 110.37510209125597,
+				Tag: map[int]int{1: 1},
+			},
+		}
+
+		for i := 8; i < 100000; i++ {
+			tag := rand.Intn(10)
+			val := rand.Intn(10)
+
+			lat, lon := randomLatLon(-6.107481038495567, -5.995288834299442, 106.13128828884481, 107.0509652831274)
+			itemsData = append(itemsData, OSMObject{
+				ID:  i,
+				Lat: lat,
+				Lon: lon,
+				Tag: map[int]int{tag: val},
+			})
+		}
+
+		rt := NewRtree(25, 50, 2)
+		for _, item := range itemsData {
+			rt.InsertR(item.GetBound(), item)
+		}
+
+		myLocation := Point{-7.760335932763678, 110.37671195413539}
+
+		results := rt.NearestNeighboursRadiusFilterOSM(5,0, myLocation, 3.0, 1)
+		for _, item := range results {
+			if _, ok := item.Tag[1]; HaversineDistance(myLocation.Lat, myLocation.Lon, item.Lat, item.Lon) > 3.0 ||
+				!ok {
+				t.Errorf("Distance is more than 3.0 and tag not valid")
+			}
+		}
+	})
+}
 
 func BenchmarkNNearestNeighbors(b *testing.B) {
 	itemsData := []OSMObject{}
@@ -469,6 +561,98 @@ func BenchmarkImprovedNearestNeighbor(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		rt.ImprovedNearestNeighbor(myLocation)
 	}
+}
+
+func BenchmarkNearestNeighborRadiusFilterOsmFeature(b *testing.B) {
+
+	itemsData := []OSMObject{
+		{
+			ID:  7,
+			Lat: -7.546392935195944,
+			Lon: 110.77718220472673,
+			Tag: map[int]int{1: 1},
+		},
+		{
+			ID:  6,
+			Lat: -7.5559986670115675,
+			Lon: 110.79466621171177,
+			Tag: map[int]int{1: 1},
+		},
+		{
+			ID:  5,
+			Lat: -7.555869730414206,
+			Lon: 110.80500875243253,
+			Tag: map[int]int{1: 1},
+		},
+		{
+			ID:  4,
+			Lat: -7.571289544570394,
+			Lon: 110.8301500772816,
+			Tag: map[int]int{1: 1},
+		},
+		{
+			ID:  3,
+			Lat: -7.7886707815273155,
+			Lon: 110.361625035987,
+			Tag: map[int]int{10: 10},
+		}, {
+			ID:  2,
+			Lat: -7.8082872068169475,
+			Lon: 110.35793427899466,
+			Tag: map[int]int{10: 10},
+		},
+		{
+			ID:  1,
+			Lat: -7.759889166547908,
+			Lon: 110.36689459108496,
+			Tag: map[int]int{1: 1},
+		},
+		{
+			ID:  1000,
+			Lat: -7.550561079106621,
+			Lon: 110.7837156929654,
+			Tag: map[int]int{10: 10},
+		},
+		{
+			ID:  1001,
+			Lat: -7.700002453207869,
+			Lon: 110.37712514761436,
+			Tag: map[int]int{1: 1},
+		},
+		{
+			ID:  1002,
+			Lat: -7.760860864556355,
+			Lon: 110.37510209125597,
+			Tag: map[int]int{1: 1},
+		},
+	}
+
+	for i := 8; i < 100000; i++ {
+		tag := rand.Intn(10)
+		val := rand.Intn(10)
+
+		lat, lon := randomLatLon(-6.107481038495567, -5.995288834299442, 106.13128828884481, 107.0509652831274)
+		itemsData = append(itemsData, OSMObject{
+			ID:  i,
+			Lat: lat,
+			Lon: lon,
+			Tag: map[int]int{tag: val},
+		})
+	}
+
+	rt := NewRtree(25, 50, 2)
+	for _, item := range itemsData {
+		rt.InsertR(item.GetBound(), item)
+	}
+
+	myLocation := Point{-7.760335932763678, 110.37671195413539}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		rt.NearestNeighboursRadiusFilterOSM(5, 0, myLocation, 3.0, 1)
+
+	}
+
 }
 
 func BenchmarkSearch(b *testing.B) {

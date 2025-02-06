@@ -6,4 +6,6 @@ type SearchService interface {
 	Search(query string, k int, offset int) ([]datastructure.Node, error)
 	Autocomplete(query string, k, offset int) ([]datastructure.Node, error)
 	ReverseGeocoding(lat, lon float64) (datastructure.Node, error)
+	NearestNeighboursRadiusWithFeatureFilter(k, offset int, lat, lon, radius float64,
+		featureType string) ([]datastructure.Node, error)
 }

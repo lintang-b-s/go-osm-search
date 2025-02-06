@@ -29,3 +29,8 @@ func (s *SearcherService) Autocomplete(query string, k, offset int) ([]datastruc
 func (s *SearcherService) ReverseGeocoding(lat, lon float64) (datastructure.Node, error) {
 	return s.searcher.ReverseGeocoding(lat, lon)
 }
+
+func (s *SearcherService) NearestNeighboursRadiusWithFeatureFilter(k, offset int, lat, lon, radius float64, 
+	featureType string) ([]datastructure.Node, error) {
+	return s.searcher.NearestNeighboursRadiusWithFeatureFilter(k,offset, lat, lon, radius, featureType)
+}

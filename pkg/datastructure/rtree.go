@@ -249,6 +249,7 @@ func (rt *Rtree) adjustTree(l, ll *RtreeNode) (*RtreeNode, *RtreeNode) {
 	if nn != nil {
 		enn := nn
 		enn.Bound = nn.ComputeBB()
+		enn.Parent = p
 
 		p.Items = append(p.Items, enn)
 		if len(p.Items) > rt.MaxChildItems {
@@ -526,6 +527,10 @@ type Point struct {
 	Lon float64
 }
 
+func NewPoint(lat, lon float64) Point {
+	return Point{Lat: lat, Lon: lon}
+}
+
 // minDist computes the square of the distance from a point to a rectangle. If the point is contained in the rectangle then the distance is zero.
 func (p Point) minDist(r RtreeBoundingBox) float64 {
 
@@ -558,6 +563,7 @@ type OSMObject struct {
 	ID  int
 	Lat float64
 	Lon float64
+	Tag map[int]int
 }
 
 func (o *OSMObject) GetBound() RtreeBoundingBox {
@@ -581,6 +587,40 @@ func (rt *Rtree) NearestNeighboursPQ(k int, p Point) []OSMObject {
 	}
 
 	rt.nearestNeigboursPQ(p, callback)
+
+	return nearestLists
+}
+
+// NearestNeighboursRadiusFilterOSM. returns the k nearest neighbours (with filtered osm feature) within a given radius in km.
+func (rt *Rtree) NearestNeighboursRadiusFilterOSM(k, offfset int, p Point, maxRadius float64,
+	osmFeature int) []OSMObject {
+	nearestLists := make([]OSMObject, 0, k)
+
+	callback := func(n OSMObject) bool {
+		nearestLists = append(nearestLists, n)
+
+		last := n
+		if len(nearestLists) > 0 {
+			last = nearestLists[len(nearestLists)-1]
+		}
+		return HaversineDistance(p.Lat, p.Lon, last.Lat, last.Lon) <= maxRadius
+	}
+
+	rt.nearestNeigboursPQ(p, callback)
+
+	for i := len(nearestLists) - 1; i >= 0; i-- {
+		if _, ok := nearestLists[i].Tag[osmFeature]; !ok {
+			nearestLists = append(nearestLists[:i], nearestLists[i+1:]...)
+		}
+	}
+
+	if len(nearestLists) > offfset {
+		nearestLists = nearestLists[offfset:]
+	}
+
+	if len(nearestLists) > k {	
+		nearestLists = nearestLists[:k]
+	}
 
 	return nearestLists
 }
@@ -625,14 +665,12 @@ func (rt *Rtree) nearestNeigboursPQ(p Point, callback func(OSMObject) bool) {
 
 func (rt *Rtree) ImprovedNearestNeighbor(p Point) OSMObject {
 
-	nnDistTemp := math.Inf(1)
-
-	nearest, _ := rt.nearestNeighbor(p, nnDistTemp)
+	nearest, _ := rt.nearestNeighbor(p)
 	return nearest
 }
 
 // https://rutgers-db.github.io/cs541-fall19/slides/notes4.pdf
-func (rt *Rtree) nearestNeighbor(p Point, nnDistTemp float64) (OSMObject, float64) {
+func (rt *Rtree) nearestNeighbor(p Point) (OSMObject, float64) {
 	nearest := OSMObject{}
 	pq := NewMinHeap()
 
@@ -664,7 +702,7 @@ func (rt *Rtree) nearestNeighbor(p Point, nnDistTemp float64) (OSMObject, float6
 		}
 	}
 
-	return nearest, nnDistTemp
+	return nearest, bestDist
 }
 
 func SerializeRtreeData(workingDir string, outputDir string, items []OSMObject) error {

@@ -15,7 +15,7 @@ func degreeToRadians(angle float64) float64 {
 }
 
 // very slow 
-func haversineDistance(latOne, longOne, latTwo, longTwo float64) float64 {
+func HaversineDistance(latOne, longOne, latTwo, longTwo float64) float64 {
 	latOne = degreeToRadians(latOne)
 	longOne = degreeToRadians(longOne)
 	latTwo = degreeToRadians(latTwo)
