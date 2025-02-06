@@ -1,5 +1,5 @@
 # osm-search
-Openstreetmap Full Text Search (support Autocomplete & Spell Corrector Up to 2 Edit Distance per-word), Reverse Geocoder, Nearest Places without any external API/external database. Search Engine by default uses BM25F as the ranking function. Nearest neighbours query using R-tree data structure.
+Openstreetmap Full Text Search (support Autocomplete & Spell Corrector Up to 2 Edit Distance per-word), Reverse Geocoder, Nearest Places without any external API/external database. Search Engine by default uses BM25F as the ranking function. The nearest neighbours query uses the R-tree data structure.
 
 # Quick Start
 ## Indexing
@@ -19,7 +19,40 @@ Note: The indexing process takes 1-3 minutes, please wait. you can also replace 
 2. ./bin/osm-search-server
 ```
 
+## Search With Spell Correction
+```
+curl --location --request GET 'http://localhost:6060/api/search' \
+--header 'Content-Type: application/json' \
+--data '{
+    "query": "Dunia Pantadi",
+    "top_k": 10,
+    "offset": 0,
+    "lat": -6.17473908506388,
+    "lon":  106.82749962074273
+}'
+```
 
+## Autocomplete
+```
+curl --location --request GET 'http://localhost:6060/api/autocomplete' \
+--header 'Content-Type: application/json' \
+--data '{
+    "query": "Kebun Binatang Ra",
+    "top_k": 10,
+    "lat": -6.17473908506388,
+    "lon":  106.82749962074273
+    }'
+```
+
+## Reverse Geocoding
+```
+curl --location 'http://localhost:6060/api/reverse?lat=-6.179842&lon=106.749864'
+```
+
+## Nearest places With a Specific Openstreetmap Tag and Within a Specific Radius
+```
+curl --location 'http://localhost:6060/api/places?lat=-6.179842&lon=106.749864&feature=amenity%3Drestaurant&k=10&offset=2'
+```
 
 
 
