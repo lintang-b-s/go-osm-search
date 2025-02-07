@@ -414,8 +414,10 @@ func ParseOSM(mapfile string) ([]OSMWay, []OSMNode, NodeMapContainer, *pkg.IDMap
 			highway == "primary_link" ||
 			highway == "secondary_link" ||
 			highway == "tertiary_link") {
+			bound := datastructure.NewRtreeBoundingBox(2, []float64{rtreeLeaf.Lat - 0.0001,
+				rtreeLeaf.Lon - 0.0001}, []float64{rtreeLeaf.Lat + 0.0001, rtreeLeaf.Lon + 0.0001})
 
-			streetRtree.InsertR(rtreeLeaf.GetBound(), rtreeLeaf)
+			streetRtree.InsertR(bound, rtreeLeaf)
 		}
 	}
 

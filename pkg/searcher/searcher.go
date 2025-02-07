@@ -229,6 +229,7 @@ func (se *Searcher) FreeFormQuery(query string, k, offset int) ([]datastructure.
 	return relevantDocs, nil
 }
 
+
 // https://trec.nist.gov/pubs/trec13/papers/microsoft-cambridge.web.hard.pdf
 func (se *Searcher) scoreBM25Field(allPostingsNameField map[int][]int,
 	allPostingsAddressField map[int][]int, allQueryTermIDs []int) []DocWithScore {
@@ -298,6 +299,7 @@ func (se *Searcher) scoreBM25Field(allPostingsNameField map[int][]int,
 
 	return docWithScores
 }
+
 
 func (se *Searcher) scoreBM25Plus(allPostingsField map[int][]int) []DocWithScore {
 	// param bm25+

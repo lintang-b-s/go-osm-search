@@ -1,6 +1,8 @@
 package compress
 
 import (
+	"math/rand"
+	"sort"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -43,6 +45,28 @@ func TestEncodeDecode(t *testing.T) {
 			assert.Equal(t, tt.postingLists, decoded)
 		})
 	}
+
+	t.Run("random", func(t *testing.T) {
+		for i := 0; i < 1000; i++ {
+			arr := make([]int, 90)
+			for i := 0; i < 90; i++ {
+				num := rand.Intn(250000)
+				arr[i] = num
+			}
+			sort.Ints(arr)
+
+			encoded := EncodePostingsList(arr)
+			decoded := DecodePostingsList(encoded)
+			assert.Equal(t, arr, decoded)
+		}
+	})
+
+	t.Run("example", func(t *testing.T) {
+		arr := []int{824,829,215406}
+		encoded := EncodePostingsList(arr)
+		decoded := DecodePostingsList(encoded)
+		assert.Equal(t, arr, decoded)
+	})
 }
 
 func TestRunLengthEncoding(t *testing.T) {

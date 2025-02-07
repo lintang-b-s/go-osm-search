@@ -168,6 +168,7 @@ func (rt *Rtree) InsertR(bound RtreeBoundingBox, leaf OSMObject) {
 			Items:  make([]*RtreeNode, 0, rt.MaxChildItems),
 		}
 	}
+	leaf.SetBound(bound)
 	newLeaf := &RtreeNode{}
 	newLeaf.Bound = bound
 	newLeaf.Leaf = leaf
@@ -554,20 +555,25 @@ func (p Point) minDist(r RtreeBoundingBox) float64 {
 		rLon = p.Lon
 	}
 
-	sum += euclideanDistance(p.Lat, p.Lon, rLat, rLon)
+	sum += euclidianDistanceEquiRectangularAprox(p.Lat, p.Lon, rLat, rLon)
 
 	return sum
 }
 
 type OSMObject struct {
-	ID  int
-	Lat float64
-	Lon float64
-	Tag map[int]int
+	ID    int
+	Lat   float64
+	Lon   float64
+	Tag   map[int]int
+	Bound RtreeBoundingBox
 }
 
 func (o *OSMObject) GetBound() RtreeBoundingBox {
-	return NewRtreeBoundingBox(2, []float64{o.Lat - 0.0001, o.Lon - 0.0001}, []float64{o.Lat + 0.0001, o.Lon + 0.0001})
+	return o.Bound
+}
+
+func (o *OSMObject) SetBound(bb RtreeBoundingBox) {
+	o.Bound = bb
 }
 
 func (o *OSMObject) isLeafNode() bool {
@@ -608,17 +614,22 @@ func (rt *Rtree) NearestNeighboursRadiusFilterOSM(k, offfset int, p Point, maxRa
 
 	rt.nearestNeigboursPQ(p, callback)
 
-	for i := len(nearestLists) - 1; i >= 0; i-- {
-		if _, ok := nearestLists[i].Tag[osmFeature]; !ok {
-			nearestLists = append(nearestLists[:i], nearestLists[i+1:]...)
+	c := 0
+
+	for i, n := range nearestLists {
+		if _, ok := n.Tag[osmFeature]; ok {
+			nearestLists[c] = nearestLists[i]
+			c++
 		}
 	}
+
+	nearestLists = nearestLists[:c]
 
 	if len(nearestLists) > offfset {
 		nearestLists = nearestLists[offfset:]
 	}
 
-	if len(nearestLists) > k {	
+	if len(nearestLists) > k {
 		nearestLists = nearestLists[:k]
 	}
 
@@ -648,7 +659,7 @@ func (rt *Rtree) nearestNeigboursPQ(p Point, callback func(OSMObject) bool) {
 			distToElement := p.minDist(element.Item.GetBound())
 
 			for _, item := range element.Item.(*RtreeNode).Items {
-				distToObject := euclideanDistance(p.Lat, p.Lon, item.Leaf.Lat, item.Leaf.Lon)
+				distToObject := euclidianDistanceEquiRectangularAprox(p.Lat, p.Lon, item.Leaf.Lat, item.Leaf.Lon)
 
 				if distToObject >= distToElement {
 					pq.Insert(NewPriorityQueueNodeRtree2(distToObject, &item.Leaf))
@@ -674,9 +685,20 @@ func (rt *Rtree) nearestNeighbor(p Point) (OSMObject, float64) {
 	nearest := OSMObject{}
 	pq := NewMinHeap()
 
+	bestDist := math.Inf(1)
+
+	if rt.Root.isLeafNode() {
+		for _, leafData := range rt.Root.Items {
+			dist := euclidianDistanceEquiRectangularAprox(p.Lat, p.Lon, leafData.Leaf.Lat, leafData.Leaf.Lon)
+			if dist < bestDist {
+				bestDist = dist
+				nearest = leafData.Leaf
+			}
+		}
+	}
+
 	pq.Insert(NewPriorityQueueNodeRtree2(p.minDist(rt.Root.GetBound()), rt.Root))
 
-	bestDist := math.Inf(1)
 	smallestMinDist, _ := pq.GetMin()
 	for bestDist > smallestMinDist.Rank {
 		currR, ok := pq.ExtractMin()
@@ -688,7 +710,7 @@ func (rt *Rtree) nearestNeighbor(p Point) (OSMObject, float64) {
 				pq.Insert(NewPriorityQueueNodeRtree2(p.minDist(item.GetBound()), item))
 			} else {
 				for _, leafData := range item.Items {
-					dist := euclideanDistance(p.Lat, p.Lon, leafData.Leaf.Lat, leafData.Leaf.Lon)
+					dist := euclidianDistanceEquiRectangularAprox(p.Lat, p.Lon, leafData.Leaf.Lat, leafData.Leaf.Lon)
 					if dist < bestDist {
 						bestDist = dist
 						nearest = leafData.Leaf
@@ -709,6 +731,7 @@ func SerializeRtreeData(workingDir string, outputDir string, items []OSMObject) 
 
 	buf := new(bytes.Buffer)
 	enc := gob.NewEncoder(buf)
+
 	err := enc.Encode(items)
 	if err != nil {
 		return err
@@ -768,6 +791,7 @@ func (rt *Rtree) Deserialize(workingDir string, outputDir string) error {
 	}
 
 	for _, item := range items {
+
 		rt.InsertR(item.GetBound(), item)
 	}
 

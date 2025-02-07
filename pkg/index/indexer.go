@@ -489,6 +489,10 @@ func (Idx *DynamicIndex) SpimiBatchIndex(ctx context.Context, osmSpatialIdx geo.
 		fmt.Println("")
 	}
 
+	for i :=0; i < len(osmData); i++ {
+		osmData[i].SetBound(datastructure.NewRtreeBoundingBox(2, 
+			[]float64{osmData[i].Lat-0.0001, osmData[i].Lon-0.0001}, []float64{osmData[i].Lat+0.0001, osmData[i].Lon+0.0001}))
+	}
 	err := datastructure.SerializeRtreeData(Idx.workingDir, Idx.outputDir, osmData)
 	if err != nil {
 		return nil, err

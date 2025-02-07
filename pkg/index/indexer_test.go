@@ -807,7 +807,9 @@ func TestGetFullAdress(t *testing.T) {
 	t.Run("Test Get Full Address", func(t *testing.T) {
 		for _, c := range cases {
 			for _, street := range streets {
-				streetRtree.InsertR(street.place.GetBound(), street.place)
+				bound := datastructure.NewRtreeBoundingBox(2, []float64{street.place.Lat - 0.0001, street.place.Lon - 0.0001}, []float64{street.place.Lat + 0.0001, street.place.Lon + 0.0001})
+
+				streetRtree.InsertR(bound, street.place)
 			}
 
 			for _, kelurahan := range kelurahans {

@@ -21,10 +21,14 @@ func HaversineDistance(latOne, longOne, latTwo, longTwo float64) float64 {
 	latTwo = degreeToRadians(latTwo)
 	longTwo = degreeToRadians(longTwo)
 
-	dist := 2.0 * math.Asin(math.Sqrt(havFunction(latOne-latTwo)+math.Cos(latOne)*math.Cos(latTwo)*havFunction(longOne-longTwo)))
-	return earthRadiusKM * dist
+	a := havFunction(latOne-latTwo)+math.Cos(latOne)*math.Cos(latTwo)*havFunction(longOne-longTwo)
+	c := 2.0 * math.Asin(math.Sqrt(a))
+	return earthRadiusKM * c
 }
 
-func euclideanDistance(latOne, longOne, latTwo, longTwo float64) float64 {
-	return math.Sqrt((latOne-latTwo)*(latOne-latTwo) + (longOne-longTwo)*(longOne-longTwo))
+// https://www.movable-type.co.uk/scripts/latlong.html (Equirectangular approximation)
+func euclidianDistanceEquiRectangularAprox(latOne, longOne, latTwo, longTwo float64) float64 {
+	x := (longTwo - longOne) * math.Cos((latOne+latTwo)/2)
+	y := latTwo - latOne
+	return math.Sqrt(x*x + y*y) * earthRadiusKM
 }

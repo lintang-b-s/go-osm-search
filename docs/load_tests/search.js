@@ -10,7 +10,9 @@ export const options = {
 export default () => {
   const reqBody = {
   "query": "Kebun Binatang Ragunan",
-    "top_k": 10
+    "top_k": 10,
+    "lat": -6.303057,
+    "lon": 106.827039,
   };
 
   const res = http.request(

@@ -11,6 +11,9 @@ export const options = {
 export default () => {
   const reqBody = {
   "query": "Taman Min",
+    "top_k": 10,
+    "lat": -6.303057,
+    "lon": 106.827039,
   };
 
   const res = http.get(

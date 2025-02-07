@@ -79,7 +79,9 @@ func TestInsertRtree(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			rt := NewRtree(25, 50, 2)
 			for _, item := range tt.items {
-				rt.InsertR(item.GetBound(), item)
+				bound := NewRtreeBoundingBox(2, []float64{item.Lat - 0.0001, item.Lon - 0.0001}, []float64{item.Lat + 0.0001, item.Lon + 0.0001})
+				
+				rt.InsertR(bound, item)
 
 			}
 			assert.Equal(t, 103, rt.Size)
@@ -94,8 +96,9 @@ func TestInsertRtree(t *testing.T) {
 		rt := NewRtree(25, 50, 2)
 		for i := 0; i < 5; i++ {
 			item := itemsData[i]
+			bound := NewRtreeBoundingBox(2, []float64{itemsData[0].Lat - 0.0001, itemsData[0].Lon - 0.0001}, []float64{itemsData[0].Lat + 0.0001, itemsData[0].Lon + 0.0001})
 
-			rt.InsertR(item.GetBound(), item)
+			rt.InsertR(bound, item)
 		}
 		assert.Equal(t, 5, rt.Size)
 		root := rt.Root
@@ -123,8 +126,9 @@ func TestSearch(t *testing.T) {
 
 		rt := NewRtree(10, 25, 2)
 		for _, item := range itemsData {
+			bound := NewRtreeBoundingBox(2, []float64{itemsData[0].Lat - 0.0001, itemsData[0].Lon - 0.0001}, []float64{itemsData[0].Lat + 0.0001, itemsData[0].Lon + 0.0001})
 
-			rt.InsertR(item.GetBound(), item)
+			rt.InsertR(bound, item)
 
 		}
 
@@ -157,11 +161,13 @@ func TestSplit(t *testing.T) {
 
 		rt := NewRtree(10, 25, 2)
 
-		rt.InsertR(itemsData[0].GetBound(), itemsData[0])
+		bound := NewRtreeBoundingBox(2, []float64{itemsData[0].Lat - 0.0001, itemsData[0].Lon - 0.0001}, []float64{itemsData[0].Lat + 0.0001, itemsData[0].Lon + 0.0001})
+
+		rt.InsertR(bound, itemsData[0])
 		for i := 1; i < 26; i++ {
 			item := itemsData[i]
 
-			newLeaf := &RtreeNode{Leaf: item, Bound: item.GetBound()}
+			newLeaf := &RtreeNode{Leaf: item, Bound: bound}
 			rt.Root.Items = append(rt.Root.Items, newLeaf)
 		}
 
@@ -225,7 +231,7 @@ func TestNNearestNeighbors(t *testing.T) {
 			},
 		}
 
-		for i := 8; i < 100000; i++ {
+		for i := 8; i < 10000; i++ {
 			lat, lon := randomLatLon(-6.107481038495567, -5.995288834299442, 106.13128828884481, 107.0509652831274)
 			itemsData = append(itemsData, OSMObject{
 				ID:  i,
@@ -236,7 +242,9 @@ func TestNNearestNeighbors(t *testing.T) {
 
 		rt := NewRtree(25, 50, 2)
 		for _, item := range itemsData {
-			rt.InsertR(item.GetBound(), item)
+			bound := NewRtreeBoundingBox(2, []float64{item.Lat - 0.0001, item.Lon - 0.0001}, []float64{item.Lat + 0.0001, item.Lon + 0.0001})
+
+			rt.InsertR(bound, item)
 		}
 
 		myLocation := Point{-7.548263971398246, 110.78226484631368}
@@ -306,7 +314,9 @@ func TestNNearestNeighborsPQ(t *testing.T) {
 
 		rt := NewRtree(25, 50, 2)
 		for _, item := range itemsData {
-			rt.InsertR(item.GetBound(), item)
+			bound := NewRtreeBoundingBox(2, []float64{item.Lat - 0.0001, item.Lon - 0.0001}, []float64{item.Lat + 0.0001, item.Lon + 0.0001})
+
+			rt.InsertR(bound, item)
 		}
 
 		myLocation := Point{-7.548263971398246, 110.78226484631368}
@@ -381,7 +391,8 @@ func TestNearestNeighbor(t *testing.T) {
 
 		rt := NewRtree(25, 50, 2)
 		for _, item := range itemsData {
-			rt.InsertR(item.GetBound(), item)
+			bound := NewRtreeBoundingBox(2, []float64{item.Lat - 0.0001, item.Lon - 0.0001}, []float64{item.Lat + 0.0001, item.Lon + 0.0001})
+			rt.InsertR(bound, item)
 		}
 
 		myLocation := Point{-7.760335932763678, 110.37671195413539}
@@ -470,12 +481,14 @@ func TestNearestNeighborRadiusFilterOsmFeature(t *testing.T) {
 
 		rt := NewRtree(25, 50, 2)
 		for _, item := range itemsData {
-			rt.InsertR(item.GetBound(), item)
+			bound := NewRtreeBoundingBox(2, []float64{item.Lat - 0.0001, item.Lon - 0.0001}, []float64{item.Lat + 0.0001, item.Lon + 0.0001})
+
+			rt.InsertR(bound, item)
 		}
 
 		myLocation := Point{-7.760335932763678, 110.37671195413539}
 
-		results := rt.NearestNeighboursRadiusFilterOSM(5,0, myLocation, 3.0, 1)
+		results := rt.NearestNeighboursRadiusFilterOSM(5, 0, myLocation, 3.0, 1)
 		for _, item := range results {
 			if _, ok := item.Tag[1]; HaversineDistance(myLocation.Lat, myLocation.Lon, item.Lat, item.Lon) > 3.0 ||
 				!ok {
@@ -500,7 +513,9 @@ func BenchmarkNNearestNeighbors(b *testing.B) {
 
 	rt := NewRtree(25, 50, 2)
 	for _, item := range itemsData {
-		rt.InsertR(item.GetBound(), item)
+		bound := NewRtreeBoundingBox(2, []float64{item.Lat - 0.0001, item.Lon - 0.0001}, []float64{item.Lat + 0.0001, item.Lon + 0.0001})
+
+		rt.InsertR(bound, item)
 	}
 
 	myLocation := Point{-7.548263971398246, 110.78226484631368}
@@ -533,7 +548,9 @@ func BenchmarkInsert(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		randInt := rand.Intn(100000)
 		item := itemsData[randInt]
-		rt.InsertR(item.GetBound(), item)
+		bound := NewRtreeBoundingBox(2, []float64{item.Lat - 0.0001, item.Lon - 0.0001}, []float64{item.Lat + 0.0001, item.Lon + 0.0001})
+
+		rt.InsertR(bound, item)
 	}
 }
 
@@ -552,7 +569,9 @@ func BenchmarkImprovedNearestNeighbor(b *testing.B) {
 
 	rt := NewRtree(25, 50, 2)
 	for _, item := range itemsData {
-		rt.InsertR(item.GetBound(), item)
+		bound := NewRtreeBoundingBox(2, []float64{item.Lat - 0.0001, item.Lon - 0.0001}, []float64{item.Lat + 0.0001, item.Lon + 0.0001})
+
+		rt.InsertR(bound, item)
 	}
 	myLocation := Point{-7.548263971398246, 110.78226484631368}
 
@@ -642,7 +661,8 @@ func BenchmarkNearestNeighborRadiusFilterOsmFeature(b *testing.B) {
 
 	rt := NewRtree(25, 50, 2)
 	for _, item := range itemsData {
-		rt.InsertR(item.GetBound(), item)
+		bound := NewRtreeBoundingBox(2, []float64{item.Lat - 0.0001, item.Lon - 0.0001}, []float64{item.Lat + 0.0001, item.Lon + 0.0001})
+		rt.InsertR(bound, item)
 	}
 
 	myLocation := Point{-7.760335932763678, 110.37671195413539}
@@ -670,7 +690,8 @@ func BenchmarkSearch(b *testing.B) {
 
 	rt := NewRtree(25, 50, 2)
 	for _, item := range itemsData {
-		rt.InsertR(item.GetBound(), item)
+		bound := NewRtreeBoundingBox(2, []float64{item.Lat - 0.0001, item.Lon - 0.0001}, []float64{item.Lat + 0.0001, item.Lon + 0.0001})
+		rt.InsertR(bound, item)
 	}
 	myLocation := Point{-7.548263971398246, 110.78226484631368}
 

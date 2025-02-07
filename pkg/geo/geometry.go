@@ -2,6 +2,10 @@ package geo
 
 import "math"
 
+const (
+	earthRadiusKM = 6371.0
+)
+
 type BoundingBox struct {
 	min, max []float64 // lat, lon
 }
@@ -145,3 +149,23 @@ func windingNumber(pLat, pLon float64, polygonLat, polygonLon []float64) (wn int
 func IsPointInsidePolygonWindingNum(pLat, pLon float64, polygonLat, polygonLon []float64) bool {
 	return windingNumber(pLat, pLon, polygonLat, polygonLon) != 0
 }
+
+
+// Given a start point, initial bearing, and distance, this will calculate the destina­tion point and final bearing travelling along a (shortest distance) great circle arc.
+func GetDestinationPoint(lat1, lon1 float64, bearing float64, distance float64) (float64, float64) {
+	lat1 = degToRad(lat1)
+	lon1 = degToRad(lon1)
+	bearing = degToRad(bearing)
+
+	dLat := math.Asin(math.Sin(lat1)*math.Cos(distance/earthRadiusKM) +
+		math.Cos(lat1) + math.Sin(distance/earthRadiusKM)*math.Cos(bearing))
+
+	dLon := lon1 + math.Atan2(math.Sin(bearing)*math.Sin(distance/earthRadiusKM)*
+		math.Cos(lat1), math.Cos(distance/earthRadiusKM)-math.Sin(lat1)*math.Sin(dLat))
+
+	dLon = math.Mod(dLon+3*math.Pi, 2*math.Pi) - math.Pi
+	return radToDeg(dLat), radToDeg(dLon)
+}
+
+
+// TODO: Geofence pake circle
