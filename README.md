@@ -1,5 +1,5 @@
 # osm-search
-Openstreetmap Full Text Search Engine (support Autocomplete & Spell Corrector Up to 2 Edit Distance per-word), Reverse Geocoder, Nearest Places without any external API/external database. Search Engine by default uses BM25F as the ranking function. The nearest neighbours query uses the R-tree data structure.
+Openstreetmap Full Text Search Engine (support Autocomplete & Spell Corrector Up to 2 Edit Distance per-word), Reverse Geocoder, Nearby Places without any external API/external database. Search Engine by default uses BM25F as the ranking function. The nearest neighbours query uses the R-tree data structure.
 
 # Quick Start
 ## Indexing
@@ -51,7 +51,7 @@ curl --location --request GET 'http://localhost:6060/api/autocomplete' \
 curl --location 'http://localhost:6060/api/reverse?lat=-6.179842&lon=106.749864'
 ```
 
-### Nearest places With a Specific Openstreetmap Tag and Within a Specific Radius
+### Nearby places With a Specific Openstreetmap Tag and Within a Specific Radius
 ```
 curl --location 'http://localhost:6060/api/places?lat=-6.179842&lon=106.749864&feature=amenity=restaurant&k=10&offset=2&radius=3'
 ```
@@ -60,33 +60,33 @@ curl --location 'http://localhost:6060/api/places?lat=-6.179842&lon=106.749864&f
 
 
 
-## Appendix
-### Data Race Detection
+
+
+### Appendix
+#### Data Race Detection
 
 ```
  go build  -race  -o ./bin/osm-search-indexer ./cmd/indexing
  go build -race  -o ./bin/osm-search-server ./cmd/server
  go test -race ./cmd/indexing/
-go test -race ./cmd/server/
 
 
 ```
 
-### Goroutine Leak Detection
+#### Goroutine Leak Detection
 (using https://github.com/uber-go/goleak)
 ```
 go test -race ./cmd/indexing/
-go test -race ./cmd/server/
 ```
 
-### Heap Escape Analysis
+#### Heap Escape Analysis
 
 ```
 go build -gcflags "-m"  ./cmd/indexing/main.go
 go build -gcflags "-m"  ./cmd/server/main.go
 ```
 
-### pprof 
+#### pprof 
 
 ```
 (pprof indexer): ./bin/osm-search-indexer -f "jabodetabek_big.osm.pbf" -cpuprofile=osmsearchcpu.prof -memprofile=osmsearchmem.mprof
@@ -106,7 +106,7 @@ go tool pprof [binary] [file_name].mprof
 
 command (open pprof cpu/heap) example:
 go  tool pprof ./bin/osm-search-indexer  osmsearchcpu.prof
-go  tool pprof ./bin/osm-search-indexer  osmsearchmem.mprof
+go  tool pprof ./bin/osm-search-indexer  osmsearchmem_indexing.mprof
 
 go tool pprof pkg.test prof.cpu
 
@@ -151,9 +151,13 @@ or
 go tool pprof  go-osm-search-server-profile
 top10
 list [functionName]
+
+go tool pprof -alloc_space http://localhost:6060/debug/pprof/heap
+go tool pprof -http=":8081" -alloc_space http://localhost:6060/debug/pprof/heap
+
 ```
 
-### Simple K6 Load Test
+#### Simple K6 Load Test
 ```
 
 1. go build -o ./bin/osm-search-server ./cmd/server 

@@ -32,3 +32,4 @@ go-osm-search-server-profile
 
 main
 
+*.out

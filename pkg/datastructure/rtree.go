@@ -617,9 +617,8 @@ func (rt *Rtree) NearestNeighboursRadiusFilterOSM(k, offfset int, p Point, maxRa
 	callback := func(n OSMObject) bool {
 		nearestLists = append(nearestLists, n)
 
-		last := nearestLists[len(nearestLists)-1]
 
-		return HaversineDistance(p.Lat, p.Lon, last.Lat, last.Lon) <= maxRadius
+		return HaversineDistance(p.Lat, p.Lon, n.Lat, n.Lon) <= maxRadius
 	}
 
 	rt.nearestNeigboursPQ(p, callback)
@@ -662,6 +661,7 @@ func (rt *Rtree) nearestNeigboursPQ(p Point, callback func(OSMObject) bool) {
 			for element == first {
 				first, _ = pq.ExtractMin()
 			}
+			
 			if !callback(*element.Item.(*OSMObject)) {
 				return
 			}

@@ -498,6 +498,8 @@ func TestNearestNeighborRadiusFilterOsmFeature(t *testing.T) {
 	})
 }
 
+//go test  . -bench=[nama_benchmark] -v -benchmem -cpuprofile=cpu.out 
+
 func BenchmarkNNearestNeighbors(b *testing.B) {
 	itemsData := []OSMObject{}
 
@@ -526,6 +528,10 @@ func BenchmarkNNearestNeighbors(b *testing.B) {
 		rt.NearestNeighboursPQ(5, myLocation)
 	}
 
+	b.StopTimer()
+	throughput := float64(b.N) / b.Elapsed().Seconds()
+	b.ReportMetric(throughput, "ops/sec")
+
 }
 
 func BenchmarkInsert(b *testing.B) {
@@ -552,8 +558,15 @@ func BenchmarkInsert(b *testing.B) {
 
 		rt.InsertR(bound, item)
 	}
+	b.StopTimer()
+	throughput := float64(b.N) / b.Elapsed().Seconds()
+	b.ReportMetric(throughput, "ops/sec")
 }
 
+// go test  . -bench=BenchmarkImprovedNearestNeighbor -v -benchmem -cpuprofile=cpu.out 
+// go tool pprof cpu.out
+// ketika pakai equirectangularAprox:       40ms      880ms    723:                                   dist := euclidianDistanceEquiRectangularAprox(p.Lat, p.Lon, leafData.Leaf.Lat, leafData.Leaf.Lon)
+// 
 func BenchmarkImprovedNearestNeighbor(b *testing.B) {
 	itemsData := []OSMObject{}
 
@@ -580,6 +593,11 @@ func BenchmarkImprovedNearestNeighbor(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		rt.ImprovedNearestNeighbor(myLocation)
 	}
+
+
+	b.StopTimer()
+	throughput := float64(b.N) / b.Elapsed().Seconds()
+	b.ReportMetric(throughput, "ops/sec")
 }
 
 func BenchmarkNearestNeighborRadiusFilterOsmFeature(b *testing.B) {
@@ -673,6 +691,11 @@ func BenchmarkNearestNeighborRadiusFilterOsmFeature(b *testing.B) {
 
 	}
 
+
+	b.StopTimer()
+	throughput := float64(b.N) / b.Elapsed().Seconds()
+	b.ReportMetric(throughput, "ops/sec")
+
 }
 
 func BenchmarkSearch(b *testing.B) {
@@ -700,4 +723,8 @@ func BenchmarkSearch(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		rt.Search(NewRtreeBoundingBox(2, []float64{myLocation.Lat - 0.0001, myLocation.Lon - 0.0001}, []float64{myLocation.Lat + 0.0001, myLocation.Lon + 0.0001}))
 	}
+
+	b.StopTimer()
+	throughput := float64(b.N) / b.Elapsed().Seconds()
+	b.ReportMetric(throughput, "ops/sec")
 }

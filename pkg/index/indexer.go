@@ -809,9 +809,8 @@ func (Idx *DynamicIndex) SpimiParseOSMNode(node datastructure.Node, lenDF map[in
 	lenDF[node.ID] = len(words)
 
 	for _, word := range words {
-		tokenizedWord := pkg.Stemmer.Stem(word)
 		lock.Lock()
-		termID := Idx.TermIDMap.GetID(tokenizedWord)
+		termID := Idx.TermIDMap.GetID(word)
 		lock.Unlock()
 		pair := []int{termID, node.ID}
 		termDocPairs = append(termDocPairs, pair)
@@ -865,12 +864,8 @@ func (Idx *DynamicIndex) BuildSpellCorrectorAndNgram(ctx context.Context, allSea
 		soup := node.Name + " " + node.Address
 
 		tokenized := sastrawi.Tokenize(soup)
-		stemmedTokens := []string{}
-		for _, token := range tokenized {
-			stemmedToken := pkg.Stemmer.Stem(token)
-			stemmedTokens = append(stemmedTokens, stemmedToken)
-		}
-		tokenizedDocs = append(tokenizedDocs, stemmedTokens)
+
+		tokenizedDocs = append(tokenizedDocs, tokenized)
 	}
 	log.Printf("building ngram (1/2): tokeninzing & stemming all osm objects name+address field done \n")
 

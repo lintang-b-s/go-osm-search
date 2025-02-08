@@ -164,8 +164,7 @@ func (se *Searcher) FreeFormQuery(query string, k, offset int) ([]datastructure.
 
 	queryWordCount := make(map[int]int, len(queryTerms))
 
-	for i, term := range queryTerms {
-		tokenizedTerm := pkg.Stemmer.Stem(term)
+	for i, tokenizedTerm := range queryTerms {
 		isInVocab := se.TermIDMap.IsInVocabulary(tokenizedTerm)
 
 		if !isInVocab {
@@ -415,9 +414,7 @@ func (se *Searcher) Autocomplete(query string, k, offset int) ([]datastructure.N
 	allPossibleQueryTerms := make([][]int, len(queryTerms))
 	originalQueryTerms := make([]int, 0, len(queryTerms))
 
-	for i, term := range queryTerms {
-		tokenizedTerm := pkg.Stemmer.Stem(term)
-		// isInVocab := se.TermIDMap.IsInVocabulary(tokenizedTerm)
+	for i, tokenizedTerm := range queryTerms {
 
 		originalQueryTerms = append(originalQueryTerms, se.TermIDMap.GetID(tokenizedTerm))
 
@@ -472,11 +469,8 @@ func (se *Searcher) Autocomplete(query string, k, offset int) ([]datastructure.N
 
 		scoredDocs := se.scoreBM25FAutocomplete(allPostings, queryTerms, docIDsRes)
 
-		// relDocIDs = append(relDocIDs, docIDsRes...)
+		relDocIDs = append(relDocIDs, scoredDocs...)
 
-		for _, doc := range scoredDocs {
-			relDocIDs = append(relDocIDs, doc)
-		}
 	}
 
 	relevantDocs := make([]datastructure.Node, 0, len(relDocIDs))

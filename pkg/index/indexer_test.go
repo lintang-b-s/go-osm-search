@@ -69,7 +69,7 @@ func TestSpimiParseOSMNode(t *testing.T) {
 			if err != nil {
 				t.Errorf("Error creating new dynamic index: %v", err)
 			}
-			results := spimi.SpimiParseOSMNode(c.inputNodes, c.lenDF, &sync.Mutex{}, c.field)
+			results := spimi.SpimiParseOSMNode(c.inputNodes, c.lenDF, &sync.RWMutex{}, c.field)
 			assert.Equal(t, c.expectedPairs, results)
 			assert.Equal(t, 1, len(c.lenDF))
 			assert.Equal(t, 16, c.lenDF[1])
@@ -122,7 +122,7 @@ func TestSpimiParseOSMNodes(t *testing.T) {
 			if err != nil {
 				t.Errorf("Error creating new dynamic index: %v", err)
 			}
-			results := spimi.SpimiParseOSMNodes(c.inputNodes, &sync.Mutex{}, c.field, c.lenDF, context.Background())
+			results := spimi.SpimiParseOSMNodes(c.inputNodes, &sync.RWMutex{}, c.field, c.lenDF, context.Background())
 			assert.Equal(t, c.expectedPairs, results)
 			assert.Equal(t, 5, len(c.lenDF))
 			assert.Equal(t, 3, c.lenDF[1])
@@ -179,7 +179,7 @@ func TestSpimiInvert(t *testing.T) {
 				t.Errorf("Error creating new dynamic index: %v", err)
 			}
 			block := 0
-			errResults := spimi.SpimiInvert(c.inputNodes, &block, &sync.Mutex{}, c.field, context.TODO())
+			errResults := spimi.SpimiInvert(c.inputNodes, &block, &sync.RWMutex{}, c.field, context.TODO())
 			assert.Nil(t, errResults)
 
 			indexID := spimi.intermediateIndices[0]
@@ -271,10 +271,10 @@ func TestSpimiMerge(t *testing.T) {
 				t.Errorf("Error creating new dynamic index: %v", err)
 			}
 			block := 0
-			errResults := spimi.SpimiInvert(c.inputNodesIndexOne, &block, &sync.Mutex{}, c.field, context.TODO())
+			errResults := spimi.SpimiInvert(c.inputNodesIndexOne, &block, &sync.RWMutex{}, c.field, context.TODO())
 			assert.Nil(t, errResults)
 
-			errResults = spimi.SpimiInvert(c.inputNodesIndexTwo, &block, &sync.Mutex{}, c.field, context.TODO())
+			errResults = spimi.SpimiInvert(c.inputNodesIndexTwo, &block, &sync.RWMutex{}, c.field, context.TODO())
 			assert.Nil(t, errResults)
 
 			indexIDOne := spimi.intermediateIndices[0]
@@ -375,10 +375,10 @@ func TestMergeFieldLength(t *testing.T) {
 				t.Errorf("Error creating new dynamic index: %v", err)
 			}
 			block := 0
-			errResults := spimi.SpimiInvert(c.inputNodesIndexOne, &block, &sync.Mutex{}, c.field, context.TODO())
+			errResults := spimi.SpimiInvert(c.inputNodesIndexOne, &block, &sync.RWMutex{}, c.field, context.TODO())
 			assert.Nil(t, errResults)
 
-			errResults = spimi.SpimiInvert(c.inputNodesIndexTwo, &block, &sync.Mutex{}, c.field, context.TODO())
+			errResults = spimi.SpimiInvert(c.inputNodesIndexTwo, &block, &sync.RWMutex{}, c.field, context.TODO())
 			assert.Nil(t, errResults)
 
 			indexIDOne := spimi.intermediateIndices[0]
