@@ -3,6 +3,7 @@ package kvdb
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"math"
 	"strconv"
@@ -13,8 +14,13 @@ import (
 	"go.etcd.io/bbolt"
 )
 
+var (
+	ErrorsKeyNotExists = errors.New("key not exists")
+)
+
 const (
-	BBOLTDB_BUCKET = "osmSearch"
+	BBOLTDB_BUCKET          = "osmSearch"
+	BBOLTDB_GEOFENCE_BUCKET = "geofence"
 )
 
 type KVDB struct {
@@ -100,6 +106,36 @@ func (db *KVDB) GetDoc(id int) (node datastructure.Node, err error) {
 	return
 }
 
+func (db *KVDB) PutFencePoint(point datastructure.FencePoint) error {
+	return db.db.Update(func(tx *bbolt.Tx) error {
+		nodeBytes, err := serializePoint(point)
+		if err != nil {
+			return err
+		}
+		b := tx.Bucket([]byte(BBOLTDB_GEOFENCE_BUCKET))
+		err = b.Put([]byte(strconv.Itoa(int(point.ID))), nodeBytes)
+		if err != nil {
+			return err
+		}
+		return nil // harus return nil , kalau return err kena rollback txn-nya
+	})
+}
+
+func (db *KVDB) GetFencePoint(id uint32) (point datastructure.FencePoint, err error) {
+
+	db.db.View(func(tx *bbolt.Tx) error {
+		b := tx.Bucket([]byte(BBOLTDB_GEOFENCE_BUCKET))
+		nodeBytes := b.Get([]byte(strconv.Itoa(int(id))))
+		if nodeBytes == nil {
+			err = ErrorsKeyNotExists
+			return nil
+		}
+		point, err = deserializePoint(nodeBytes)
+		return nil
+	})
+	return
+}
+
 func GetFloat(bb *bytes.Buffer, offset int) float64 {
 	return math.Float64frombits(binary.LittleEndian.Uint64(bb.Bytes()[offset:]))
 }
@@ -112,9 +148,17 @@ func GetInt(bb *bytes.Buffer, offset int) int {
 	return int(binary.LittleEndian.Uint32(bb.Bytes()[offset:]))
 }
 
+func GetUint32(bb *bytes.Buffer, offset int) uint32 {
+	return binary.LittleEndian.Uint32(bb.Bytes()[offset:])
+}
+
 // PutInt. set int ke byte array page di posisi = offset.
 func PutInt(bb *bytes.Buffer, offset int, val int) {
 	binary.LittleEndian.PutUint32(bb.Bytes()[offset:], uint32(val))
+}
+
+func PutUint32(bb *bytes.Buffer, offset int, val uint32) {
+	binary.LittleEndian.PutUint32(bb.Bytes()[offset:], val)
 }
 
 // GetBytes. return byte array dari byte array page di posisi = offset. di awal ada panjang bytes nya sehingga buat read bytes tinggal baca buffer page[offset+4:offset+4+length]
@@ -198,4 +242,40 @@ func deserializeNode(buf []byte) (datastructure.Node, error) {
 	leftPos += len([]byte(node.Tipe)) + 4
 
 	return node, nil
+}
+
+// serialize deserialize  fence point
+func serializePoint(point datastructure.FencePoint) ([]byte, error) {
+
+	bb := bytes.NewBuffer(make([]byte, 20))
+
+	leftPos := 0
+
+	PutUint32(bb, leftPos, point.ID)
+	leftPos += 4
+
+	PutFloat(bb, leftPos, point.Lat)
+	leftPos += 8
+
+	PutFloat(bb, leftPos, point.Lon)
+	leftPos += 8
+
+	return bb.Bytes(), nil
+}
+
+func deserializePoint(buf []byte) (datastructure.FencePoint, error) {
+	bb := bytes.NewBuffer(buf)
+	point := datastructure.FencePoint{}
+	leftPos := 0
+
+	point.ID = GetUint32(bb, leftPos)
+	leftPos += 4
+
+	point.Lat = GetFloat(bb, leftPos)
+	leftPos += 8
+
+	point.Lon = GetFloat(bb, leftPos)
+	leftPos += 8
+
+	return point, nil
 }

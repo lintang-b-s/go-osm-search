@@ -52,14 +52,26 @@ type SearcherDocStore interface {
 	GetDoc(docID int) (datastructure.Node, error)
 }
 
+type InvertedIndexI interface {
+	Close() error
+	GetPostingList(termID int) ([]int, error)
+	GetLenFieldInDoc() map[int]int
+	GetAverageFieldLength() float64
+}
+
+type RtreeI interface {
+	ImprovedNearestNeighbor(p datastructure.Point) datastructure.OSMObject
+	NearestNeighboursRadiusFilterOSM(k int, offfset int, p datastructure.Point, maxRadius float64, osmFeature int) []datastructure.OSMObject
+}
+
 type Searcher struct {
 	Idx                   DynamicIndexer
-	MainIndexNameField    *index.InvertedIndex
-	MainIndexAddressField *index.InvertedIndex
+	MainIndexNameField    InvertedIndexI
+	MainIndexAddressField InvertedIndexI
 	SpellCorrector        index.SpellCorrectorI
 	TermIDMap             *pkg.IDMap
 	DocStore              SearcherDocStore
-	osmRtree              *datastructure.Rtree
+	osmRtree              RtreeI
 	similiarityScoring    SimiliarityScoring
 }
 
@@ -120,9 +132,14 @@ func (se *Searcher) LoadMainIndex() error {
 	return nil
 }
 
-func (se *Searcher) Close() {
-	se.MainIndexNameField.Close()
-	se.MainIndexAddressField.Close()
+func (se *Searcher) Close() error {
+	err := se.MainIndexNameField.Close()
+	if err != nil {
+		return err
+	}
+
+	err = se.MainIndexAddressField.Close()
+	return err
 }
 
 type DocWithScore struct {
@@ -195,7 +212,7 @@ func (se *Searcher) FreeFormQuery(query string, k, offset int) ([]datastructure.
 		queryWordCount[termID] += 1
 	}
 
-	docWithScores := []DocWithScore{}
+	docWithScores := []int{}
 	switch se.similiarityScoring {
 	case TF_IDF_COSINE:
 		for termID, postings := range allPostingsAddressField {
@@ -219,7 +236,7 @@ func (se *Searcher) FreeFormQuery(query string, k, offset int) ([]datastructure.
 			break
 		}
 
-		doc, err := se.DocStore.GetDoc(docWithScores[i].DocID)
+		doc, err := se.DocStore.GetDoc(docWithScores[i])
 		if err != nil {
 			return []datastructure.Node{}, err
 		}
@@ -229,10 +246,9 @@ func (se *Searcher) FreeFormQuery(query string, k, offset int) ([]datastructure.
 	return relevantDocs, nil
 }
 
-
 // https://trec.nist.gov/pubs/trec13/papers/microsoft-cambridge.web.hard.pdf
 func (se *Searcher) scoreBM25Field(allPostingsNameField map[int][]int,
-	allPostingsAddressField map[int][]int, allQueryTermIDs []int) []DocWithScore {
+	allPostingsAddressField map[int][]int, allQueryTermIDs []int) []int {
 
 	documentScore := make(map[int]float64)
 
@@ -287,21 +303,19 @@ func (se *Searcher) scoreBM25Field(allPostingsNameField map[int][]int,
 
 	}
 
-	docWithScores := make([]DocWithScore, 0, len(documentScore))
-
-	for docID, score := range documentScore {
-		docWithScores = append(docWithScores, DocWithScore{DocID: docID, Score: score})
+	documentIDs := make([]int, 0, len(documentScore))
+	for k := range documentScore {
+		documentIDs = append(documentIDs, k)
 	}
 
-	sort.Slice(docWithScores, func(i, j int) bool {
-		return docWithScores[i].Score > docWithScores[j].Score
+	sort.SliceStable(documentIDs, func(i, j int) bool {
+		return documentScore[documentIDs[i]] > documentScore[documentIDs[j]]
 	})
 
-	return docWithScores
+	return documentIDs
 }
 
-
-func (se *Searcher) scoreBM25Plus(allPostingsField map[int][]int) []DocWithScore {
+func (se *Searcher) scoreBM25Plus(allPostingsField map[int][]int) []int {
 	// param bm25+
 
 	documentScore := make(map[int]float64)
@@ -328,21 +342,20 @@ func (se *Searcher) scoreBM25Plus(allPostingsField map[int][]int) []DocWithScore
 		}
 	}
 
-	docWithScores := make([]DocWithScore, 0, len(documentScore))
-
-	for docID, score := range documentScore {
-		docWithScores = append(docWithScores, DocWithScore{DocID: docID, Score: score})
+	documentIDs := make([]int, 0, len(documentScore))
+	for k := range documentScore {
+		documentIDs = append(documentIDs, k)
 	}
 
-	sort.Slice(docWithScores, func(i, j int) bool {
-		return docWithScores[i].Score > docWithScores[j].Score
+	sort.SliceStable(documentIDs, func(i, j int) bool {
+		return documentScore[documentIDs[i]] > documentScore[documentIDs[j]]
 	})
 
-	return docWithScores
+	return documentIDs
 }
 
 func (se *Searcher) scoreTFIDFCosine(allPostings map[int][]int,
-	queryWordCount map[int]int) []DocWithScore {
+	queryWordCount map[int]int) []int {
 	documentScore := make(map[int]float64) // menyimpan skor cosine tf-idf docs \dot tf-idf query
 
 	docsCount := float64(se.Idx.GetDocsCount())
@@ -375,18 +388,16 @@ func (se *Searcher) scoreTFIDFCosine(allPostings map[int][]int,
 
 	queryNorm = math.Sqrt(queryNorm)
 
-	docWithScores := make([]DocWithScore, 0, len(documentScore))
-	// normalize dengan cara dibagi dengan norm vector query & document
-	for docID, score := range documentScore {
-		documentScore[docID] = score / (queryNorm * math.Sqrt(docNorm[docID]))
-		docWithScores = append(docWithScores, DocWithScore{DocID: docID, Score: documentScore[docID]})
+	documentIDs := make([]int, 0, len(documentScore))
+	for k := range documentScore {
+		documentIDs = append(documentIDs, k)
 	}
 
-	sort.Slice(docWithScores, func(i, j int) bool {
-		return docWithScores[i].Score > docWithScores[j].Score
+	sort.SliceStable(documentIDs, func(i, j int) bool {
+		return documentScore[documentIDs[i]] > documentScore[documentIDs[j]]
 	})
 
-	return docWithScores
+	return documentIDs
 }
 
 func (se *Searcher) Autocomplete(query string, k, offset int) ([]datastructure.Node, error) {
@@ -464,7 +475,7 @@ func (se *Searcher) Autocomplete(query string, k, offset int) ([]datastructure.N
 		// relDocIDs = append(relDocIDs, docIDsRes...)
 
 		for _, doc := range scoredDocs {
-			relDocIDs = append(relDocIDs, doc.DocID)
+			relDocIDs = append(relDocIDs, doc)
 		}
 	}
 
@@ -486,7 +497,7 @@ func (se *Searcher) Autocomplete(query string, k, offset int) ([]datastructure.N
 }
 
 func (se *Searcher) scoreBM25FAutocomplete(allPostings map[int][]int, queryTermIDs []int,
-	intersectedDocIDs []int) []DocWithScore {
+	intersectedDocIDs []int) []int {
 
 	documentScore := make(map[int]float64)
 
@@ -514,17 +525,16 @@ func (se *Searcher) scoreBM25FAutocomplete(allPostings map[int][]int, queryTermI
 		}
 	}
 
-	docWithScores := make([]DocWithScore, 0, len(documentScore))
-
-	for docID, score := range documentScore {
-		docWithScores = append(docWithScores, DocWithScore{DocID: docID, Score: score})
+	documentIDs := make([]int, 0, len(documentScore))
+	for k := range documentScore {
+		documentIDs = append(documentIDs, k)
 	}
 
-	sort.Slice(docWithScores, func(i, j int) bool {
-		return docWithScores[i].Score > docWithScores[j].Score
+	sort.SliceStable(documentIDs, func(i, j int) bool {
+		return documentScore[documentIDs[i]] > documentScore[documentIDs[j]]
 	})
 
-	return docWithScores
+	return documentIDs
 }
 
 type Deque struct {

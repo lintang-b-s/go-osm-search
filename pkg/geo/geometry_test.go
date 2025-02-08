@@ -41,17 +41,6 @@ func TestIsPointInsidePolygon(t *testing.T) {
 		assert.False(t, contain)
 	})
 
-	t.Run("point inside polygon", func(t *testing.T) {
-		point := []float64{-7.786841015007818, 110.35482068177964}
-		isInside := IsPointInsidePolygonWindingNum(point[0], point[1], plLat, plLon)
-		assert.True(t, isInside)
-	})
-
-	t.Run("point outside polygon", func(t *testing.T) {
-		point := []float64{-7.709038594647804, 110.5904486305967}
-		isInside := IsPointInsidePolygonWindingNum(point[0], point[1], plLat, plLon)
-		assert.False(t, isInside)
-	})
 
 	
 }

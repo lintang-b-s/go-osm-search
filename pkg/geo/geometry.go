@@ -83,73 +83,43 @@ func radToDeg(r float64) float64 {
 	return 180.0 * r / math.Pi
 }
 
-// https://www.eecs.umich.edu/courses/eecs380/HANDOUTS/PROJ2/InsidePoly.html
-func IsPointInPolygon(pointLat, pointLon float64, polygonLat, polygonLon []float64) bool {
-	numVertices := len(polygonLat)
-	lon := pointLon
-	lat := pointLat
-	counter := 0
-
-	p1Lat, p1Lon := polygonLat[0], polygonLon[0]
-	var p2Lat, p2Lon float64
-
-	// loop throught each edge
-	for i := 1; i <= numVertices; i++ {
-		// get next point
-		p2Lat, p2Lon = polygonLat[i%numVertices], polygonLon[i%numVertices]
-
-		// check if point is above the minimum lat
-		if lat > math.Min(p1Lat, p2Lat) {
-			// check if point is below the maximum lat
-			if lat <= math.Max(p1Lat, p2Lat) {
-				// check if point is to left of the maximum lon
-				if lon <= math.Max(p1Lon, p2Lon) {
-					if p1Lat != p2Lat {
-						lonIntersection := (lat-p1Lat)*(p2Lon-p1Lon)/(p2Lat-p1Lat) + p1Lon
-
-						if p1Lon == p2Lon || lon <= lonIntersection {
-							counter++
-						}
-					}
-				}
-			}
-		}
-
-		p1Lat, p1Lon = p2Lat, p2Lon
-	}
-
-	if counter%2 == 0 {
-		return false
-	} else {
-		return true
-	}
-
+func crossProduct(hLat, hLon, tLat, tLon, qLat, qLon float64) float64 {
+	return ((tLon - hLon) * (qLat - hLat)) - ((qLon - hLon) * (tLat - hLat))
 }
 
-func isLeft(hLat, hLon, tLat, tLon, qLat, qLon float64) float64 {
-	return ((tLon - hLon) * (qLat - hLat)) - ((qLon - hLon) * (tLat - hLat))
+func isPointOnSegment(pLat, pLon, aLat, aLon, bLat, bLon float64) bool {
+	if (pLon >= math.Min(aLon, bLon) && pLon <= math.Max(aLon, bLon )&&
+	pLat >= math.Min(aLat, bLat) && 
+	pLat <= math.Max(aLat, bLat)) {
+		return true
+	}else {
+		return false
+	}
 }
 
 func windingNumber(pLat, pLon float64, polygonLat, polygonLon []float64) (wn int) {
 
 	for i := range polygonLat[:len(polygonLon)-1] {
+		if isPointOnSegment(pLat, pLon, polygonLat[i], polygonLon[i], polygonLat[i+1], polygonLon[i+1]) {
+			wn = 1
+			return 
+		}
 		if polygonLat[i] <= pLat {
 			if polygonLat[i+1] > pLat &&
-				isLeft(polygonLat[i], polygonLon[i], polygonLat[i+1], polygonLon[i+1], pLat, pLon) > 0 {
+				crossProduct(polygonLat[i], polygonLon[i], polygonLat[i+1], polygonLon[i+1], pLat, pLon) > 0 {
 				wn++
 			}
 		} else if polygonLat[i+1] <= pLat &&
-			isLeft(polygonLat[i], polygonLon[i], polygonLat[i+1], polygonLon[i+1], pLat, pLon) < 0 {
+			crossProduct(polygonLat[i], polygonLon[i], polygonLat[i+1], polygonLon[i+1], pLat, pLon) < 0 {
 			wn--
 		}
 	}
 	return
 }
 
-func IsPointInsidePolygonWindingNum(pLat, pLon float64, polygonLat, polygonLon []float64) bool {
+func IsPointInPolygon(pLat, pLon float64, polygonLat, polygonLon []float64) bool {
 	return windingNumber(pLat, pLon, polygonLat, polygonLon) != 0
 }
-
 
 // Given a start point, initial bearing, and distance, this will calculate the destina­tion point and final bearing travelling along a (shortest distance) great circle arc.
 func GetDestinationPoint(lat1, lon1 float64, bearing float64, distance float64) (float64, float64) {
@@ -166,6 +136,5 @@ func GetDestinationPoint(lat1, lon1 float64, bearing float64, distance float64) 
 	dLon = math.Mod(dLon+3*math.Pi, 2*math.Pi) - math.Pi
 	return radToDeg(dLat), radToDeg(dLon)
 }
-
 
 // TODO: Geofence pake circle

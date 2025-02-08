@@ -27,3 +27,8 @@ test/
 
 *.pl
 *.svg
+
+go-osm-search-server-profile
+
+main
+

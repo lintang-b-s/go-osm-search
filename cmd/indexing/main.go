@@ -27,7 +27,7 @@ func main() {
 	flag.Parse()
 	if *cpuprofile != "" {
 		// https://go.dev/blog/pprof
-		//./bin/osm-search-indexer -f "jabodetabek_big.osm.pbf" -cpuprofile=osmsearchcpu.prof -memprofile=osmsearchmem.mprof
+		// ./bin/osm-search-indexer -f "jabodetabek_big.osm.pbf" -cpuprofile=osmsearchcpu.prof -memprofile=osmsearchmem.mprof
 		f, err := os.Create(*cpuprofile)
 		if err != nil {
 			log.Fatal(err)
@@ -67,7 +67,7 @@ func main() {
 	ngramLM := searcher.NewNGramLanguageModel(*outputDir)
 	spellCorrectorBuilder := searcher.NewSpellCorrector(ngramLM)
 
-	indexedData := index.NewIndexedData(ways, onylySearchNodes, nodeMap, tagIDMap)
+	indexedData := index.NewIndexedData(ways, onylySearchNodes, nodeMap, tagIDMap, spatialIndex, osmRelations)
 	invertedIndex, _ := index.NewDynamicIndex(*outputDir, 1e7, false, spellCorrectorBuilder,
 		indexedData, bboltKV)
 
@@ -75,7 +75,7 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	allSearchNodes, err := invertedIndex.SpimiBatchIndex(ctx, spatialIndex, osmRelations)
+	allSearchNodes, err := invertedIndex.SpimiBatchIndex(ctx)
 	if err != nil {
 		panic(err)
 	}

@@ -65,7 +65,7 @@ func TestSpimiParseOSMNode(t *testing.T) {
 	t.Run("Test Spimi Parse OSM Nodes", func(t *testing.T) {
 		for _, c := range cases {
 			spimi, err := NewDynamicIndex("test", 500, false, nil, NewIndexedData([]geo.OSMWay{}, []geo.OSMNode{}, geo.NodeMapContainer{},
-				nil), nil)
+				nil, geo.OSMSpatialIndex{}, []geo.OsmRelation{}), nil)
 			if err != nil {
 				t.Errorf("Error creating new dynamic index: %v", err)
 			}
@@ -118,7 +118,7 @@ func TestSpimiParseOSMNodes(t *testing.T) {
 	t.Run("Test Spimi Parse OSM Nodes", func(t *testing.T) {
 		for _, c := range cases {
 			spimi, err := NewDynamicIndex("test", 500, false, nil, NewIndexedData([]geo.OSMWay{}, []geo.OSMNode{}, geo.NodeMapContainer{},
-				nil), nil)
+				nil, geo.OSMSpatialIndex{}, []geo.OsmRelation{}), nil)
 			if err != nil {
 				t.Errorf("Error creating new dynamic index: %v", err)
 			}
@@ -174,7 +174,7 @@ func TestSpimiInvert(t *testing.T) {
 	t.Run("Test Spimi Invert", func(t *testing.T) {
 		for _, c := range cases {
 			spimi, err := NewDynamicIndex("test", 500, false, nil, NewIndexedData([]geo.OSMWay{}, []geo.OSMNode{}, geo.NodeMapContainer{},
-				nil), nil)
+				nil, geo.OSMSpatialIndex{}, []geo.OsmRelation{}), nil)
 			if err != nil {
 				t.Errorf("Error creating new dynamic index: %v", err)
 			}
@@ -266,7 +266,7 @@ func TestSpimiMerge(t *testing.T) {
 	t.Run("Test Spimi Merge", func(t *testing.T) {
 		for _, c := range cases {
 			spimi, err := NewDynamicIndex("test", 500, false, nil, NewIndexedData([]geo.OSMWay{}, []geo.OSMNode{}, geo.NodeMapContainer{},
-				nil), nil)
+				nil, geo.OSMSpatialIndex{}, []geo.OsmRelation{}), nil)
 			if err != nil {
 				t.Errorf("Error creating new dynamic index: %v", err)
 			}
@@ -370,7 +370,7 @@ func TestMergeFieldLength(t *testing.T) {
 	t.Run("Test Spimi Merge", func(t *testing.T) {
 		for _, c := range cases {
 			spimi, err := NewDynamicIndex("test", 500, false, nil, NewIndexedData([]geo.OSMWay{}, []geo.OSMNode{}, geo.NodeMapContainer{},
-				nil), nil)
+				nil, geo.OSMSpatialIndex{}, []geo.OsmRelation{}), nil)
 			if err != nil {
 				t.Errorf("Error creating new dynamic index: %v", err)
 			}
@@ -576,16 +576,6 @@ func TestSpimiBatchIndex(t *testing.T) {
 			bboltKV := kvdb.NewKVDB(db)
 			defer db.Close()
 
-			spimi, err := NewDynamicIndex("test", 500, false, nil, NewIndexedData([]geo.OSMWay{}, []geo.OSMNode{}, geo.NodeMapContainer{},
-				nil), bboltKV)
-			if err != nil {
-				t.Errorf("Error creating new dynamic index: %v", err)
-			}
-			spimi.IndexedData.Ctr = geo.NodeMapContainer{}
-			spimi.IndexedData.Ctr.SetNodeMap(c.nodeMap)
-			spimi.IndexedData.Ways = c.inputWays
-			spimi.IndexedData.Nodes = c.inputNodes
-
 			spatialIndex := geo.OSMSpatialIndex{
 				StreetRtree:        datastructure.NewRtree(25, 50, 2),
 				KelurahanRtree:     datastructure.NewRtree(25, 50, 2),
@@ -594,7 +584,18 @@ func TestSpimiBatchIndex(t *testing.T) {
 				ProvinsiRtree:      datastructure.NewRtree(25, 50, 2),
 				CountryRtree:       datastructure.NewRtree(25, 50, 2),
 			}
-			nodes, errResults := spimi.SpimiBatchIndex(context.Background(), spatialIndex, []geo.OsmRelation{})
+
+			spimi, err := NewDynamicIndex("test", 500, false, nil, NewIndexedData([]geo.OSMWay{}, []geo.OSMNode{}, geo.NodeMapContainer{},
+				nil, spatialIndex, []geo.OsmRelation{}), bboltKV)
+			if err != nil {
+				t.Errorf("Error creating new dynamic index: %v", err)
+			}
+			spimi.IndexedData.Ctr = geo.NodeMapContainer{}
+			spimi.IndexedData.Ctr.SetNodeMap(c.nodeMap)
+			spimi.IndexedData.Ways = c.inputWays
+			spimi.IndexedData.Nodes = c.inputNodes
+
+			nodes, errResults := spimi.SpimiBatchIndex(context.Background())
 			assert.Nil(t, errResults)
 
 			docIDOriginalMap := make(map[int]int, len(c.expectedOsmObjects))
@@ -869,7 +870,8 @@ func TestGetFullAdress(t *testing.T) {
 				CountryRtree:       countryRtree,
 			}
 
-			spimi, err := NewDynamicIndex("test", 500, false, nil, NewIndexedData([]geo.OSMWay{}, []geo.OSMNode{}, geo.NodeMapContainer{}, nil), nil)
+			spimi, err := NewDynamicIndex("test", 500, false, nil, NewIndexedData([]geo.OSMWay{}, []geo.OSMNode{}, geo.NodeMapContainer{}, nil,
+				osmSpatialIndex, osmRelations), nil)
 			if err != nil {
 				t.Errorf("Error creating new dynamic index: %v", err)
 			}
@@ -880,7 +882,7 @@ func TestGetFullAdress(t *testing.T) {
 			spimi.IndexedData.Ways[100] = geo.OSMWay{ID: 100, TagMap: map[string]string{"name": "Jalan Teuku Cik di Tiro"}}
 
 			fullAddress, city := spimi.GetFullAdress(c.inputStreet, c.inputPostalCode, c.inputHouseNumber,
-				c.inputCenterLat, c.inputCenterLon, osmSpatialIndex, osmRelations)
+				c.inputCenterLat, c.inputCenterLon)
 
 			assert.Equal(t, c.expectedFullAddress, fullAddress)
 			assert.Equal(t, c.expectedCity, city)

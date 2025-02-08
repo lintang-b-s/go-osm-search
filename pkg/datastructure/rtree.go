@@ -568,6 +568,18 @@ type OSMObject struct {
 	Bound RtreeBoundingBox
 }
 
+
+func NewOSMObject(id int, lat, lon float64, tag map[int]int,
+	bound RtreeBoundingBox) OSMObject {
+	return OSMObject{
+		ID:  id,
+		Lat: lat,
+		Lon: lon,
+		Tag: tag,
+		Bound: bound,
+	}
+}
+
 func (o *OSMObject) GetBound() RtreeBoundingBox {
 	return o.Bound
 }
@@ -605,10 +617,8 @@ func (rt *Rtree) NearestNeighboursRadiusFilterOSM(k, offfset int, p Point, maxRa
 	callback := func(n OSMObject) bool {
 		nearestLists = append(nearestLists, n)
 
-		last := n
-		if len(nearestLists) > 0 {
-			last = nearestLists[len(nearestLists)-1]
-		}
+		last := nearestLists[len(nearestLists)-1]
+
 		return HaversineDistance(p.Lat, p.Lon, last.Lat, last.Lon) <= maxRadius
 	}
 

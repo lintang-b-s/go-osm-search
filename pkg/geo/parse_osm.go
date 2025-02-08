@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"sort"
 	"strconv"
@@ -166,6 +167,9 @@ func ParseOSM(mapfile string) ([]OSMWay, []OSMNode, NodeMapContainer, *pkg.IDMap
 
 	scanner := osmpbf.New(context.Background(), f, 1)
 
+	fmt.Printf("\n")
+	log.Printf("\n Parsing osm relation objects...\n")
+
 	for scanner.Scan() {
 		o := scanner.Object()
 		if o.ObjectID().Type() == osm.TypeRelation {
@@ -215,6 +219,9 @@ func ParseOSM(mapfile string) ([]OSMWay, []OSMNode, NodeMapContainer, *pkg.IDMap
 	}
 	bar.Add(1)
 
+	fmt.Printf("\n")
+	log.Printf("Parsing osm relation objects done\n")
+
 	scanErr := scanner.Err()
 	if scanErr != nil {
 		return []OSMWay{}, []OSMNode{}, NodeMapContainer{}, &pkg.IDMap{}, OSMSpatialIndex{}, relations, err
@@ -236,6 +243,8 @@ func ParseOSM(mapfile string) ([]OSMWay, []OSMNode, NodeMapContainer, *pkg.IDMap
 	scannerWay := osmpbf.New(context.Background(), fWay, 1)
 	defer scannerWay.Close()
 
+	fmt.Printf("\n")
+	log.Printf("Parsing osm way objects...\n")
 	for scannerWay.Scan() {
 		o := scannerWay.Object()
 		tipe := o.ObjectID().Type()
@@ -290,6 +299,12 @@ func ParseOSM(mapfile string) ([]OSMWay, []OSMNode, NodeMapContainer, *pkg.IDMap
 		return []OSMWay{}, []OSMNode{}, NodeMapContainer{}, &pkg.IDMap{}, OSMSpatialIndex{}, relations, err
 	}
 
+	fmt.Printf("\n")
+	log.Printf("Parsing osm way objects done\n")
+
+	fmt.Printf("\n")
+	log.Printf("Parsing osm node objects...\n")
+
 	scanner = osmpbf.New(context.Background(), f, 1)
 	defer scanner.Close()
 
@@ -321,7 +336,13 @@ func ParseOSM(mapfile string) ([]OSMWay, []OSMNode, NodeMapContainer, *pkg.IDMap
 	scanErr = scanner.Err()
 	if scanErr != nil {
 		return []OSMWay{}, []OSMNode{}, NodeMapContainer{}, &pkg.IDMap{}, OSMSpatialIndex{}, relations, err
+
+		fmt.Printf("\n")
 	}
+	log.Printf("Parsing osm node objects done \n")
+
+	fmt.Printf("\n")
+	log.Printf("processing osm relation & way objects...\n")
 
 	// process poligon administrative boundary & rtree administrative boundary
 	for relID, rel := range relations {
@@ -432,6 +453,10 @@ func ParseOSM(mapfile string) ([]OSMWay, []OSMNode, NodeMapContainer, *pkg.IDMap
 	}
 
 	bar.Add(1)
+
+	fmt.Printf("\n")
+	log.Printf("processing osm relation & way objects done \n")
+
 	return ways, onlyOsmNodes, ctr, TagIDMap, spatialIndex, relations, nil
 }
 

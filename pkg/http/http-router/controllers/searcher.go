@@ -103,6 +103,11 @@ func (api *searchAPI) search(w http.ResponseWriter, r *http.Request, _ httproute
 		return
 	}
 
+	if err := r.Body.Close(); err != nil {
+		api.ServerErrorResponse(w, r, err)
+		return
+	}
+
 	validate := validator.New()
 	notMatch := regexSearch.MatchString(request.Query)
 
@@ -158,6 +163,11 @@ func (api *searchAPI) autocomplete(w http.ResponseWriter, r *http.Request, _ htt
 	err := json.NewDecoder(r.Body).Decode(&request)
 	if err != nil {
 		api.BadRequestResponse(w, r, err)
+		return
+	}
+	
+	if err := r.Body.Close(); err != nil {
+		api.ServerErrorResponse(w, r, err)
 		return
 	}
 
@@ -235,6 +245,7 @@ func (api *searchAPI) reverseGeocoding(w http.ResponseWriter, r *http.Request, _
 		api.BadRequestResponse(w, r, errors.New("lat and lon must be provided"))
 		return
 	}
+	
 
 	lat, err := strconv.ParseFloat(query.Get("lat"), 64)
 	if err != nil {
