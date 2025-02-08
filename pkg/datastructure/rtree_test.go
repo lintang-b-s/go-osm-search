@@ -80,7 +80,7 @@ func TestInsertRtree(t *testing.T) {
 			rt := NewRtree(25, 50, 2)
 			for _, item := range tt.items {
 				bound := NewRtreeBoundingBox(2, []float64{item.Lat - 0.0001, item.Lon - 0.0001}, []float64{item.Lat + 0.0001, item.Lon + 0.0001})
-				
+
 				rt.InsertR(bound, item)
 
 			}
@@ -187,78 +187,6 @@ func randomLatLon(minLat, maxLat, minLon, maxLon float64) (float64, float64) {
 	return lat, lon
 }
 
-func TestNNearestNeighbors(t *testing.T) {
-	t.Run("Test N Nearest Neighbors kota surakarta", func(t *testing.T) {
-		itemsData := []OSMObject{
-			{
-				ID:  7,
-				Lat: -7.546392935195944,
-				Lon: 110.77718220472673,
-			},
-			{
-				ID:  6,
-				Lat: -7.5559986670115675,
-				Lon: 110.79466621171177,
-			},
-			{
-				ID:  5,
-				Lat: -7.555869730414206,
-				Lon: 110.80500875243253,
-			},
-			{
-				ID:  4,
-				Lat: -7.571289544570394,
-				Lon: 110.8301500772816,
-			},
-			{
-				ID:  3,
-				Lat: -7.7886707815273155,
-				Lon: 110.361625035987,
-			}, {
-				ID:  2,
-				Lat: -7.8082872068169475,
-				Lon: 110.35793427899466,
-			},
-			{
-				ID:  1,
-				Lat: -7.759889166547908,
-				Lon: 110.36689459108496,
-			},
-			{
-				ID:  0,
-				Lat: -7.550561079106621,
-				Lon: 110.7837156929654,
-			},
-		}
-
-		for i := 8; i < 10000; i++ {
-			lat, lon := randomLatLon(-6.107481038495567, -5.995288834299442, 106.13128828884481, 107.0509652831274)
-			itemsData = append(itemsData, OSMObject{
-				ID:  i,
-				Lat: lat,
-				Lon: lon,
-			})
-		}
-
-		rt := NewRtree(25, 50, 2)
-		for _, item := range itemsData {
-			bound := NewRtreeBoundingBox(2, []float64{item.Lat - 0.0001, item.Lon - 0.0001}, []float64{item.Lat + 0.0001, item.Lon + 0.0001})
-
-			rt.InsertR(bound, item)
-		}
-
-		myLocation := Point{-7.548263971398246, 110.78226484631368}
-		results := rt.NearestNeighboursPQ(5, myLocation)
-
-		assert.Equal(t, 5, len(results))
-		assert.Equal(t, 0, results[0].ID)
-		assert.Equal(t, 7, results[1].ID)
-		assert.Equal(t, 6, results[2].ID)
-		assert.Equal(t, 5, results[3].ID)
-		assert.Equal(t, 4, results[4].ID)
-	})
-}
-
 func TestNNearestNeighborsPQ(t *testing.T) {
 	t.Run("Test N Nearest Neighbors kota surakarta", func(t *testing.T) {
 		itemsData := []OSMObject{
@@ -303,7 +231,7 @@ func TestNNearestNeighborsPQ(t *testing.T) {
 			},
 		}
 
-		for i := 8; i < 1000000; i++ {
+		for i := 8; i < 100000; i++ {
 			lat, lon := randomLatLon(-6.107481038495567, -5.995288834299442, 106.13128828884481, 107.0509652831274)
 			itemsData = append(itemsData, OSMObject{
 				ID:  i,
@@ -464,6 +392,18 @@ func TestNearestNeighborRadiusFilterOsmFeature(t *testing.T) {
 				Lon: 110.37510209125597,
 				Tag: map[int]int{1: 1},
 			},
+			{
+				ID:  1003,
+				Lat: -7.759614617476093,
+				Lon: 110.37787347463819,
+				Tag: map[int]int{3: 2},
+			},
+			{
+				ID:  1003,
+				Lat: -7.761846768918608,
+				Lon: 110.38114368428886,
+				Tag: map[int]int{3: 2},
+			},
 		}
 
 		for i := 8; i < 100000; i++ {
@@ -498,7 +438,8 @@ func TestNearestNeighborRadiusFilterOsmFeature(t *testing.T) {
 	})
 }
 
-//go test  . -bench=[nama_benchmark] -v -benchmem -cpuprofile=cpu.out 
+// go test  . -bench=[nama_benchmark] -v -benchmem -cpuprofile=cpu.out
+// BenchmarkNNearestNeighbors-12    	   64574	     45842 ns/op	     21814 ops/sec	   70560 B/op	      12 allocs/op
 
 func BenchmarkNNearestNeighbors(b *testing.B) {
 	itemsData := []OSMObject{}
@@ -531,9 +472,9 @@ func BenchmarkNNearestNeighbors(b *testing.B) {
 	b.StopTimer()
 	throughput := float64(b.N) / b.Elapsed().Seconds()
 	b.ReportMetric(throughput, "ops/sec")
-
 }
 
+// BenchmarkInsert-12    	   85011	     20896 ns/op	     47856 ops/sec	   16932 B/op	     784 allocs/op
 func BenchmarkInsert(b *testing.B) {
 	itemsData := []OSMObject{}
 
@@ -563,10 +504,7 @@ func BenchmarkInsert(b *testing.B) {
 	b.ReportMetric(throughput, "ops/sec")
 }
 
-// go test  . -bench=BenchmarkImprovedNearestNeighbor -v -benchmem -cpuprofile=cpu.out 
-// go tool pprof cpu.out
-// ketika pakai equirectangularAprox:       40ms      880ms    723:                                   dist := euclidianDistanceEquiRectangularAprox(p.Lat, p.Lon, leafData.Leaf.Lat, leafData.Leaf.Lon)
-// 
+// BenchmarkImprovedNearestNeighbor-12    	   49046	     21880 ns/op	     45703 ops/sec	   37472 B/op	      10 allocs/op
 func BenchmarkImprovedNearestNeighbor(b *testing.B) {
 	itemsData := []OSMObject{}
 
@@ -594,81 +532,20 @@ func BenchmarkImprovedNearestNeighbor(b *testing.B) {
 		rt.ImprovedNearestNeighbor(myLocation)
 	}
 
-
 	b.StopTimer()
 	throughput := float64(b.N) / b.Elapsed().Seconds()
 	b.ReportMetric(throughput, "ops/sec")
 }
 
+// BenchmarkNearestNeighborRadiusFilterOsmFeature-12    	   53122	     20858 ns/op	     47944 ops/sec	   39904 B/op	      13 allocs/op
 func BenchmarkNearestNeighborRadiusFilterOsmFeature(b *testing.B) {
 
-	itemsData := []OSMObject{
-		{
-			ID:  7,
-			Lat: -7.546392935195944,
-			Lon: 110.77718220472673,
-			Tag: map[int]int{1: 1},
-		},
-		{
-			ID:  6,
-			Lat: -7.5559986670115675,
-			Lon: 110.79466621171177,
-			Tag: map[int]int{1: 1},
-		},
-		{
-			ID:  5,
-			Lat: -7.555869730414206,
-			Lon: 110.80500875243253,
-			Tag: map[int]int{1: 1},
-		},
-		{
-			ID:  4,
-			Lat: -7.571289544570394,
-			Lon: 110.8301500772816,
-			Tag: map[int]int{1: 1},
-		},
-		{
-			ID:  3,
-			Lat: -7.7886707815273155,
-			Lon: 110.361625035987,
-			Tag: map[int]int{10: 10},
-		}, {
-			ID:  2,
-			Lat: -7.8082872068169475,
-			Lon: 110.35793427899466,
-			Tag: map[int]int{10: 10},
-		},
-		{
-			ID:  1,
-			Lat: -7.759889166547908,
-			Lon: 110.36689459108496,
-			Tag: map[int]int{1: 1},
-		},
-		{
-			ID:  1000,
-			Lat: -7.550561079106621,
-			Lon: 110.7837156929654,
-			Tag: map[int]int{10: 10},
-		},
-		{
-			ID:  1001,
-			Lat: -7.700002453207869,
-			Lon: 110.37712514761436,
-			Tag: map[int]int{1: 1},
-		},
-		{
-			ID:  1002,
-			Lat: -7.760860864556355,
-			Lon: 110.37510209125597,
-			Tag: map[int]int{1: 1},
-		},
-	}
-
-	for i := 8; i < 100000; i++ {
+	var itemsData []OSMObject = []OSMObject{}
+	for i := 0; i < 100000; i++ {
 		tag := rand.Intn(10)
 		val := rand.Intn(10)
 
-		lat, lon := randomLatLon(-6.107481038495567, -5.995288834299442, 106.13128828884481, 107.0509652831274)
+		lat, lon := randomLatLon(-7.764433230190314, -6.666039357161423, 110.36250037487716, 111.43103761218967)
 		itemsData = append(itemsData, OSMObject{
 			ID:  i,
 			Lat: lat,
@@ -691,13 +568,13 @@ func BenchmarkNearestNeighborRadiusFilterOsmFeature(b *testing.B) {
 
 	}
 
-
 	b.StopTimer()
 	throughput := float64(b.N) / b.Elapsed().Seconds()
 	b.ReportMetric(throughput, "ops/sec")
 
 }
 
+// BenchmarkSearch-12    	36976773	        33.50 ns/op	  29852521 ops/sec	      32 B/op	       1 allocs/op
 func BenchmarkSearch(b *testing.B) {
 	itemsData := []OSMObject{}
 

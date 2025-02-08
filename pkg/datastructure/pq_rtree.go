@@ -3,10 +3,11 @@ package datastructure
 type PriorityQueueNodeRtree2 struct {
 	Rank float64
 	Item BoundedItem
+	isObjectBoundingRectangle bool
 }
 
-func NewPriorityQueueNodeRtree2(rank float64, item BoundedItem) PriorityQueueNodeRtree2 {
-	return PriorityQueueNodeRtree2{rank, item}
+func NewPriorityQueueNodeRtree2(rank float64, item BoundedItem, isMBR bool) PriorityQueueNodeRtree2 {
+	return PriorityQueueNodeRtree2{rank, item, isMBR}
 }
 
 // MinHeap binary heap priorityqueue

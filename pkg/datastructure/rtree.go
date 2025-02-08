@@ -560,6 +560,34 @@ func (p Point) minDist(r RtreeBoundingBox) float64 {
 	return sum
 }
 
+// minDist computes the square of the distance from a point to a rectangle (farthest point in rectangle). If the point is contained in the rectangle then the distance is zero.
+func (p Point) maxDist(r RtreeBoundingBox) float64 {
+
+	// Edges[0] = {minLat, maxLat}
+	// Edges[1] = {minLon, maxLon}
+	sum := 0.0
+	rLat, rLon := 0.0, 0.0
+	if p.Lat < r.Edges[0][0] {
+		rLat = r.Edges[0][1]
+	} else if p.Lat > r.Edges[0][1] {
+		rLat = r.Edges[0][0]
+	} else {
+		rLat = p.Lat
+	}
+
+	if p.Lon < r.Edges[1][0] {
+		rLon = r.Edges[1][1]
+	} else if p.Lon > r.Edges[1][1] {
+		rLon = r.Edges[1][0]
+	} else {
+		rLon = p.Lon
+	}
+
+	sum += euclidianDistanceEquiRectangularAprox(p.Lat, p.Lon, rLat, rLon)
+
+	return sum
+}
+
 type OSMObject struct {
 	ID    int
 	Lat   float64
@@ -568,14 +596,13 @@ type OSMObject struct {
 	Bound RtreeBoundingBox
 }
 
-
 func NewOSMObject(id int, lat, lon float64, tag map[int]int,
 	bound RtreeBoundingBox) OSMObject {
 	return OSMObject{
-		ID:  id,
-		Lat: lat,
-		Lon: lon,
-		Tag: tag,
+		ID:    id,
+		Lat:   lat,
+		Lon:   lon,
+		Tag:   tag,
 		Bound: bound,
 	}
 }
@@ -604,7 +631,7 @@ func (rt *Rtree) NearestNeighboursPQ(k int, p Point) []OSMObject {
 		return len(nearestLists) < k
 	}
 
-	rt.nearestNeigboursPQ(p, callback)
+	rt.incrementalNearestNeighbor(p, callback)
 
 	return nearestLists
 }
@@ -617,11 +644,10 @@ func (rt *Rtree) NearestNeighboursRadiusFilterOSM(k, offfset int, p Point, maxRa
 	callback := func(n OSMObject) bool {
 		nearestLists = append(nearestLists, n)
 
-
 		return HaversineDistance(p.Lat, p.Lon, n.Lat, n.Lon) <= maxRadius
 	}
 
-	rt.nearestNeigboursPQ(p, callback)
+	rt.incrementalNearestNeighbor(p, callback)
 
 	c := 0
 
@@ -645,10 +671,11 @@ func (rt *Rtree) NearestNeighboursRadiusFilterOSM(k, offfset int, p Point, maxRa
 	return nearestLists
 }
 
-// https://dl.acm.org/doi/pdf/10.1145/320248.320255
-func (rt *Rtree) nearestNeigboursPQ(p Point, callback func(OSMObject) bool) {
+
+// https://dl.acm.org/doi/pdf/10.1145/320248.320255 (Fig. 4.  incremental nearest neighbor algorithm)
+func (rt *Rtree) incrementalNearestNeighbor(p Point, callback func(OSMObject) bool) {
 	pq := NewMinHeap()
-	pq.Insert(NewPriorityQueueNodeRtree2(0, rt.Root))
+	pq.Insert(NewPriorityQueueNodeRtree2(0, rt.Root, false))
 
 	for pq.Size() > 0 {
 
@@ -657,28 +684,30 @@ func (rt *Rtree) nearestNeigboursPQ(p Point, callback func(OSMObject) bool) {
 			return
 		}
 		if element.Item.IsData() {
-			first, _ := pq.GetMin()
-			for element == first {
-				first, _ = pq.ExtractMin()
-			}
-			
-			if !callback(*element.Item.(*OSMObject)) {
-				return
+			qObjectDist := euclidianDistanceEquiRectangularAprox(p.Lat, p.Lon,
+				element.Item.(*OSMObject).Lat, element.Item.(*OSMObject).Lon)
+
+			if first, pqSizeMoreThanZero := pq.GetMin(); element.isObjectBoundingRectangle &&
+				pqSizeMoreThanZero && qObjectDist > first.Rank {
+
+				pq.Insert(NewPriorityQueueNodeRtree2(qObjectDist, element.Item, false))
+
+			} else {
+				if !callback(*element.Item.(*OSMObject)) {
+					return
+				}
 			}
 		} else if element.Item.isLeafNode() {
-			distToElement := p.minDist(element.Item.GetBound())
 
 			for _, item := range element.Item.(*RtreeNode).Items {
-				distToObject := euclidianDistanceEquiRectangularAprox(p.Lat, p.Lon, item.Leaf.Lat, item.Leaf.Lon)
 
-				if distToObject >= distToElement {
-					pq.Insert(NewPriorityQueueNodeRtree2(distToObject, &item.Leaf))
-				}
+				pq.Insert(NewPriorityQueueNodeRtree2(p.minDist(item.Leaf.GetBound()),
+					&item.Leaf, true))
 			}
 		} else {
 			for _, item := range element.Item.(*RtreeNode).Items {
 
-				pq.Insert(NewPriorityQueueNodeRtree2(p.minDist(item.GetBound()), item))
+				pq.Insert(NewPriorityQueueNodeRtree2(p.minDist(item.GetBound()), item, false))
 			}
 		}
 	}
@@ -686,55 +715,17 @@ func (rt *Rtree) nearestNeigboursPQ(p Point, callback func(OSMObject) bool) {
 
 func (rt *Rtree) ImprovedNearestNeighbor(p Point) OSMObject {
 
-	nearest, _ := rt.nearestNeighbor(p)
-	return nearest
-}
-
-// https://rutgers-db.github.io/cs541-fall19/slides/notes4.pdf
-func (rt *Rtree) nearestNeighbor(p Point) (OSMObject, float64) {
 	nearest := OSMObject{}
-	pq := NewMinHeap()
 
-	bestDist := math.Inf(1)
+	callback := func(n OSMObject) bool {
+		nearest = n
 
-	if rt.Root.isLeafNode() {
-		for _, leafData := range rt.Root.Items {
-			dist := euclidianDistanceEquiRectangularAprox(p.Lat, p.Lon, leafData.Leaf.Lat, leafData.Leaf.Lon)
-			if dist < bestDist {
-				bestDist = dist
-				nearest = leafData.Leaf
-			}
-		}
+		return false
 	}
 
-	pq.Insert(NewPriorityQueueNodeRtree2(p.minDist(rt.Root.GetBound()), rt.Root))
+	rt.incrementalNearestNeighbor(p, callback)
 
-	smallestMinDist, _ := pq.GetMin()
-	for bestDist > smallestMinDist.Rank {
-		currR, ok := pq.ExtractMin()
-		if !ok {
-			break
-		}
-		for _, item := range currR.Item.(*RtreeNode).Items {
-			if !item.isLeafNode() {
-				pq.Insert(NewPriorityQueueNodeRtree2(p.minDist(item.GetBound()), item))
-			} else {
-				for _, leafData := range item.Items {
-					dist := euclidianDistanceEquiRectangularAprox(p.Lat, p.Lon, leafData.Leaf.Lat, leafData.Leaf.Lon)
-					if dist < bestDist {
-						bestDist = dist
-						nearest = leafData.Leaf
-					}
-				}
-			}
-		}
-		smallestMinDist, ok = pq.GetMin()
-		if !ok {
-			break
-		}
-	}
-
-	return nearest, bestDist
+	return nearest
 }
 
 func SerializeRtreeData(workingDir string, outputDir string, items []OSMObject) error {
