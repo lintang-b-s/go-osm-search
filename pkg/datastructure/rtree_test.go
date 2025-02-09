@@ -1,6 +1,8 @@
 package datastructure
 
 import (
+	"fmt"
+	"math"
 	"testing"
 	"time"
 
@@ -10,8 +12,26 @@ import (
 
 // this is trash
 
-func traverseRtreeAndTestIfBoundingBoxCorrect(node *RtreeNode, countLeaf *int, t *testing.T) {
+func traverseRtreeAndTestIfRtreePropertiesCorrect(rt *Rtree, node *RtreeNode, countLeaf *int,
+	expectedLeafLevel int, level int, t *testing.T) {
+	if node == rt.Root && level != expectedLeafLevel {
+		if len(node.Items) < 2 {
+			t.Errorf("The root node must has at least two children unless it is a leaf.")
+		}
+	}
 	if node.IsLeaf {
+		height := float64(level - 1)
+		logmN := math.Log(float64(rt.Size)) / math.Log(float64(rt.MinChildItems))
+		assert.LessOrEqual(t, height, math.Ceil(logmN)-1, fmt.Sprintf("The height of an R-tree containing Nindex records is at most ceil(logmN)-1"))
+
+		if level != expectedLeafLevel {
+			t.Errorf("All leaves not appear on the same level")
+		}
+
+		if rt.Root != node && len(node.Items) < rt.MinChildItems || len(node.Items) > rt.MaxChildItems {
+			t.Errorf("Number of children in node is not correct")
+		}
+
 		maxBB := node.Items[0].GetBound()
 		for _, item := range node.Items {
 			*countLeaf++
@@ -25,10 +45,14 @@ func traverseRtreeAndTestIfBoundingBoxCorrect(node *RtreeNode, countLeaf *int, t
 	} else {
 		maxBB := node.Items[0].GetBound()
 
+		if rt.Root != node && len(node.Items) < rt.MinChildItems || len(node.Items) > rt.MaxChildItems {
+			t.Errorf(" Every non-leaf node has between mand M children unless it is the root.")
+		}
+
 		for _, item := range node.Items {
 			bb := item.GetBound()
 			maxBB = boundingBox(maxBB, bb)
-			traverseRtreeAndTestIfBoundingBoxCorrect(item, countLeaf, t)
+			traverseRtreeAndTestIfRtreePropertiesCorrect(rt, item, countLeaf, expectedLeafLevel, level+1, t)
 		}
 
 		if !node.Bound.isBBSame(maxBB) {
@@ -37,7 +61,7 @@ func traverseRtreeAndTestIfBoundingBoxCorrect(node *RtreeNode, countLeaf *int, t
 	}
 }
 
-func TestInsertRtree(t *testing.T) {
+func TestInsertLeaftree(t *testing.T) {
 	itemsData := []OSMObject{}
 	for i := 0; i < 100; i++ {
 		itemsData = append(itemsData, OSMObject{
@@ -81,13 +105,15 @@ func TestInsertRtree(t *testing.T) {
 			for _, item := range tt.items {
 				bound := NewRtreeBoundingBox(2, []float64{item.Lat - 0.0001, item.Lon - 0.0001}, []float64{item.Lat + 0.0001, item.Lon + 0.0001})
 
-				rt.InsertR(bound, item)
+				rt.InsertLeaf(bound, item)
 
 			}
 			assert.Equal(t, 103, rt.Size)
 
 			countLeaf := 0
-			traverseRtreeAndTestIfBoundingBoxCorrect(rt.Root, &countLeaf, t)
+
+			expectedLeafLevel := 2
+			traverseRtreeAndTestIfRtreePropertiesCorrect(rt, rt.Root, &countLeaf, expectedLeafLevel, 1, t)
 			assert.Equal(t, tt.expectItems, countLeaf)
 		})
 	}
@@ -96,9 +122,10 @@ func TestInsertRtree(t *testing.T) {
 		rt := NewRtree(25, 50, 2)
 		for i := 0; i < 5; i++ {
 			item := itemsData[i]
-			bound := NewRtreeBoundingBox(2, []float64{itemsData[0].Lat - 0.0001, itemsData[0].Lon - 0.0001}, []float64{itemsData[0].Lat + 0.0001, itemsData[0].Lon + 0.0001})
+			bound := NewRtreeBoundingBox(2, []float64{itemsData[i].Lat - 0.0001,
+				itemsData[i].Lon - 0.0001}, []float64{itemsData[i].Lat + 0.0001, itemsData[i].Lon + 0.0001})
 
-			rt.InsertR(bound, item)
+			rt.InsertLeaf(bound, item)
 		}
 		assert.Equal(t, 5, rt.Size)
 		root := rt.Root
@@ -107,7 +134,8 @@ func TestInsertRtree(t *testing.T) {
 		}
 
 		countLeaf := 0
-		traverseRtreeAndTestIfBoundingBoxCorrect(rt.Root, &countLeaf, t)
+		expectedLeafLevel := 1
+		traverseRtreeAndTestIfRtreePropertiesCorrect(rt, rt.Root, &countLeaf, expectedLeafLevel, 1, t)
 		assert.Equal(t, 5, countLeaf)
 	})
 }
@@ -116,7 +144,7 @@ func TestSearch(t *testing.T) {
 
 	t.Run("Search", func(t *testing.T) {
 		itemsData := []OSMObject{}
-		for i := 0; i < 100; i++ {
+		for i := 1; i < 100; i++ {
 			itemsData = append(itemsData, OSMObject{
 				ID:  i,
 				Lat: float64(i),
@@ -125,15 +153,18 @@ func TestSearch(t *testing.T) {
 		}
 
 		rt := NewRtree(10, 25, 2)
-		for _, item := range itemsData {
-			bound := NewRtreeBoundingBox(2, []float64{itemsData[0].Lat - 0.0001, itemsData[0].Lon - 0.0001}, []float64{itemsData[0].Lat + 0.0001, itemsData[0].Lon + 0.0001})
+		for i, item := range itemsData {
+			bound := NewRtreeBoundingBox(2, []float64{itemsData[i].Lat - 0.0001, itemsData[i].Lon - 0.0001},
+				[]float64{itemsData[i].Lat + 0.0001, itemsData[i].Lon + 0.0001})
 
-			rt.InsertR(bound, item)
+			rt.InsertLeaf(bound, item)
 
 		}
 
 		countLeaf := 0
-		traverseRtreeAndTestIfBoundingBoxCorrect(rt.Root, &countLeaf, t)
+
+		expectedLeafLevel := 2
+		traverseRtreeAndTestIfRtreePropertiesCorrect(rt, rt.Root, &countLeaf, expectedLeafLevel, 1, t)
 
 		results := rt.Search(NewRtreeBoundingBox(2, []float64{0, 0}, []float64{50, 50}))
 
@@ -163,7 +194,7 @@ func TestSplit(t *testing.T) {
 
 		bound := NewRtreeBoundingBox(2, []float64{itemsData[0].Lat - 0.0001, itemsData[0].Lon - 0.0001}, []float64{itemsData[0].Lat + 0.0001, itemsData[0].Lon + 0.0001})
 
-		rt.InsertR(bound, itemsData[0])
+		rt.InsertLeaf(bound, itemsData[0])
 		for i := 1; i < 26; i++ {
 			item := itemsData[i]
 
@@ -244,8 +275,12 @@ func TestNNearestNeighborsPQ(t *testing.T) {
 		for _, item := range itemsData {
 			bound := NewRtreeBoundingBox(2, []float64{item.Lat - 0.0001, item.Lon - 0.0001}, []float64{item.Lat + 0.0001, item.Lon + 0.0001})
 
-			rt.InsertR(bound, item)
+			rt.InsertLeaf(bound, item)
 		}
+
+		countLeaf := 0
+		expectedLeafLevel := 4
+		traverseRtreeAndTestIfRtreePropertiesCorrect(rt, rt.Root, &countLeaf, expectedLeafLevel, 1, t)
 
 		myLocation := Point{-7.548263971398246, 110.78226484631368}
 		results := rt.NearestNeighboursPQ(5, myLocation)
@@ -320,7 +355,7 @@ func TestNearestNeighbor(t *testing.T) {
 		rt := NewRtree(25, 50, 2)
 		for _, item := range itemsData {
 			bound := NewRtreeBoundingBox(2, []float64{item.Lat - 0.0001, item.Lon - 0.0001}, []float64{item.Lat + 0.0001, item.Lon + 0.0001})
-			rt.InsertR(bound, item)
+			rt.InsertLeaf(bound, item)
 		}
 
 		myLocation := Point{-7.760335932763678, 110.37671195413539}
@@ -423,7 +458,7 @@ func TestNearestNeighborRadiusFilterOsmFeature(t *testing.T) {
 		for _, item := range itemsData {
 			bound := NewRtreeBoundingBox(2, []float64{item.Lat - 0.0001, item.Lon - 0.0001}, []float64{item.Lat + 0.0001, item.Lon + 0.0001})
 
-			rt.InsertR(bound, item)
+			rt.InsertLeaf(bound, item)
 		}
 
 		myLocation := Point{-7.760335932763678, 110.37671195413539}
@@ -458,7 +493,7 @@ func BenchmarkNNearestNeighbors(b *testing.B) {
 	for _, item := range itemsData {
 		bound := NewRtreeBoundingBox(2, []float64{item.Lat - 0.0001, item.Lon - 0.0001}, []float64{item.Lat + 0.0001, item.Lon + 0.0001})
 
-		rt.InsertR(bound, item)
+		rt.InsertLeaf(bound, item)
 	}
 
 	myLocation := Point{-7.548263971398246, 110.78226484631368}
@@ -497,7 +532,7 @@ func BenchmarkInsert(b *testing.B) {
 		item := itemsData[randInt]
 		bound := NewRtreeBoundingBox(2, []float64{item.Lat - 0.0001, item.Lon - 0.0001}, []float64{item.Lat + 0.0001, item.Lon + 0.0001})
 
-		rt.InsertR(bound, item)
+		rt.InsertLeaf(bound, item)
 	}
 	b.StopTimer()
 	throughput := float64(b.N) / b.Elapsed().Seconds()
@@ -522,7 +557,7 @@ func BenchmarkImprovedNearestNeighbor(b *testing.B) {
 	for _, item := range itemsData {
 		bound := NewRtreeBoundingBox(2, []float64{item.Lat - 0.0001, item.Lon - 0.0001}, []float64{item.Lat + 0.0001, item.Lon + 0.0001})
 
-		rt.InsertR(bound, item)
+		rt.InsertLeaf(bound, item)
 	}
 	myLocation := Point{-7.548263971398246, 110.78226484631368}
 
@@ -557,7 +592,7 @@ func BenchmarkNearestNeighborRadiusFilterOsmFeature(b *testing.B) {
 	rt := NewRtree(25, 50, 2)
 	for _, item := range itemsData {
 		bound := NewRtreeBoundingBox(2, []float64{item.Lat - 0.0001, item.Lon - 0.0001}, []float64{item.Lat + 0.0001, item.Lon + 0.0001})
-		rt.InsertR(bound, item)
+		rt.InsertLeaf(bound, item)
 	}
 
 	myLocation := Point{-7.760335932763678, 110.37671195413539}
@@ -591,7 +626,7 @@ func BenchmarkSearch(b *testing.B) {
 	rt := NewRtree(25, 50, 2)
 	for _, item := range itemsData {
 		bound := NewRtreeBoundingBox(2, []float64{item.Lat - 0.0001, item.Lon - 0.0001}, []float64{item.Lat + 0.0001, item.Lon + 0.0001})
-		rt.InsertR(bound, item)
+		rt.InsertLeaf(bound, item)
 	}
 	myLocation := Point{-7.548263971398246, 110.78226484631368}
 

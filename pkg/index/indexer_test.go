@@ -535,7 +535,7 @@ func TestSpimiBatchIndex(t *testing.T) {
 			expectedPostings: map[string][]int{
 				"jalan":   {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
 				"sentosa": {0},
-				"harap":   {0},
+				"harapan": {0},
 				"dunia":   {1},
 				"baru":    {1},
 				"mulwo":   {2},
@@ -551,7 +551,7 @@ func TestSpimiBatchIndex(t *testing.T) {
 				"sucipto": {7},
 				"ahmad":   {8},
 				"yani":    {8},
-				"dan":     {9, 10},
+				"dani":    {9, 10},
 				"jadul":   {10},
 			},
 			expectedTermSize: 20,
@@ -810,7 +810,7 @@ func TestGetFullAdress(t *testing.T) {
 			for _, street := range streets {
 				bound := datastructure.NewRtreeBoundingBox(2, []float64{street.place.Lat - 0.0001, street.place.Lon - 0.0001}, []float64{street.place.Lat + 0.0001, street.place.Lon + 0.0001})
 
-				streetRtree.InsertR(bound, street.place)
+				streetRtree.InsertLeaf(bound, street.place)
 			}
 
 			for _, kelurahan := range kelurahans {
@@ -822,7 +822,7 @@ func TestGetFullAdress(t *testing.T) {
 				sort.Float64s(boundaryLon)
 				bound := datastructure.NewRtreeBoundingBox(2, []float64{boundaryLat[0], boundaryLon[0]},
 					[]float64{boundaryLat[len(boundaryLat)-1], boundaryLon[len(boundaryLon)-1]})
-				kelurahanRtree.InsertR(bound, kelurahan.place)
+				kelurahanRtree.InsertLeaf(bound, kelurahan.place)
 			}
 
 			for _, kecamatan := range kecamatans {
@@ -834,7 +834,7 @@ func TestGetFullAdress(t *testing.T) {
 				sort.Float64s(boundaryLon)
 				bound := datastructure.NewRtreeBoundingBox(2, []float64{boundaryLat[0], boundaryLon[0]},
 					[]float64{boundaryLat[len(boundaryLat)-1], boundaryLon[len(boundaryLon)-1]})
-				kecamatanRtree.InsertR(bound, kecamatan.place)
+				kecamatanRtree.InsertLeaf(bound, kecamatan.place)
 			}
 
 			for _, kotaKabupaten := range kotaKabupatens {
@@ -846,7 +846,7 @@ func TestGetFullAdress(t *testing.T) {
 				sort.Float64s(boundaryLon)
 				bound := datastructure.NewRtreeBoundingBox(2, []float64{boundaryLat[0], boundaryLon[0]},
 					[]float64{boundaryLat[len(boundaryLat)-1], boundaryLon[len(boundaryLon)-1]})
-				kotaKabupatenRtree.InsertR(bound, kotaKabupaten.place)
+				kotaKabupatenRtree.InsertLeaf(bound, kotaKabupaten.place)
 			}
 
 			for _, provinsi := range provinsis {
@@ -858,7 +858,7 @@ func TestGetFullAdress(t *testing.T) {
 				sort.Float64s(boundaryLon)
 				bound := datastructure.NewRtreeBoundingBox(2, []float64{boundaryLat[0], boundaryLon[0]},
 					[]float64{boundaryLat[len(boundaryLat)-1], boundaryLon[len(boundaryLon)-1]})
-				provinsiRtree.InsertR(bound, provinsi.place)
+				provinsiRtree.InsertLeaf(bound, provinsi.place)
 			}
 
 			osmSpatialIndex := geo.OSMSpatialIndex{

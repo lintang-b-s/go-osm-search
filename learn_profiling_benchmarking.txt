@@ -52,3 +52,109 @@ osm-search docker:
 
 
 osmium extract -b 
+
+
+### Extras?
+#### Data Race Detection
+
+```
+ go build  -race  -o ./bin/osm-search-indexer ./cmd/indexing
+ go build -race  -o ./bin/osm-search-server ./cmd/server
+ go test -race ./cmd/indexing/
+
+
+```
+
+#### Goroutine Leak Detection
+(using https://github.com/uber-go/goleak)
+```
+go test -race ./cmd/indexing/
+```
+
+#### Heap Escape Analysis
+
+```
+go build -gcflags "-m"  ./cmd/indexing/main.go
+go build -gcflags "-m"  ./cmd/server/main.go
+```
+
+#### pprof 
+
+```
+(pprof indexer): ./bin/osm-search-indexer -f "jabodetabek_big.osm.pbf" -cpuprofile=osmsearchcpu.prof -memprofile=osmsearchmem.mprof
+NOTE: indexing process run slower if you use this.
+(pprof server): ./bin/osm-server
+
+
+
+cd pkg/[package_inside_pkg] && go test -bench . ./... -benchmem -cpuprofile prof.cpu -memprofile prof.mem
+NOTE: for "searcher" package you must copy index directory "lintang"  & "docs_store.db" to searcher package
+
+
+command (open pprof cpu/heap):
+go tool pprof [binary] [file_name].cpu
+go tool pprof [binary] [file_name].mprof
+
+
+command (open pprof cpu/heap) example:
+go  tool pprof ./bin/osm-search-indexer  osmsearchcpu.prof
+go  tool pprof ./bin/osm-search-indexer  osmsearchmem_indexing.mprof
+
+go tool pprof pkg.test prof.cpu
+
+
+
+go tool pprof -alloc_objects pkg.test prof.mem
+
+command pprof on web:
+
+go tool pprof -http=":8081" [binary] [profile]
+
+go tool pprof -http=":8081" ./bin/osm-search-indexer  osmsearchcpu.prof
+
+go tool pprof -http=":8081" pkg.test prof.cpu
+
+go tool pprof -http=":8082" pkg.test prof.mem
+
+
+some useful command inside pprof:
+top10
+list [functionName]
+web
+web [functionName]
+disasm [functionName]
+
+
+pprof web flamegraph:
+go tool pprof -http=":8081" [binary] [profile]
+[Switching to the Flame graph view (via the View menu) will display a flame graph. This view provides a compact representation of caller/callee relations:]
+
+
+pprof web go-osm-search-server:
+load test first: cd docs/load_tests/ && k6 run search.js
+curl  --output go-osm-search-server-profile    'http://localhost:6060/debug/pprof/profile?seconds=20'
+
+
+go tool pprof -http=":8081" go-osm-search-server-profile
+
+open view/flame graph
+
+or 
+go tool pprof  go-osm-search-server-profile
+top10
+list [functionName]
+
+go tool pprof -alloc_space http://localhost:6060/debug/pprof/heap
+go tool pprof -http=":8081" -alloc_space http://localhost:6060/debug/pprof/heap
+
+curl  --output go-osm-search-server-heap    'http://localhost:6060/debug/pprof/heap?seconds=20'
+
+```
+
+#### Simple K6 Load Test
+```
+
+1. go build -o ./bin/osm-search-server ./cmd/server 
+2. ./bin/osm-search-server
+3. cd docs/load_tests/ && k6 run search.js
+```

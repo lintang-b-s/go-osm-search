@@ -854,11 +854,11 @@ func (Idx *DynamicIndex) BuildSpellCorrectorAndNgram(ctx context.Context, allSea
 	bar.Add(1)
 
 	Idx.docsCount = len(allSearchNodes)
-	log.Printf("building ngram (1/2): tokenizing & stemming all osm objects name+address field...\n")
+	log.Printf("building ngram (1/2): tokenizing all osm objects name+address field...\n")
 	tokenizedDocs := [][]string{}
 	for i, node := range allSearchNodes {
 		if i%10000 == 0 {
-			log.Printf("building ngram (1/2): tokenizing & stemming osm objects id: %d ...\n", i)
+			log.Printf("building ngram (1/2): tokenizing osm objects id: %d ...\n", i)
 		}
 
 		soup := node.Name + " " + node.Address
@@ -867,7 +867,7 @@ func (Idx *DynamicIndex) BuildSpellCorrectorAndNgram(ctx context.Context, allSea
 
 		tokenizedDocs = append(tokenizedDocs, tokenized)
 	}
-	log.Printf("building ngram (1/2): tokeninzing & stemming all osm objects name+address field done \n")
+	log.Printf("building ngram (1/2): tokeninzing all osm objects name+address field done \n")
 
 	bar.Add(1)
 

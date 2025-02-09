@@ -153,7 +153,7 @@ func NewRtree(minChildItems, maxChildItems, dimensions int) *Rtree {
 	return &Rtree{
 		Root:          nil,
 		Size:          0,
-		Height:        0,
+		Height:        1,
 		MinChildItems: minChildItems,
 		MaxChildItems: maxChildItems,
 		Dimensions:    dimensions,
@@ -161,7 +161,7 @@ func NewRtree(minChildItems, maxChildItems, dimensions int) *Rtree {
 
 }
 
-func (rt *Rtree) InsertR(bound RtreeBoundingBox, leaf OSMObject) {
+func (rt *Rtree) InsertLeaf(bound RtreeBoundingBox, leaf OSMObject) {
 	if rt.Root == nil {
 		rt.Root = &RtreeNode{
 			IsLeaf: true,
@@ -224,7 +224,7 @@ func (rt *Rtree) adjustTree(l, ll *RtreeNode) (*RtreeNode, *RtreeNode) {
 	// Adjust En.I s o that it tightly encloses
 	// all entry rectangles in N
 	p := n.Parent
-	en := n.Items[0]
+	en := p.Items[0]
 
 	for i := 0; i < len(p.Items); i++ {
 		if p.Items[i] == n {
@@ -239,8 +239,8 @@ func (rt *Rtree) adjustTree(l, ll *RtreeNode) (*RtreeNode, *RtreeNode) {
 	// earlier split, create a new entry ENN
 	// with ENN.p pointing to NN and Enn.I
 	// enclosing all rectangles in NN. Add
-	//Enn to P if there is room Otherwise,
-	//invoke SplitNode to produce P and
+	// Enn to P if there is room Otherwise,
+	// invoke SplitNode to produce P and
 	// PP containing Em and all P ’s old
 	// entries.
 	//AT5. [Move up to next level.] Set N=P and
@@ -313,10 +313,10 @@ func (rt *Rtree) splitNode(l *RtreeNode) (*RtreeNode, *RtreeNode) {
 		bbGroupTwo := boundingBox(groupTwoBB, remaining[nextEntryIdx].GetBound())
 		enlargementTwo := area(bbGroupTwo) - area(groupTwoBB)
 
-		if len(groupOne.Items)+len(l.Items) <= rt.MinChildItems {
+		if len(groupOne.Items)+len(remaining) <= rt.MinChildItems {
 			groupOne.Items = append(groupOne.Items, remaining[nextEntryIdx])
 			remaining[nextEntryIdx].Parent = groupOne
-		} else if len(groupTwo.Items)+len(l.Items) <= rt.MinChildItems {
+		} else if len(groupTwo.Items)+len(remaining) <= rt.MinChildItems {
 			groupTwo.Items = append(groupTwo.Items, remaining[nextEntryIdx])
 			remaining[nextEntryIdx].Parent = groupTwo
 		} else {
@@ -437,7 +437,7 @@ func (rt *Rtree) linearPickSeeds(l *RtreeNode) (*RtreeNode, *RtreeNode) {
 
 		lWidth := highestLowSide - lowestHighSide
 
-		widthAlongDimension := highestHighSide - lowestLowSide
+		widthAlongDimension := math.Abs(highestHighSide - lowestLowSide)
 
 		if lWidth/widthAlongDimension > greatestNormalizedSeparation {
 			greatestNormalizedSeparation = lWidth / widthAlongDimension
@@ -639,26 +639,18 @@ func (rt *Rtree) NearestNeighboursPQ(k int, p Point) []OSMObject {
 // NearestNeighboursRadiusFilterOSM. returns the k nearest neighbours (with filtered osm feature) within a given radius in km.
 func (rt *Rtree) NearestNeighboursRadiusFilterOSM(k, offfset int, p Point, maxRadius float64,
 	osmFeature int) []OSMObject {
-	nearestLists := make([]OSMObject, 0, k)
+	nearestLists := make([]OSMObject, 0, k*100)
 
 	callback := func(n OSMObject) bool {
-		nearestLists = append(nearestLists, n)
+		dist := HaversineDistance(p.Lat, p.Lon, n.Lat, n.Lon)
+		if _, ok := n.Tag[osmFeature]; ok && dist <= maxRadius {
+			nearestLists = append(nearestLists, n)
+		}
 
-		return HaversineDistance(p.Lat, p.Lon, n.Lat, n.Lon) <= maxRadius
+		return dist <= maxRadius
 	}
 
 	rt.incrementalNearestNeighbor(p, callback)
-
-	c := 0
-
-	for i, n := range nearestLists {
-		if _, ok := n.Tag[osmFeature]; ok {
-			nearestLists[c] = nearestLists[i]
-			c++
-		}
-	}
-
-	nearestLists = nearestLists[:c]
 
 	if len(nearestLists) > offfset {
 		nearestLists = nearestLists[offfset:]
@@ -670,7 +662,6 @@ func (rt *Rtree) NearestNeighboursRadiusFilterOSM(k, offfset int, p Point, maxRa
 
 	return nearestLists
 }
-
 
 // https://dl.acm.org/doi/pdf/10.1145/320248.320255 (Fig. 4.  incremental nearest neighbor algorithm)
 func (rt *Rtree) incrementalNearestNeighbor(p Point, callback func(OSMObject) bool) {
@@ -726,6 +717,204 @@ func (rt *Rtree) ImprovedNearestNeighbor(p Point) OSMObject {
 	rt.incrementalNearestNeighbor(p, callback)
 
 	return nearest
+}
+
+func (rt *Rtree) Delete(leaf OSMObject) bool {
+	// Dl. [Find node containing record.]
+	// Invoke FindLeaf to locate the leaf
+	// node L containing E. Stop if the
+	// record was not found.
+	l, leafLevel := rt.findLeaf(leaf, rt.Root, 1)
+	if l == nil {
+		return false
+	}
+
+	// D2. [Delete record.] Remove E from L.
+	for i, item := range l.Items {
+		if item.Leaf.ID == leaf.ID {
+			l.Items = append(l.Items[:i], l.Items[i+1:]...)
+			break
+		}
+	}
+
+	q := make([]NodeWithLevel, 0, rt.MaxChildItems)
+
+	// D3. [Propagate changes.] Invoke CondenseTree, passing L.
+	rt.condenseTree(l, q, leafLevel)
+	return true
+}
+
+func (rt *Rtree) findLeaf(leaf OSMObject, node *RtreeNode, level int) (*RtreeNode, int) {
+	// FL1. [Search subtrees.] If T is not a leaf,
+	// check each entry F in T to determine if F.I overlaps E.I. For each
+	// such entry inyoke FindLeaf on the
+	// tree whose root is pointed to by F.p
+	// until E is found
+	if !node.isLeafNode() {
+		for _, item := range node.Items {
+			if overlaps(item.GetBound(), leaf.GetBound()) {
+				leaf, leafLevel := rt.findLeaf(leaf, item, level+1)
+				if leaf != nil {
+					return leaf, leafLevel
+				}
+			}
+		}
+	}
+
+	// FL2. [Search leaf node for record.] If T is
+	// a leaf, check each entry to see if it
+	// matches E. If E is found return T.
+
+	for _, item := range node.Items {
+		if item.Leaf.ID == leaf.ID {
+			return node, level
+		}
+	}
+	return nil, 0
+}
+
+type NodeWithLevel struct {
+	node   *RtreeNode
+	level  int
+	isLeaf bool
+}
+
+func (rt *Rtree) condenseTree(n *RtreeNode, q []NodeWithLevel, nLevel int) {
+
+	if n == rt.Root {
+		// CT6. [Re-insert orphaned entries.] Reinsert all entries of nodes in set Q.
+		// Entries from eliminated leaf nodes
+		// are re-inserted in tree leaves as
+		// described in Algorithm Insert, but
+		// entries from higher-level nodes must
+		// be placed higher in the tree, so that
+		// leaves of their dependent subtrees
+		// will be on the same level as leaves of
+		// the main tree.
+		for i := len(q) - 1; i >= 0; i-- {
+			//  dari belakang, reinsert dari node higher level -> ke leafNode
+			item := q[i] //
+			if item.isLeaf {
+				// Entries from eliminated leaf nodes
+				// are re-inserted in tree leaves as
+				// described in Algorithm Insert
+				for _, leafData := range item.node.Items {
+					rt.InsertLeaf(item.node.GetBound(), leafData.Leaf)
+				}
+			} else {
+				//  but entries from higher-level nodes must
+				// be placed higher in the tree, so that
+				// leaves of their dependent subtrees
+				// will be on the same level as leaves of
+				// the main tree.
+				rt.insertLevel(item.node.GetBound(), item.node, item.level-1)
+			}
+		}
+
+	} else {
+		// CT2. [Find parent entry.] If N is the root,
+		// go to CT6. Otherwise let P be the
+		// parent of N, and let EN be N's entry
+		// in P.
+		p := n.Parent
+		en := p.Items[0]
+		for i := 0; i < len(p.Items); i++ {
+			if p.Items[i] == n {
+				en = n.Items[i]
+			}
+		}
+
+		nEliminated := false
+
+		// CT3. [Eliminate under-full node.] If N has
+		// fewer than m entries, delete EN from
+		// P and add N to set Q.
+		if len(n.Items) < rt.MinChildItems {
+			nEliminated = true
+			for i := 0; i < len(p.Items); i++ {
+				if p.Items[i] == en {
+					p.Items = append(p.Items[:i], p.Items[i+1:]...)
+
+					if len(n.Items) > 0 {
+						nodeLevel := NodeWithLevel{node: n, level: nLevel,
+							isLeaf: n.isLeafNode()}
+						q = append(q, nodeLevel)
+					}
+					break
+				}
+			}
+		}
+
+		// CT4. [Adjust covering rectangle.] -If N has
+		// not been eliminated, adjust EN.I to
+		// tightly contain all entries in N.
+		if !nEliminated {
+			en.Bound = n.ComputeBB()
+		}
+
+		// CT5. [Move up one level in tree.] Set N=P
+		// and repeat from CT2
+		rt.condenseTree(p, q, nLevel-1)
+	}
+}
+
+func (rt *Rtree) insertLevel(bound RtreeBoundingBox, node *RtreeNode, level int) {
+
+	leafNode := rt.chooseLevel(rt.Root, node.GetBound(), level, 1)
+	leafNode.Items = append(leafNode.Items, node)
+
+	node.Parent = leafNode
+
+	var l, ll *RtreeNode
+	l = leafNode
+	if len(leafNode.Items) > rt.MaxChildItems {
+		l, ll = rt.splitNode(leafNode)
+	}
+
+	p, pp := rt.adjustTree(l, ll)
+	if pp != nil {
+		// 14. [Grow tree taller.] If node split propagation caused the root to split,
+		// create a new root whose children are
+		// the two resulting nodes.
+		rt.Root = &RtreeNode{}
+		pp.Bound = pp.ComputeBB()
+
+		rt.Root.Items = []*RtreeNode{p, pp}
+		p.Parent = rt.Root
+		pp.Parent = rt.Root
+		rt.Height++
+
+		rt.Root.Bound = rt.Root.ComputeBB()
+	}
+}
+
+func (rt *Rtree) chooseLevel(node *RtreeNode, bound RtreeBoundingBox,
+	desiredLevel, level int) *RtreeNode {
+
+	if desiredLevel == level {
+		return node
+	}
+	var chosen *RtreeNode
+
+	minAreaEnlargement := math.MaxFloat64
+	idxEntryWithMinAreaEnlargement := 0
+	for i, item := range node.Items {
+		itembb := item.GetBound()
+
+		bb := boundingBox(itembb, bound)
+
+		enlargement := area(bb) - area(itembb)
+		if enlargement < minAreaEnlargement ||
+			(enlargement == minAreaEnlargement &&
+				area(bb) < area(node.Items[idxEntryWithMinAreaEnlargement].GetBound())) {
+			minAreaEnlargement = enlargement
+			idxEntryWithMinAreaEnlargement = i
+		}
+	}
+
+	chosen = node.Items[idxEntryWithMinAreaEnlargement]
+
+	return rt.chooseLevel(chosen, bound, desiredLevel, level+1)
 }
 
 func SerializeRtreeData(workingDir string, outputDir string, items []OSMObject) error {
@@ -793,7 +982,7 @@ func (rt *Rtree) Deserialize(workingDir string, outputDir string) error {
 
 	for _, item := range items {
 
-		rt.InsertR(item.GetBound(), item)
+		rt.InsertLeaf(item.GetBound(), item)
 	}
 
 	return nil
