@@ -454,8 +454,6 @@ func (rt *Rtree) linearPickSeeds(l *RtreeNode) (*RtreeNode, *RtreeNode) {
 		}
 	}
 
-	assertPanic(entryOne != entryTwo, "entryOne & entryTwo must be different")
-
 	return entryOne, entryTwo
 }
 
@@ -506,30 +504,29 @@ func (rt *Rtree) Search(bound RtreeBoundingBox) []RtreeNode {
 
 func (rt *Rtree) search(node *RtreeNode, bound RtreeBoundingBox,
 	results []RtreeNode) []RtreeNode {
-	for _, e := range node.Items {
 
-		if !overlaps(e.GetBound(), bound) {
-			continue
+	// S1. [Search subtrees.] If T is not a leaf,
+	// check each entry E to determine
+	// whether E.I overlaps S. For all overlapping entries, invoke Search on the tree
+	// whose root node is pointed to by E.p
+	if !node.isLeafNode() {
+		for _, e := range node.Items {
+			if overlaps(e.GetBound(), bound) {
+				results = rt.search(e, bound, results)
+			}
 		}
-
-		if !node.isLeafNode() {
-			// S1. [Search subtrees.] If T is not a leaf,
-			// check each entry E to determine
-			// whether E.I overlaps S. For all overlapping entries, invoke Search on the tree
-			// whose root node is pointed to by E.p
-			results = rt.search(e, bound, results)
-			continue
-		}
-
-		if overlaps(e.GetBound(), bound) {
-			// S2. [Search leaf node.] If T is a leaf, check
-			// all entries E to determine whether E.I
-			// overlaps S. If so, E is a qualifying
-			// record
-			results = append(results, *e)
-
+	} else {
+		for _, e := range node.Items {
+			if overlaps(e.GetBound(), bound) {
+				// S2. [Search leaf node.] If T is a leaf, check
+				// all entries E to determine whether E.I
+				// overlaps S. If so, E is a qualifying
+				// record
+				results = append(results, *e)
+			}
 		}
 	}
+
 	return results
 }
 
@@ -1015,118 +1012,3 @@ func (rt *Rtree) Deserialize(workingDir string, outputDir string) error {
 
 	return nil
 }
-
-// this Delete Method is also correct too.
-// func (rt *Rtree) Delete(leaf OSMObject) bool {
-// 	// Dl. [Find node containing record.]
-// 	// Invoke FindLeaf to locate the leaf
-// 	// node L containing E. Stop if the
-// 	// record was not found.
-// 	l, leafLevel := rt.FindLeaf(leaf, rt.Root, 1)
-// 	if l == nil {
-// 		return false
-// 	}
-
-// 	// D2. [Delete record.] Remove E from L.
-// 	for i, item := range l.Items {
-// 		if item.Leaf.ID == leaf.ID {
-// 			l.Items[i] = l.Items[len(l.Items)-1]
-// 			l.Items = l.Items[:len(l.Items)-1]
-// 			break
-// 		}
-// 	}
-
-// 	//CT1. [Initialize.] Set N=L. Set Q, the-set
-// 	// of eliminated nodes, to be empty.
-// 	q := []NodeWithLevel{}
-// 	n := l
-// 	nLevel := leafLevel
-// 	for n != rt.Root {
-// 		// CT2. [Find parent entry.] If N is the root,
-// 		// go to CT6. Otherwise let P be the
-// 		// parent of N, and let EN be N's entry
-// 		// in P.
-// 		p := n.Parent
-
-// 		enIDx := -1
-// 		for i := 0; i < len(p.Items); i++ {
-// 			if p.Items[i] == n {
-// 				enIDx = i
-// 			}
-// 		}
-
-// 		if len(n.Items) < rt.MinChildItems {
-
-// 			q = append(q, NodeWithLevel{
-// 				node:  n,
-// 				level: nLevel,
-// 			})
-
-// 			// CT3. [Eliminate under-full node.] If N has
-// 			// fewer than m entries, delete EN from
-// 			// P and add N to set Q.
-// 			p.Items[enIDx] = p.Items[len(p.Items)-1]
-// 			p.Items = p.Items[:len(p.Items)-1]
-// 		} else {
-// 			// CT4. [Adjust covering rectangle.] -If N has
-// 			// not been eliminated, adjust EN.I to
-// 			// tightly contain all entries in N.
-// 			p.Items[enIDx].Bound = p.Items[enIDx].ComputeBB()
-// 		}
-// 		//CT5. [Move up one level in tree.] Set N=P
-// 		// and repeat from CT2.
-
-// 		n = p
-// 		nLevel--
-// 	}
-
-// 	n.Bound = n.ComputeBB()
-
-// 	//CT2. [Find parent entry.] If N is the root,
-// 	// go to CT6.
-// 	//CT6. [Re-insert orphaned entries.] Reinsert all entries of nodes in set Q.
-// 	// Entries from eliminated leaf nodes
-// 	// are re-inserted in tree leaves as
-// 	// described in Algorithm Insert, but
-// 	// entries from higher-level nodes must
-// 	// be placed higher in the tree, so that
-// 	// leaves of their dependent subtrees
-// 	// will be on the same level as leaves of
-// 	// the main tree.
-// 	for _, sEntry := range q {
-
-// 		if len(sEntry.node.Items) > 0 {
-// 			sEntry.node.Bound = sEntry.node.ComputeBB()
-
-// 			if sEntry.node.isLeafNode() {
-// 				for i := 0; i < len(sEntry.node.Items); i++ {
-// 					entry := sEntry.node.Items[i]
-
-// 					rt.InsertLeaf(entry.GetBound(), entry.Leaf, true)
-// 				}
-// 			} else {
-// 				// misal hapus node children dari rt.Root
-// 				// berrati jalanin ini... kalau len(sEntry.node.Items) > 0
-// 				for i := 0; i < len(sEntry.node.Items); i++ {
-// 					entry := sEntry.node.Items[i]
-// 					entry.Bound = entry.ComputeBB()
-// 					rt.insertLevel(entry, sEntry.level)
-// 				}
-// 			}
-// 		}
-// 	}
-
-// 	rt.Size--
-
-// 	// D4. [Shorten tree.] If the root node has
-// 	// only one child after the tree has
-// 	// been adjusted, make thé child the
-// 	// new root.
-// 	if len(rt.Root.Items) == 1 && !rt.Root.isLeafNode() {
-// 		rt.Root = rt.Root.Items[0]
-// 		rt.Root.Parent = nil
-// 		rt.Height--
-// 	}
-
-// 	return true
-// }

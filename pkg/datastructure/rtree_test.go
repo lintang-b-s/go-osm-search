@@ -21,7 +21,7 @@ func traverseRtreeAndTestIfRtreePropertiesCorrect(rt *Rtree, node *RtreeNode, co
 	if node.IsLeaf {
 		height := float64(level - 1)
 		logmN := math.Log(float64(rt.Size)) / math.Log(float64(rt.MinChildItems))
-		assert.LessOrEqual(t, height, math.Ceil(logmN)-1, fmt.Sprintf("The height of an R-tree containing Nindex records is at most ceil(logmN)-1"))
+		assert.LessOrEqual(t, height, math.Ceil(logmN)-1, fmt.Sprintf("The height of an R-tree containing N index records is at most ceil(logmN)-1"))
 
 		if level != expectedLeafLevel {
 			t.Errorf("All leaves not appear on the same level")
@@ -172,7 +172,6 @@ func TestSearch(t *testing.T) {
 			itembb := item.GetBound()
 			if !overlaps(itembb, NewRtreeBoundingBox(2, []float64{0, 0}, []float64{50, 50})) {
 				t.Errorf("Bounding box is not correct")
-
 			}
 		}
 	})
