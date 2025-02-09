@@ -810,7 +810,7 @@ func TestGetFullAdress(t *testing.T) {
 			for _, street := range streets {
 				bound := datastructure.NewRtreeBoundingBox(2, []float64{street.place.Lat - 0.0001, street.place.Lon - 0.0001}, []float64{street.place.Lat + 0.0001, street.place.Lon + 0.0001})
 
-				streetRtree.InsertLeaf(bound, street.place)
+				streetRtree.InsertLeaf(bound, street.place, false)
 			}
 
 			for _, kelurahan := range kelurahans {
@@ -822,7 +822,7 @@ func TestGetFullAdress(t *testing.T) {
 				sort.Float64s(boundaryLon)
 				bound := datastructure.NewRtreeBoundingBox(2, []float64{boundaryLat[0], boundaryLon[0]},
 					[]float64{boundaryLat[len(boundaryLat)-1], boundaryLon[len(boundaryLon)-1]})
-				kelurahanRtree.InsertLeaf(bound, kelurahan.place)
+				kelurahanRtree.InsertLeaf(bound, kelurahan.place, false)
 			}
 
 			for _, kecamatan := range kecamatans {
@@ -834,7 +834,7 @@ func TestGetFullAdress(t *testing.T) {
 				sort.Float64s(boundaryLon)
 				bound := datastructure.NewRtreeBoundingBox(2, []float64{boundaryLat[0], boundaryLon[0]},
 					[]float64{boundaryLat[len(boundaryLat)-1], boundaryLon[len(boundaryLon)-1]})
-				kecamatanRtree.InsertLeaf(bound, kecamatan.place)
+				kecamatanRtree.InsertLeaf(bound, kecamatan.place, false)
 			}
 
 			for _, kotaKabupaten := range kotaKabupatens {
@@ -846,7 +846,7 @@ func TestGetFullAdress(t *testing.T) {
 				sort.Float64s(boundaryLon)
 				bound := datastructure.NewRtreeBoundingBox(2, []float64{boundaryLat[0], boundaryLon[0]},
 					[]float64{boundaryLat[len(boundaryLat)-1], boundaryLon[len(boundaryLon)-1]})
-				kotaKabupatenRtree.InsertLeaf(bound, kotaKabupaten.place)
+				kotaKabupatenRtree.InsertLeaf(bound, kotaKabupaten.place, false)
 			}
 
 			for _, provinsi := range provinsis {
@@ -858,7 +858,7 @@ func TestGetFullAdress(t *testing.T) {
 				sort.Float64s(boundaryLon)
 				bound := datastructure.NewRtreeBoundingBox(2, []float64{boundaryLat[0], boundaryLon[0]},
 					[]float64{boundaryLat[len(boundaryLat)-1], boundaryLon[len(boundaryLon)-1]})
-				provinsiRtree.InsertLeaf(bound, provinsi.place)
+				provinsiRtree.InsertLeaf(bound, provinsi.place, false)
 			}
 
 			osmSpatialIndex := geo.OSMSpatialIndex{

@@ -44,7 +44,7 @@ func NewGeoFence() GeoFence {
 
 func (r *RtreeFence) Add(f datastructure.Circle) {
 	circleFenceObj := datastructure.NewOSMObject(r.fenceIDMap.GetID(f.GetKey()), f.GetCenterLat(), f.GetCenterLon(), nil, f.GetBound())
-	r.rtree.InsertLeaf(f.GetBound(), circleFenceObj)
+	r.rtree.InsertLeaf(f.GetBound(), circleFenceObj, false)
 	r.fence[f.GetKey()] = f
 }
 

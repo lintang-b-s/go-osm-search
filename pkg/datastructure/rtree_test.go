@@ -11,7 +11,6 @@ import (
 )
 
 // this is trash
-
 func traverseRtreeAndTestIfRtreePropertiesCorrect(rt *Rtree, node *RtreeNode, countLeaf *int,
 	expectedLeafLevel int, level int, t *testing.T) {
 	if node == rt.Root && level != expectedLeafLevel {
@@ -28,8 +27,8 @@ func traverseRtreeAndTestIfRtreePropertiesCorrect(rt *Rtree, node *RtreeNode, co
 			t.Errorf("All leaves not appear on the same level")
 		}
 
-		if rt.Root != node && len(node.Items) < rt.MinChildItems || len(node.Items) > rt.MaxChildItems {
-			t.Errorf("Number of children in node is not correct")
+		if rt.Root != node && (len(node.Items) < rt.MinChildItems || len(node.Items) > rt.MaxChildItems) {
+			t.Errorf(" Every leaf node has between m and M children unless it is the root.")
 		}
 
 		maxBB := node.Items[0].GetBound()
@@ -40,13 +39,13 @@ func traverseRtreeAndTestIfRtreePropertiesCorrect(rt *Rtree, node *RtreeNode, co
 		}
 
 		if !node.Bound.isBBSame(maxBB) {
-			t.Errorf("Bounding box not same")
+			t.Errorf("For each index record(I, tuple-identifier) in a leaf node, I is the smallest rectangle that spatially contains the n-dimensional data object represented by the indicated tuple.")
 		}
 	} else {
 		maxBB := node.Items[0].GetBound()
 
-		if rt.Root != node && len(node.Items) < rt.MinChildItems || len(node.Items) > rt.MaxChildItems {
-			t.Errorf(" Every non-leaf node has between mand M children unless it is the root.")
+		if rt.Root != node && (len(node.Items) < rt.MinChildItems || len(node.Items) > rt.MaxChildItems) {
+			t.Errorf(" Every non-leaf node has between m and M children unless it is the root.")
 		}
 
 		for _, item := range node.Items {
@@ -56,14 +55,14 @@ func traverseRtreeAndTestIfRtreePropertiesCorrect(rt *Rtree, node *RtreeNode, co
 		}
 
 		if !node.Bound.isBBSame(maxBB) {
-			t.Errorf("Bounding box not same")
+			t.Errorf("(4) For each entry (I, child —pointer ) in a non-leaf node, I is the smallest rectangle that spatially contains the rectangles in tleafhe child node")
 		}
 	}
 }
 
 func TestInsertLeaftree(t *testing.T) {
 	itemsData := []OSMObject{}
-	for i := 0; i < 100; i++ {
+	for i := 1; i < 100; i++ {
 		itemsData = append(itemsData, OSMObject{
 			ID:  i,
 			Lat: float64(i),
@@ -95,7 +94,7 @@ func TestInsertLeaftree(t *testing.T) {
 					Lon: -15,
 				},
 			}...),
-			expectItems: 103,
+			expectItems: 102,
 		},
 	}
 
@@ -105,10 +104,10 @@ func TestInsertLeaftree(t *testing.T) {
 			for _, item := range tt.items {
 				bound := NewRtreeBoundingBox(2, []float64{item.Lat - 0.0001, item.Lon - 0.0001}, []float64{item.Lat + 0.0001, item.Lon + 0.0001})
 
-				rt.InsertLeaf(bound, item)
+				rt.InsertLeaf(bound, item, false)
 
 			}
-			assert.Equal(t, 103, rt.Size)
+			assert.Equal(t, 102, rt.Size)
 
 			countLeaf := 0
 
@@ -125,7 +124,7 @@ func TestInsertLeaftree(t *testing.T) {
 			bound := NewRtreeBoundingBox(2, []float64{itemsData[i].Lat - 0.0001,
 				itemsData[i].Lon - 0.0001}, []float64{itemsData[i].Lat + 0.0001, itemsData[i].Lon + 0.0001})
 
-			rt.InsertLeaf(bound, item)
+			rt.InsertLeaf(bound, item, false)
 		}
 		assert.Equal(t, 5, rt.Size)
 		root := rt.Root
@@ -157,7 +156,7 @@ func TestSearch(t *testing.T) {
 			bound := NewRtreeBoundingBox(2, []float64{itemsData[i].Lat - 0.0001, itemsData[i].Lon - 0.0001},
 				[]float64{itemsData[i].Lat + 0.0001, itemsData[i].Lon + 0.0001})
 
-			rt.InsertLeaf(bound, item)
+			rt.InsertLeaf(bound, item, false)
 
 		}
 
@@ -182,7 +181,7 @@ func TestSearch(t *testing.T) {
 func TestSplit(t *testing.T) {
 	t.Run("Split", func(t *testing.T) {
 		itemsData := []OSMObject{}
-		for i := 0; i < 26; i++ {
+		for i := 1; i < 27; i++ {
 			itemsData = append(itemsData, OSMObject{
 				ID:  i,
 				Lat: float64(i),
@@ -194,9 +193,10 @@ func TestSplit(t *testing.T) {
 
 		bound := NewRtreeBoundingBox(2, []float64{itemsData[0].Lat - 0.0001, itemsData[0].Lon - 0.0001}, []float64{itemsData[0].Lat + 0.0001, itemsData[0].Lon + 0.0001})
 
-		rt.InsertLeaf(bound, itemsData[0])
+		rt.InsertLeaf(bound, itemsData[0], false)
 		for i := 1; i < 26; i++ {
 			item := itemsData[i]
+			bound := NewRtreeBoundingBox(2, []float64{itemsData[i].Lat - 0.0001, itemsData[i].Lon - 0.0001}, []float64{itemsData[i].Lat + 0.0001, itemsData[i].Lon + 0.0001})
 
 			newLeaf := &RtreeNode{Leaf: item, Bound: bound}
 			rt.Root.Items = append(rt.Root.Items, newLeaf)
@@ -255,14 +255,9 @@ func TestNNearestNeighborsPQ(t *testing.T) {
 				Lat: -7.759889166547908,
 				Lon: 110.36689459108496,
 			},
-			{
-				ID:  0,
-				Lat: -7.550561079106621,
-				Lon: 110.7837156929654,
-			},
 		}
 
-		for i := 8; i < 100000; i++ {
+		for i := 8; i < 100001; i++ {
 			lat, lon := randomLatLon(-6.107481038495567, -5.995288834299442, 106.13128828884481, 107.0509652831274)
 			itemsData = append(itemsData, OSMObject{
 				ID:  i,
@@ -275,22 +270,25 @@ func TestNNearestNeighborsPQ(t *testing.T) {
 		for _, item := range itemsData {
 			bound := NewRtreeBoundingBox(2, []float64{item.Lat - 0.0001, item.Lon - 0.0001}, []float64{item.Lat + 0.0001, item.Lon + 0.0001})
 
-			rt.InsertLeaf(bound, item)
+			rt.InsertLeaf(bound, item, false)
 		}
 
 		countLeaf := 0
 		expectedLeafLevel := 4
 		traverseRtreeAndTestIfRtreePropertiesCorrect(rt, rt.Root, &countLeaf, expectedLeafLevel, 1, t)
 
+		assert.Equal(t, 100000, countLeaf)
+
 		myLocation := Point{-7.548263971398246, 110.78226484631368}
 		results := rt.NearestNeighboursPQ(5, myLocation)
 
 		assert.Equal(t, 5, len(results))
-		assert.Equal(t, 0, results[0].ID)
-		assert.Equal(t, 7, results[1].ID)
-		assert.Equal(t, 6, results[2].ID)
-		assert.Equal(t, 5, results[3].ID)
-		assert.Equal(t, 4, results[4].ID)
+
+		assert.Equal(t, 7, results[0].ID)
+		assert.Equal(t, 6, results[1].ID)
+		assert.Equal(t, 5, results[2].ID)
+		assert.Equal(t, 4, results[3].ID)
+		assert.Equal(t, 1, results[4].ID)
 	})
 }
 
@@ -355,8 +353,12 @@ func TestNearestNeighbor(t *testing.T) {
 		rt := NewRtree(25, 50, 2)
 		for _, item := range itemsData {
 			bound := NewRtreeBoundingBox(2, []float64{item.Lat - 0.0001, item.Lon - 0.0001}, []float64{item.Lat + 0.0001, item.Lon + 0.0001})
-			rt.InsertLeaf(bound, item)
+			rt.InsertLeaf(bound, item, false)
 		}
+
+		countLeaf := 0
+		expectedLeafLevel := 4
+		traverseRtreeAndTestIfRtreePropertiesCorrect(rt, rt.Root, &countLeaf, expectedLeafLevel, 1, t)
 
 		myLocation := Point{-7.760335932763678, 110.37671195413539}
 
@@ -458,7 +460,7 @@ func TestNearestNeighborRadiusFilterOsmFeature(t *testing.T) {
 		for _, item := range itemsData {
 			bound := NewRtreeBoundingBox(2, []float64{item.Lat - 0.0001, item.Lon - 0.0001}, []float64{item.Lat + 0.0001, item.Lon + 0.0001})
 
-			rt.InsertLeaf(bound, item)
+			rt.InsertLeaf(bound, item, false)
 		}
 
 		myLocation := Point{-7.760335932763678, 110.37671195413539}
@@ -473,9 +475,243 @@ func TestNearestNeighborRadiusFilterOsmFeature(t *testing.T) {
 	})
 }
 
-// go test  . -bench=[nama_benchmark] -v -benchmem -cpuprofile=cpu.out
-// BenchmarkNNearestNeighbors-12    	   64574	     45842 ns/op	     21814 ops/sec	   70560 B/op	      12 allocs/op
+func TestDelete(t *testing.T) {
+	t.Run("Test Delete", func(t *testing.T) {
+		itemsData := []OSMObject{}
 
+		for i := 1; i < 100000; i++ {
+			tag := rand.Intn(10)
+			val := rand.Intn(10)
+
+			lat, lon := randomLatLon(-6.107481038495567, -5.995288834299442, 106.13128828884481, 107.0509652831274)
+			itemsData = append(itemsData, OSMObject{
+				ID:  i,
+				Lat: lat,
+				Lon: lon,
+				Tag: map[int]int{tag: val},
+			})
+		}
+
+		rt := NewRtree(25, 50, 2)
+		for _, item := range itemsData {
+			bound := NewRtreeBoundingBox(2, []float64{item.Lat - 0.0001, item.Lon - 0.0001},
+				[]float64{item.Lat + 0.0001, item.Lon + 0.0001})
+
+			rt.InsertLeaf(bound, item, false)
+		}
+
+		for i := 0; i < len(itemsData); i++ {
+			if i%2 == 0 {
+
+				bound := NewRtreeBoundingBox(2, []float64{itemsData[i].Lat - 0.0001,
+					itemsData[i].Lon - 0.0001}, []float64{itemsData[i].Lat + 0.0001, itemsData[i].Lon + 0.0001})
+				itemsData[i].SetBound(bound)
+				rt.Delete(itemsData[i])
+
+			}
+		}
+
+		for i := 0; i < len(itemsData); i++ {
+			if i%2 == 0 {
+				node, _ := rt.FindLeaf(itemsData[i], rt.Root, 1)
+				assert.Nil(t, node)
+			}
+		}
+
+		countLeaf := 0
+		expectedLeafLevel := 3
+
+		traverseRtreeAndTestIfRtreePropertiesCorrect(rt, rt.Root, &countLeaf, expectedLeafLevel, 1, t)
+
+	})
+
+	t.Run("Test Delete small data", func(t *testing.T) {
+		itemsData := []OSMObject{}
+
+		for i := 1; i < 100; i++ {
+			tag := rand.Intn(10)
+			val := rand.Intn(10)
+
+			lat, lon := randomLatLon(-6.107481038495567, -5.995288834299442, 106.13128828884481, 107.0509652831274)
+			itemsData = append(itemsData, OSMObject{
+				ID:  i,
+				Lat: lat,
+				Lon: lon,
+				Tag: map[int]int{tag: val},
+			})
+		}
+
+		rt := NewRtree(10, 25, 2)
+		for _, item := range itemsData {
+			bound := NewRtreeBoundingBox(2, []float64{item.Lat - 0.0001, item.Lon - 0.0001},
+				[]float64{item.Lat + 0.0001, item.Lon + 0.0001})
+
+			rt.InsertLeaf(bound, item, false)
+
+		}
+
+		for i := 0; i < len(itemsData); i++ {
+			if i%2 == 0 {
+
+				bound := NewRtreeBoundingBox(2, []float64{itemsData[i].Lat - 0.0001,
+					itemsData[i].Lon - 0.0001}, []float64{itemsData[i].Lat + 0.0001, itemsData[i].Lon + 0.0001})
+				itemsData[i].SetBound(bound)
+				rt.Delete(itemsData[i])
+
+			}
+		}
+
+		for i := 0; i < len(itemsData); i++ {
+			if i%2 == 0 {
+				leafNode, _ := rt.FindLeaf(itemsData[i], rt.Root, 1)
+
+				assert.Nil(t, leafNode)
+			}
+		}
+
+		countLeaf := 0
+		expectedLeafLevel := 2
+		traverseRtreeAndTestIfRtreePropertiesCorrect(rt, rt.Root, &countLeaf, expectedLeafLevel, 1, t)
+
+	})
+}
+
+func TestInsertLevel(t *testing.T) {
+	t.Run("Test Insert Level", func(t *testing.T) {
+		var itemsData = []OSMObject{}
+
+		for i := 0; i < 30; i++ {
+			tag := rand.Intn(10)
+			val := rand.Intn(10)
+
+			lat, lon := randomLatLon(-6.107481038495567, -5.995288834299442, 106.13128828884481, 107.0509652831274)
+			itemsData = append(itemsData, OSMObject{
+				ID:  i,
+				Lat: lat,
+				Lon: lon,
+				Tag: map[int]int{tag: val},
+			})
+		}
+
+		rt := NewRtree(10, 25, 2)
+		for _, item := range itemsData {
+			bound := NewRtreeBoundingBox(2, []float64{item.Lat - 0.0001, item.Lon - 0.0001},
+				[]float64{item.Lat + 0.0001, item.Lon + 0.0001})
+
+			rt.InsertLeaf(bound, item, false)
+		}
+
+		// insert level
+		lat, lon := randomLatLon(-6.107481038495567, -5.995288834299442, 106.13128828884481, 107.0509652831274)
+		newLeaf := OSMObject{
+			ID:  31,
+			Lat: lat,
+			Lon: lon,
+			Tag: map[int]int{1: 1},
+		}
+
+		bound := NewRtreeBoundingBox(2, []float64{newLeaf.Lat - 0.0001, newLeaf.Lon - 0.0001},
+			[]float64{newLeaf.Lat + 0.0001, newLeaf.Lon + 0.0001})
+
+		newLeaf.SetBound(bound)
+
+		newNode := &RtreeNode{
+			Leaf:   newLeaf,
+			Bound:  bound,
+			IsLeaf: false,
+		}
+		rt.insertLevel(newNode, 2)
+
+		leafNode, resultLevel := rt.FindLeaf(newLeaf, rt.Root, 1)
+
+		isLeafFound := false
+
+		for _, entry := range leafNode.Items {
+			if entry.Leaf.ID == newLeaf.ID {
+				isLeafFound = true
+			}
+		}
+
+		assert.Equal(t, true, isLeafFound)
+		assert.Equal(t, 2, resultLevel)
+		countLeaf := 0
+		traverseRtreeAndTestIfRtreePropertiesCorrect(rt, rt.Root, &countLeaf, 2, 1, t)
+
+	})
+}
+
+func TestChooseLevel(t *testing.T) {
+	t.Run("Test Choose Level 2  after inserted", func(t *testing.T) {
+		var itemsData = []OSMObject{}
+
+		for i := 1; i < 30; i++ {
+			tag := rand.Intn(10)
+			val := rand.Intn(10)
+
+			lat, lon := randomLatLon(-6.107481038495567, -5.995288834299442, 106.13128828884481, 107.0509652831274)
+			itemsData = append(itemsData, OSMObject{
+				ID:  i,
+				Lat: lat,
+				Lon: lon,
+				Tag: map[int]int{tag: val},
+			})
+		}
+
+		rt := NewRtree(10, 25, 2)
+		for _, item := range itemsData {
+			bound := NewRtreeBoundingBox(2, []float64{item.Lat - 0.0001, item.Lon - 0.0001},
+				[]float64{item.Lat + 0.0001, item.Lon + 0.0001})
+
+			rt.InsertLeaf(bound, item, false)
+		}
+
+		// insert level
+		lat, lon := randomLatLon(-6.107481038495567, -5.995288834299442, 106.13128828884481, 107.0509652831274)
+		newLeaf := OSMObject{
+			ID:  31,
+			Lat: lat,
+			Lon: lon,
+			Tag: map[int]int{1: 1},
+		}
+
+		bound := NewRtreeBoundingBox(2, []float64{newLeaf.Lat - 0.0001, newLeaf.Lon - 0.0001},
+			[]float64{newLeaf.Lat + 0.0001, newLeaf.Lon + 0.0001})
+
+		newLeaf.SetBound(bound)
+
+		newNode := &RtreeNode{
+			Leaf:   newLeaf,
+			Bound:  bound,
+			IsLeaf: false,
+		}
+		rt.insertLevel(newNode, 2)
+
+		choosedNode := rt.chooseLevel(rt.Root, newNode.GetBound(), 2, 1)
+
+		isNewNodeThere := false
+		for i := 0; i < len(choosedNode.Items); i++ {
+			if choosedNode.Items[i] == newNode {
+				isNewNodeThere = true
+			}
+		}
+
+		assert.Equal(t, true, isNewNodeThere)
+
+		choosedNodeRoot := rt.chooseLevel(rt.Root, newNode.GetBound(), 1, 1)
+
+		isChoosenNodeThere := false
+		for i := 0; i < len(choosedNodeRoot.Items); i++ {
+			if choosedNodeRoot.Items[i] == choosedNode {
+				isChoosenNodeThere = true
+			}
+		}
+		assert.Equal(t, true, isChoosenNodeThere)
+
+	})
+}
+
+// go test  . -bench=[nama_benchmark] -v -benchmem -cpuprofile=cpu.out
+// BenchmarkNNearestNeighbors-12    	   47371	     34230 ns/op	     29214 ops/sec	   70560 B/op	      12 allocs/op
 func BenchmarkNNearestNeighbors(b *testing.B) {
 	itemsData := []OSMObject{}
 
@@ -493,7 +729,7 @@ func BenchmarkNNearestNeighbors(b *testing.B) {
 	for _, item := range itemsData {
 		bound := NewRtreeBoundingBox(2, []float64{item.Lat - 0.0001, item.Lon - 0.0001}, []float64{item.Lat + 0.0001, item.Lon + 0.0001})
 
-		rt.InsertLeaf(bound, item)
+		rt.InsertLeaf(bound, item, false)
 	}
 
 	myLocation := Point{-7.548263971398246, 110.78226484631368}
@@ -532,7 +768,7 @@ func BenchmarkInsert(b *testing.B) {
 		item := itemsData[randInt]
 		bound := NewRtreeBoundingBox(2, []float64{item.Lat - 0.0001, item.Lon - 0.0001}, []float64{item.Lat + 0.0001, item.Lon + 0.0001})
 
-		rt.InsertLeaf(bound, item)
+		rt.InsertLeaf(bound, item, false)
 	}
 	b.StopTimer()
 	throughput := float64(b.N) / b.Elapsed().Seconds()
@@ -557,7 +793,7 @@ func BenchmarkImprovedNearestNeighbor(b *testing.B) {
 	for _, item := range itemsData {
 		bound := NewRtreeBoundingBox(2, []float64{item.Lat - 0.0001, item.Lon - 0.0001}, []float64{item.Lat + 0.0001, item.Lon + 0.0001})
 
-		rt.InsertLeaf(bound, item)
+		rt.InsertLeaf(bound, item, false)
 	}
 	myLocation := Point{-7.548263971398246, 110.78226484631368}
 
@@ -592,7 +828,7 @@ func BenchmarkNearestNeighborRadiusFilterOsmFeature(b *testing.B) {
 	rt := NewRtree(25, 50, 2)
 	for _, item := range itemsData {
 		bound := NewRtreeBoundingBox(2, []float64{item.Lat - 0.0001, item.Lon - 0.0001}, []float64{item.Lat + 0.0001, item.Lon + 0.0001})
-		rt.InsertLeaf(bound, item)
+		rt.InsertLeaf(bound, item, false)
 	}
 
 	myLocation := Point{-7.760335932763678, 110.37671195413539}
@@ -626,7 +862,7 @@ func BenchmarkSearch(b *testing.B) {
 	rt := NewRtree(25, 50, 2)
 	for _, item := range itemsData {
 		bound := NewRtreeBoundingBox(2, []float64{item.Lat - 0.0001, item.Lon - 0.0001}, []float64{item.Lat + 0.0001, item.Lon + 0.0001})
-		rt.InsertLeaf(bound, item)
+		rt.InsertLeaf(bound, item, false)
 	}
 	myLocation := Point{-7.548263971398246, 110.78226484631368}
 

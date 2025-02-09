@@ -388,15 +388,15 @@ func ParseOSM(mapfile string) ([]OSMWay, []OSMNode, NodeMapContainer, *pkg.IDMap
 
 		// insert r-tree per administrative level
 		if rel.AdminLevel == "7" {
-			kelurahanRtree.InsertLeaf(bound, rtreeLeaf)
+			kelurahanRtree.InsertLeaf(bound, rtreeLeaf, false)
 		} else if rel.AdminLevel == "6" {
-			kecamatanRtree.InsertLeaf(bound, rtreeLeaf)
+			kecamatanRtree.InsertLeaf(bound, rtreeLeaf, false)
 		} else if rel.AdminLevel == "5" {
-			kotaKabupatenRtree.InsertLeaf(bound, rtreeLeaf)
+			kotaKabupatenRtree.InsertLeaf(bound, rtreeLeaf, false)
 		} else if rel.AdminLevel == "4" {
-			provinsiRtree.InsertLeaf(bound, rtreeLeaf)
+			provinsiRtree.InsertLeaf(bound, rtreeLeaf, false)
 		} else if rel.AdminLevel == "2" {
-			countryRtree.InsertLeaf(bound, rtreeLeaf)
+			countryRtree.InsertLeaf(bound, rtreeLeaf, false)
 		}
 
 	}
@@ -438,7 +438,7 @@ func ParseOSM(mapfile string) ([]OSMWay, []OSMNode, NodeMapContainer, *pkg.IDMap
 			bound := datastructure.NewRtreeBoundingBox(2, []float64{rtreeLeaf.Lat - 0.0001,
 				rtreeLeaf.Lon - 0.0001}, []float64{rtreeLeaf.Lat + 0.0001, rtreeLeaf.Lon + 0.0001})
 
-			streetRtree.InsertLeaf(bound, rtreeLeaf)
+			streetRtree.InsertLeaf(bound, rtreeLeaf, false)
 		}
 	}
 
