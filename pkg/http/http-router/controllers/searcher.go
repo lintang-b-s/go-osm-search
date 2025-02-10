@@ -51,9 +51,9 @@ func (api *searchAPI) Routes(group *helper.RouteGroup) {
 	// geofences
 	group.POST("/geofence", api.addGeofence)
 	group.DELETE("/geofence/:fencename", api.deleteGeofence)
-	group.POST("/geofence/:fencename/point", api.setQueryPoint)
+	group.PUT("/geofence/:fencename/point", api.setQueryPoint)
 	group.GET("/geofence/:fencename", api.searchFence)
-	group.POST("/geofence/:fencename", api.addFencePoint)
+	group.PUT("/geofence/:fencename", api.addFencePoint)
 }
 
 type errorResponse struct {
@@ -482,7 +482,11 @@ func (api *searchAPI) addGeofence(w http.ResponseWriter, r *http.Request, ps htt
 		return
 	}
 
-	api.geofenceService.AddFence(request.FenceName)
+	err = api.geofenceService.AddFence(request.FenceName)
+	if err != nil {
+		api.getStatusCode(w, r, err)
+		return
+	}
 	headers := make(http.Header)
 
 	if err := api.writeJSON(w, http.StatusOK, envelope{"data": NewMessageResponse("add geofence success")}, headers); err != nil {
@@ -803,7 +807,7 @@ func (api *searchAPI) addFencePoint(w http.ResponseWriter, r *http.Request, ps h
 		return
 	}
 
-	if err := api.writeJSON(w, http.StatusOK, envelope{"data": NewMessageResponse("add fence point success")}, headers); err != nil {
+	if err := api.writeJSON(w, http.StatusOK, envelope{"data": NewMessageResponse("set fence point success")}, headers); err != nil {
 		api.ServerErrorResponse(w, r, err)
 	}
 }

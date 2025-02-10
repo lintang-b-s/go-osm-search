@@ -13,7 +13,7 @@ type Searcher interface {
 }
 
 type GeofenceIndex interface {
-	AddFence(name string)
+	AddFence(name string) error
 	DeleteFence(name string)
 	Search(name string, lat, lon float64, fencePointID string) ([]geofence.FenceStatusObj, error)
 	UpdateFencePoint(name string, lat, lon float64, fencePointID string) error

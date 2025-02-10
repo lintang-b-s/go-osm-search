@@ -47,8 +47,8 @@ func NewGeofenceService(geofenceIndex GeofenceIndex) *GeofenceService {
 	}
 }
 
-func (s *GeofenceService) AddFence(name string) {
-	s.geofenceIndex.AddFence(name)
+func (s *GeofenceService) AddFence(name string) error{
+return 	s.geofenceIndex.AddFence(name)
 }
 
 func (s *GeofenceService) DeleteFence(name string) {

@@ -65,7 +65,7 @@ curl --location 'http://localhost:6060/api/geofence' \
 }'
 
 
-curl --location 'http://localhost:6060/api/geofence/ojol' \
+curl --location --request PUT 'http://localhost:6060/api/geofence/ojol' \
 --header 'Content-Type: application/json' \
 --data '{
     "lat": -6.175263997609506,
@@ -75,14 +75,14 @@ curl --location 'http://localhost:6060/api/geofence/ojol' \
 }'
 
 
-curl --location 'http://localhost:6060/api/geofence/ojol/point' \
+
+curl --location --request PUT 'http://localhost:6060/api/geofence/ojol/point' \
 --header 'Content-Type: application/json' \
 --data '{
     "lat":-6.169884724072774, 
     "lon":106.8702583208934,
     "query_point_id": "ojol_budi"
 }'
-
 
 curl --location 'http://localhost:6060/api/geofence/ojol?lat=-6.17749341514094&lon=106.82291254922845&query_point_id=ojol_budi'
 

@@ -188,9 +188,9 @@
 			"response": []
 		},
 		{
-			"name": "add fence point",
+			"name": "set fence point",
 			"request": {
-				"method": "POST",
+				"method": "PUT",
 				"header": [],
 				"body": {
 					"mode": "raw",
@@ -220,7 +220,7 @@
 		{
 			"name": "set query point",
 			"request": {
-				"method": "POST",
+				"method": "PUT",
 				"header": [],
 				"body": {
 					"mode": "raw",

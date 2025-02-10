@@ -30,8 +30,12 @@ func NewFenceIndex(db GeofenceDB) *FenceIndex {
 	}
 }
 
-func (f *FenceIndex) AddFence(name string) {
+func (f *FenceIndex) AddFence(name string)error {
+	if _, ok := f.fences[name];ok  {
+		return pkg.WrapErrorf(errors.New("already exixts"), pkg.ErrBadParamInput, "fence already exists")
+	}
 	f.fences[name] = NewRtreeFence()
+	return nil 
 }
 
 func (f *FenceIndex) DeleteFence(name string) {
