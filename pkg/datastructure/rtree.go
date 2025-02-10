@@ -770,7 +770,9 @@ func (rt *Rtree) Delete(leaf OSMObject) bool {
 func (rt *Rtree) condenseTree(n *RtreeNode, q []NodeWithLevel, nLevel int) {
 
 	if n == rt.Root {
-		n.Bound = n.ComputeBB() // harus recompute bb dari root kalau misal children dari root yang masuk ke q, len(items) == 0 -> mbr root gak diupdate & salah
+		if len(n.Items) != 0 {
+			n.Bound = n.ComputeBB() // harus recompute bb dari root kalau misal children dari root yang masuk ke q, len(items) == 0 -> mbr root gak diupdate & salah
+		}
 		// CT2. [Find parent entry.] If N is the root,
 		// go to CT6.
 		// CT6. [Re-insert orphaned entries.] Reinsert all entries of nodes in set Q.

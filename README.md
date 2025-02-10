@@ -53,7 +53,7 @@ curl --location 'http://localhost:6060/api/reverse?lat=-6.179842&lon=106.749864'
 
 ### Nearby places With a Specific Openstreetmap Tag and Within a Specific Radius
 ```
-curl --location 'http://localhost:6060/api/places?lat=-6.179842&lon=106.749864&feature=amenity=restaurant&k=10&offset=2&radius=3'
+curl --location 'http://localhost:6060/api/places?lat=-6.179842&lon=106.749864&feature=amenity=restaurant&k=10&offset=0&radius=3'
 ```
 
 ### Geofencing (In-memory)
