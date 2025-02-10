@@ -4,13 +4,18 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/lintang-b-s/osm-search/pkg"
 	"github.com/lintang-b-s/osm-search/pkg/datastructure"
 	"github.com/lintang-b-s/osm-search/pkg/kvdb"
 )
 
+var (
+	ErrFenceNotExists = errors.New("fence not exists")
+)
+
 type GeofenceDB interface {
-	PutFencePoint(point datastructure.FencePoint) error
-	GetFencePoint(id uint32) (point datastructure.FencePoint, err error)
+	PutQueryPoint(point datastructure.QueryPoint) error
+	GetQueryPoint(id string) (point datastructure.QueryPoint, err error)
 }
 
 type FenceIndex struct {
@@ -25,8 +30,8 @@ func NewFenceIndex(db GeofenceDB) *FenceIndex {
 	}
 }
 
-func (f *FenceIndex) AddFence(name string, fence GeoFence) {
-	f.fences[name] = fence
+func (f *FenceIndex) AddFence(name string) {
+	f.fences[name] = NewRtreeFence()
 }
 
 func (f *FenceIndex) DeleteFence(name string) {
@@ -38,15 +43,15 @@ func (f *FenceIndex) GetFence(name string) (GeoFence, bool) {
 	return fence, ok
 }
 
-func (f *FenceIndex) Search(name string, lat, lon float64, fencePointID uint32) ([]FenceStatusObj, error) {
+func (f *FenceIndex) Search(name string, lat, lon float64, queryPointID string) ([]FenceStatusObj, error) {
 	fence, ok := f.fences[name]
 	if !ok {
-		return []FenceStatusObj{}, fmt.Errorf("FenceIndex does not contain fence %q", name)
+		return []FenceStatusObj{}, pkg.WrapErrorf(ErrFenceNotExists, pkg.ErrBadParamInput, fmt.Sprintf("FenceIndex does not contain fence %s", name))
 	}
 
-	fencePoint, err := f.db.GetFencePoint(fencePointID)
+	fencePoint, err := f.db.GetQueryPoint(queryPointID)
 	if err != nil && !errors.Is(err, kvdb.ErrorsKeyNotExists) {
-		return []FenceStatusObj{}, fmt.Errorf("FenceIndex does not contain fence %q", name)
+		return []FenceStatusObj{}, pkg.WrapErrorf(ErrFenceNotExists, pkg.ErrBadParamInput, fmt.Sprintf("FenceIndex does not contain queryPoint %s", queryPointID))
 	}
 
 	if errors.Is(err, kvdb.ErrorsKeyNotExists) {
@@ -54,5 +59,33 @@ func (f *FenceIndex) Search(name string, lat, lon float64, fencePointID uint32) 
 		fencePoint.Lon = -999
 	}
 
-	return fence.Get(lat, lon, fencePoint), nil
+	newQueryPoint := datastructure.NewQueryPoint(queryPointID, lat, lon)
+	err = f.db.PutQueryPoint(newQueryPoint)
+	if err != nil {
+		return []FenceStatusObj{}, err
+	}
+	newFenceStatus := fence.Get(lat, lon, fencePoint)
+	return newFenceStatus, nil
+}
+
+func (f *FenceIndex) UpdateFencePoint(name string, lat, lon float64, queryPointID string) error {
+	if _, ok := f.fences[name]; !ok {
+		return pkg.WrapErrorf(ErrFenceNotExists, pkg.ErrBadParamInput, fmt.Sprintf("FenceIndex does not contain fence %s", name))
+	}
+	newQueryPoint := datastructure.NewQueryPoint(queryPointID, lat, lon)
+	err := f.db.PutQueryPoint(newQueryPoint)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (f *FenceIndex) AddFencePoint(name, fencePointName string, lat, lon, radius float64) error {
+	if _, ok := f.fences[name]; !ok {
+		return pkg.WrapErrorf(ErrFenceNotExists, pkg.ErrBadParamInput, fmt.Sprintf("FenceIndex does not contain fence %s", name))
+	}
+
+	circleFence := datastructure.NewCircle(fencePointName, lat, lon, radius)
+	f.fences[name].Add(name, circleFence)
+	return nil
 }

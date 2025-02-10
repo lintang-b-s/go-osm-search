@@ -15,14 +15,17 @@ const (
 	CROSS
 )
 
+// FenceStatusObj. model info
+//
+//	@Description	all fences containing query points.
 type FenceStatusObj struct {
-	Status FenceStatus
-	Fence  datastructure.Circle
+	Status FenceStatus          `json:"fence_status"` // fence - querypoint status
+	Fence  datastructure.Circle `json:"fence"`        // fence object
 }
 
 type GeoFence interface {
-	Add(f datastructure.Circle)
-	Get(lat, lon float64, oldFencePoint datastructure.FencePoint) []FenceStatusObj
+	Add(fenceName string, f datastructure.Circle)
+	Get(lat, lon float64, oldQueryPoint datastructure.QueryPoint) []FenceStatusObj
 }
 
 type RtreeFence struct {
@@ -35,6 +38,7 @@ func NewRtreeFence() *RtreeFence {
 	return &RtreeFence{
 		rtree:      datastructure.NewRtree(2, 25, 50),
 		fenceIDMap: pkg.NewIDMap(),
+		fence:      make(map[string]datastructure.Circle),
 	}
 }
 
@@ -42,30 +46,38 @@ func NewGeoFence() GeoFence {
 	return NewRtreeFence()
 }
 
-func (r *RtreeFence) Add(f datastructure.Circle) {
+func (r *RtreeFence) Add(fenceName string, f datastructure.Circle) {
 	circleFenceObj := datastructure.NewOSMObject(r.fenceIDMap.GetID(f.GetKey()), f.GetCenterLat(), f.GetCenterLon(), nil, f.GetBound())
-	r.rtree.InsertLeaf(f.GetBound(), circleFenceObj, false)
+
+	oldFenceNode, _ := r.rtree.FindLeaf(circleFenceObj, r.rtree.Root, 1)
+	if oldFenceNode == nil {
+		r.rtree.InsertLeaf(f.GetBound(), circleFenceObj, false)
+	} else {
+		r.rtree.Delete(circleFenceObj)
+		r.rtree.InsertLeaf(f.GetBound(), circleFenceObj, false)
+	}
+
 	r.fence[f.GetKey()] = f
 }
 
-func (r *RtreeFence) Get(lat, lon float64, oldFencePoint datastructure.FencePoint) []FenceStatusObj {
-	pBound := datastructure.NewRtreeBoundingBox(2, []float64{lat - 0.0001, lon - 0.0001}, []float64{lat + 0.0001, lon + 0.0001})
-	nodes := r.rtree.Search(pBound)
+func (r *RtreeFence) Get(lat, lon float64, oldQueryPoint datastructure.QueryPoint) []FenceStatusObj {
+
+	nearbyFences := r.rtree.NearestNeighboursPQ(3, datastructure.NewPoint(lat, lon))
 
 	var results = []FenceStatusObj{}
-	for _, node := range nodes {
-		fence := r.fence[r.fenceIDMap.GetStr(node.Leaf.ID)]
+	for _, node := range nearbyFences {
+		fence := r.fence[r.fenceIDMap.GetStr(node.ID)]
 
-		var oldFencePointStatus FenceStatus
+		var oldQueryPointStatus FenceStatus
 
-		if oldFencePoint.Lat != -999 {
-			if fence.Contains(oldFencePoint.Lat, oldFencePoint.Lon) {
-				oldFencePointStatus = INSIDE
+		if oldQueryPoint.Lat != -999 {
+			if fence.Contains(oldQueryPoint.Lat, oldQueryPoint.Lon) {
+				oldQueryPointStatus = INSIDE
 			} else {
-				oldFencePointStatus = OUTSIDE
+				oldQueryPointStatus = OUTSIDE
 			}
 		} else {
-			oldFencePointStatus = OUTSIDE
+			oldQueryPointStatus = OUTSIDE
 		}
 
 		var currentFencePointStatus FenceStatus
@@ -75,26 +87,26 @@ func (r *RtreeFence) Get(lat, lon float64, oldFencePoint datastructure.FencePoin
 		} else {
 			currentFencePointStatus = OUTSIDE
 		}
-		results = r.AppendNewFenceStatus(results, oldFencePointStatus, oldFencePoint,
+		results = r.appendNewFenceStatus(results, oldQueryPointStatus, oldQueryPoint,
 			currentFencePointStatus, fence, lat, lon)
 	}
 
 	return results
 }
 
-func (r *RtreeFence) AppendNewFenceStatus(results []FenceStatusObj, oldFencePointStatus FenceStatus,
-	oldFencePoint datastructure.FencePoint, currentFenceStatus FenceStatus, fence datastructure.Circle,
+func (r *RtreeFence) appendNewFenceStatus(results []FenceStatusObj, oldQueryPointStatus FenceStatus,
+	oldQueryPoint datastructure.QueryPoint, currentFenceStatus FenceStatus, fence datastructure.Circle,
 	currFenceLat, currFenceLon float64) []FenceStatusObj {
-	if oldFencePointStatus == INSIDE && currentFenceStatus == INSIDE {
+	if oldQueryPointStatus == INSIDE && currentFenceStatus == INSIDE {
 		results = append(results, FenceStatusObj{Status: INSIDE, Fence: fence})
-	} else if oldFencePointStatus == INSIDE && currentFenceStatus == OUTSIDE {
+	} else if oldQueryPointStatus == INSIDE && currentFenceStatus == OUTSIDE {
 		results = append(results, FenceStatusObj{Status: EXIT, Fence: fence})
 		results = append(results, FenceStatusObj{Status: OUTSIDE, Fence: fence})
-	} else if oldFencePointStatus == OUTSIDE && currentFenceStatus == INSIDE {
+	} else if oldQueryPointStatus == OUTSIDE && currentFenceStatus == INSIDE {
 		results = append(results, FenceStatusObj{Status: ENTER, Fence: fence})
 		results = append(results, FenceStatusObj{Status: INSIDE, Fence: fence})
-	} else if oldFencePointStatus == OUTSIDE && currentFenceStatus == OUTSIDE {
-		if fence.IsLineCircleIntersect(oldFencePoint.Lat, oldFencePoint.Lon, currFenceLat, currFenceLon) {
+	} else if oldQueryPointStatus == OUTSIDE && currentFenceStatus == OUTSIDE {
+		if fence.IsLineCircleIntersect(oldQueryPoint.Lat, oldQueryPoint.Lon, currFenceLat, currFenceLon) {
 			results = append(results, FenceStatusObj{Status: CROSS, Fence: fence})
 		} else {
 			results = append(results, FenceStatusObj{Status: OUTSIDE, Fence: fence})

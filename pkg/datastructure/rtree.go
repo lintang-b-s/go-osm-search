@@ -151,7 +151,10 @@ type Rtree struct {
 func NewRtree(minChildItems, maxChildItems, dimensions int) *Rtree {
 
 	return &Rtree{
-		Root:          nil,
+		Root: &RtreeNode{
+			IsLeaf: true,
+			Items:  make([]*RtreeNode, 0, maxChildItems),
+		},
 		Size:          0,
 		Height:        1,
 		MinChildItems: minChildItems,
@@ -162,12 +165,7 @@ func NewRtree(minChildItems, maxChildItems, dimensions int) *Rtree {
 }
 
 func (rt *Rtree) InsertLeaf(bound RtreeBoundingBox, leaf OSMObject, reinsert bool) {
-	if rt.Root == nil {
-		rt.Root = &RtreeNode{
-			IsLeaf: true,
-			Items:  make([]*RtreeNode, 0, rt.MaxChildItems),
-		}
-	}
+
 	leaf.SetBound(bound)
 	newLeaf := &RtreeNode{}
 	newLeaf.Bound = bound
@@ -445,7 +443,7 @@ func (rt *Rtree) linearPickSeeds(l *RtreeNode) (*RtreeNode, *RtreeNode) {
 
 		lWidth := highestLowSide - lowestHighSide
 
-		widthAlongDimension := math.Abs(highestHighSide - lowestLowSide)
+		widthAlongDimension := highestHighSide - lowestLowSide
 
 		if lWidth/widthAlongDimension > greatestNormalizedSeparation {
 			greatestNormalizedSeparation = lWidth / widthAlongDimension
@@ -635,7 +633,10 @@ func (rt *Rtree) NearestNeighboursPQ(k int, p Point) []OSMObject {
 
 	callback := func(n OSMObject) bool {
 		nearestLists = append(nearestLists, n)
-		return len(nearestLists) < k
+		if rt.Size > k {
+			return len(nearestLists) < k
+		}
+		return len(nearestLists) < rt.Size
 	}
 
 	rt.incrementalNearestNeighbor(p, callback)

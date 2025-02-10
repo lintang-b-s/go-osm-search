@@ -29,6 +29,8 @@ func New(ctx context.Context, db *kvdb.KVDB, scoring searcher.SimiliarityScoring
 		return nil, err
 	}
 
+	
+
 	cleanup := func() {
 		osmSearcher.Close()
 	}

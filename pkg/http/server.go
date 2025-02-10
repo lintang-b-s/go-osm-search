@@ -25,6 +25,7 @@ func (s *Server) Use(
 	log *zap.Logger,
 
 	searchService controllers.SearchService,
+	geofenceService controllers.GeofenceService,
 
 ) (*Server, error) {
 	viper.SetDefault("API_PORT", 6060)
@@ -42,7 +43,7 @@ func (s *Server) Use(
 
 	g.Go(func() error {
 		return server.Run(
-			ctx, config, log, searchService,
+			ctx, config, log, searchService, geofenceService,
 		)
 	})
 

@@ -1,13 +1,13 @@
 package datastructure
 
-type FencePoint struct {
-	ID  uint32
+type QueryPoint struct {
+	ID  string
 	Lat float64
 	Lon float64
 }
 
-func NewFencePoint(id uint32, lat, lon float64) *FencePoint {
-	return &FencePoint{
+func NewQueryPoint(id string, lat, lon float64) QueryPoint {
+	return QueryPoint{
 		ID:  id,
 		Lat: lat,
 		Lon: lon,

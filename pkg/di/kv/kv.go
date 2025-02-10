@@ -17,6 +17,11 @@ func New(ctx context.Context) (*kvdb.KVDB, error) {
 		_, err := tx.CreateBucketIfNotExists([]byte(kvdb.BBOLTDB_BUCKET))
 		return err
 	})
+
+	err = db.Update(func(tx *bolt.Tx) error {
+		_, err := tx.CreateBucketIfNotExists([]byte(kvdb.BBOLTDB_GEOFENCE_BUCKET))
+		return err
+	})
 	if err != nil {
 		return nil, err
 	}

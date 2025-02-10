@@ -6,8 +6,10 @@ package di
 import (
 	"context"
 
+	"github.com/google/wire"
 	"github.com/lintang-b-s/osm-search/pkg/di/config"
 	shortcontext "github.com/lintang-b-s/osm-search/pkg/di/context"
+	geofence_di "github.com/lintang-b-s/osm-search/pkg/di/geofence"
 	kv_di "github.com/lintang-b-s/osm-search/pkg/di/kv"
 	logger_di "github.com/lintang-b-s/osm-search/pkg/di/logger"
 	searcher_di "github.com/lintang-b-s/osm-search/pkg/di/searcher"
@@ -15,8 +17,6 @@ import (
 	"github.com/lintang-b-s/osm-search/pkg/http/http-router/controllers"
 	"github.com/lintang-b-s/osm-search/pkg/http/usecases"
 	"github.com/lintang-b-s/osm-search/pkg/searcher"
-
-	"github.com/google/wire"
 	"go.uber.org/zap"
 )
 
@@ -26,11 +26,13 @@ var defaultSet = wire.NewSet(
 	logger_di.New,
 	kv_di.New,
 	searcher_di.New,
+	geofence_di.New,
 )
 
 var searcherSet = wire.NewSet(
 	defaultSet,
 	NewSearcherService,
+	NewGeofenceService,
 	NewSearchAPIServer,
 )
 
@@ -38,12 +40,16 @@ func NewSearcherService(log *zap.Logger, searcher usecases.Searcher) controllers
 	return usecases.New(log, searcher)
 }
 
+func NewGeofenceService(geofenceIndex usecases.GeofenceIndex) controllers.GeofenceService {
+	return usecases.NewGeofenceService(geofenceIndex)
+}
+
 func NewSearchAPIServer(ctx context.Context, log *zap.Logger,
-	searchService controllers.SearchService) (*searchHttp.Server, error) {
+	searchService controllers.SearchService, geofenceService controllers.GeofenceService) (*searchHttp.Server, error) {
 	api := searchHttp.NewServer(log)
 
 	apiService, err := api.Use(
-		ctx, log, searchService,
+		ctx, log, searchService, geofenceService,
 	)
 	if err != nil {
 		return nil, err

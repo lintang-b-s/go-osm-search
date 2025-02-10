@@ -106,14 +106,14 @@ func (db *KVDB) GetDoc(id int) (node datastructure.Node, err error) {
 	return
 }
 
-func (db *KVDB) PutFencePoint(point datastructure.FencePoint) error {
+func (db *KVDB) PutQueryPoint(point datastructure.QueryPoint) error {
 	return db.db.Update(func(tx *bbolt.Tx) error {
 		nodeBytes, err := serializePoint(point)
 		if err != nil {
 			return err
 		}
 		b := tx.Bucket([]byte(BBOLTDB_GEOFENCE_BUCKET))
-		err = b.Put([]byte(strconv.Itoa(int(point.ID))), nodeBytes)
+		err = b.Put([]byte(point.ID), nodeBytes)
 		if err != nil {
 			return err
 		}
@@ -121,11 +121,11 @@ func (db *KVDB) PutFencePoint(point datastructure.FencePoint) error {
 	})
 }
 
-func (db *KVDB) GetFencePoint(id uint32) (point datastructure.FencePoint, err error) {
+func (db *KVDB) GetQueryPoint(id string) (point datastructure.QueryPoint, err error) {
 
 	db.db.View(func(tx *bbolt.Tx) error {
 		b := tx.Bucket([]byte(BBOLTDB_GEOFENCE_BUCKET))
-		nodeBytes := b.Get([]byte(strconv.Itoa(int(id))))
+		nodeBytes := b.Get([]byte(id))
 		if nodeBytes == nil {
 			err = ErrorsKeyNotExists
 			return nil
@@ -244,15 +244,19 @@ func deserializeNode(buf []byte) (datastructure.Node, error) {
 	return node, nil
 }
 
-// serialize deserialize  fence point
-func serializePoint(point datastructure.FencePoint) ([]byte, error) {
 
-	bb := bytes.NewBuffer(make([]byte, 20))
+func GetQueryPointSize(point datastructure.QueryPoint) int {
+	return len([]byte(point.ID)) + 8 + 8 + 4 
+}
+// serialize deserialize  fence point
+func serializePoint(point datastructure.QueryPoint) ([]byte, error) {
+
+	bb := bytes.NewBuffer(make([]byte, GetQueryPointSize(point)))
 
 	leftPos := 0
 
-	PutUint32(bb, leftPos, point.ID)
-	leftPos += 4
+	stringLen := PutString(bb, leftPos, point.ID)
+	leftPos += stringLen + 4
 
 	PutFloat(bb, leftPos, point.Lat)
 	leftPos += 8
@@ -263,13 +267,13 @@ func serializePoint(point datastructure.FencePoint) ([]byte, error) {
 	return bb.Bytes(), nil
 }
 
-func deserializePoint(buf []byte) (datastructure.FencePoint, error) {
+func deserializePoint(buf []byte) (datastructure.QueryPoint, error) {
 	bb := bytes.NewBuffer(buf)
-	point := datastructure.FencePoint{}
+	point := datastructure.QueryPoint{}
 	leftPos := 0
 
-	point.ID = GetUint32(bb, leftPos)
-	leftPos += 4
+	point.ID = GetString(bb, leftPos)
+	leftPos += len([]byte(point.ID)) + 4 
 
 	point.Lat = GetFloat(bb, leftPos)
 	leftPos += 8

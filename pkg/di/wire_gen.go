@@ -11,6 +11,7 @@ import (
 	"github.com/google/wire"
 	"github.com/lintang-b-s/osm-search/pkg/di/config"
 	"github.com/lintang-b-s/osm-search/pkg/di/context"
+	"github.com/lintang-b-s/osm-search/pkg/di/geofence"
 	"github.com/lintang-b-s/osm-search/pkg/di/kv"
 	"github.com/lintang-b-s/osm-search/pkg/di/logger"
 	"github.com/lintang-b-s/osm-search/pkg/di/searcher"
@@ -46,7 +47,9 @@ func InitializeSearcherService(scoring searcher.SimiliarityScoring) (*http.Serve
 		return nil, nil, err
 	}
 	searchService := NewSearcherService(logger, usecasesSearcher)
-	server, err := NewSearchAPIServer(contextContext, logger, searchService)
+	geofenceIndex := geofence_di.New(kvdb)
+	geofenceService := NewGeofenceService(geofenceIndex)
+	server, err := NewSearchAPIServer(contextContext, logger, searchService, geofenceService)
 	if err != nil {
 		cleanup2()
 		cleanup()
@@ -60,11 +63,12 @@ func InitializeSearcherService(scoring searcher.SimiliarityScoring) (*http.Serve
 
 // wire.go:
 
-var defaultSet = wire.NewSet(context.New, config.New, logger_di.New, kv_di.New, searcher_di.New)
+var defaultSet = wire.NewSet(context.New, config.New, logger_di.New, kv_di.New, searcher_di.New, geofence_di.New)
 
 var searcherSet = wire.NewSet(
 	defaultSet,
 	NewSearcherService,
+	NewGeofenceService,
 	NewSearchAPIServer,
 )
 
@@ -72,12 +76,16 @@ func NewSearcherService(log *zap.Logger, searcher2 usecases.Searcher) controller
 	return usecases.New(log, searcher2)
 }
 
+func NewGeofenceService(geofenceIndex usecases.GeofenceIndex) controllers.GeofenceService {
+	return usecases.NewGeofenceService(geofenceIndex)
+}
+
 func NewSearchAPIServer(ctx context2.Context, log *zap.Logger,
-	searchService controllers.SearchService) (*http.Server, error) {
+	searchService controllers.SearchService, geofenceService controllers.GeofenceService) (*http.Server, error) {
 	api := http.NewServer(log)
 
 	apiService, err := api.Use(
-		ctx, log, searchService,
+		ctx, log, searchService, geofenceService,
 	)
 	if err != nil {
 		return nil, err

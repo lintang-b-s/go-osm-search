@@ -16,7 +16,7 @@
 				"header": [],
 				"body": {
 					"mode": "raw",
-					"raw": "{\n    \"query\": \"Dunia Fantadi\",\n    \"top_k\": 10,\n    \"offset\": 0,\n    \"lat\": -6.17473908506388,\n    \"lon\":  106.82749962074273\n}",
+					"raw": "{\n    \"query\": \"Dunia Gantadi\",\n    \"top_k\": 10,\n    \"offset\": 0,\n    \"lat\": -6.17473908506388,\n    \"lon\":  106.82749962074273\n}",
 					"options": {
 						"raw": {
 							"language": "json"
@@ -90,7 +90,7 @@
 				"header": [],
 				"body": {
 					"mode": "raw",
-					"raw": "{\n    \"query\": \"Kebun Binatang Ra\",\n    \"top_k\": 10,\n    \"lat\": -6.17473908506388,\n    \"lon\":  106.82749962074273\n    }",
+					"raw": "{\n    \"query\": \"Stasiun gam\",\n    \"top_k\": 10,\n    \"lat\": -6.17473908506388,\n    \"lon\":  106.82749962074273\n    }",
 					"options": {
 						"raw": {
 							"language": "json"
@@ -113,12 +113,12 @@
 			"response": []
 		},
 		{
-			"name": "nearest places",
+			"name": "nearby places",
 			"request": {
 				"method": "GET",
 				"header": [],
 				"url": {
-					"raw": "http://localhost:6060/api/places?lat=-6.179842&lon=106.749864&feature=amenity=restaurant&k=10&offset=2",
+					"raw": "http://localhost:6060/api/places?lat=-6.179842&lon=106.749864&feature=amenity=restaurant&k=15&offset=0&radius=3",
 					"protocol": "http",
 					"host": [
 						"localhost"
@@ -143,11 +143,140 @@
 						},
 						{
 							"key": "k",
-							"value": "10"
+							"value": "15"
 						},
 						{
 							"key": "offset",
-							"value": "2"
+							"value": "0"
+						},
+						{
+							"key": "radius",
+							"value": "3"
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "add geofence colllection",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"fence_name\": \"ojol\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "http://localhost:6060/api/geofence",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "6060",
+					"path": [
+						"api",
+						"geofence"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "add fence point",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"lat\": -6.175263997609506,\n    \"lon\": 106.82716214527025,\n    \"fence_point_name\": \"monumen_nasional\",\n    \"radius\": 1.2\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "http://localhost:6060/api/geofence/ojol",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "6060",
+					"path": [
+						"api",
+						"geofence",
+						"ojol"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "set query point",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"lat\":-6.169884724072774, \n    \"lon\":106.8702583208934,\n    \"query_point_id\": \"ojol_budi\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "http://localhost:6060/api/geofence/ojol/point",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "6060",
+					"path": [
+						"api",
+						"geofence",
+						"ojol",
+						"point"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "query geofence",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "http://localhost:6060/api/geofence/ojol?lat=-6.17749341514094&lon=106.82291254922845&query_point_id=ojol_budi",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "6060",
+					"path": [
+						"api",
+						"geofence",
+						"ojol"
+					],
+					"query": [
+						{
+							"key": "lat",
+							"value": "-6.17749341514094"
+						},
+						{
+							"key": "lon",
+							"value": "106.82291254922845"
+						},
+						{
+							"key": "query_point_id",
+							"value": "ojol_budi"
 						}
 					]
 				}

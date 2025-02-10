@@ -49,6 +49,7 @@ func (api *API) Run(
 	log *zap.Logger,
 
 	searchService controllers.SearchService,
+	geofenceService controllers.GeofenceService,
 ) error {
 	log.Info("Run httprouter API")
 
@@ -67,10 +68,10 @@ func (api *API) Run(
 	router.GET("/doc/*any", swaggerHandler)
 
 	router.Handler(http.MethodGet, "/debug/pprof/*item", http.DefaultServeMux)
-	
+
 	group := router_helper.NewRouteGroup(router, "/api")
 
-	searcherRoutes := controllers.New(searchService, log)
+	searcherRoutes := controllers.New(searchService, geofenceService, log)
 
 	searcherRoutes.Routes(group)
 

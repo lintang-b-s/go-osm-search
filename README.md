@@ -26,7 +26,7 @@ Note: The indexing process takes 1-3 minutes, please wait. you can also replace 
 curl --location --request GET 'http://localhost:6060/api/search' \
 --header 'Content-Type: application/json' \
 --data '{
-    "query": "Dunia Pantadi",
+    "query": "Dunia gantadi",
     "top_k": 10,
     "offset": 0,
     "lat": -6.17473908506388,
@@ -54,6 +54,38 @@ curl --location 'http://localhost:6060/api/reverse?lat=-6.179842&lon=106.749864'
 ### Nearby places With a Specific Openstreetmap Tag and Within a Specific Radius
 ```
 curl --location 'http://localhost:6060/api/places?lat=-6.179842&lon=106.749864&feature=amenity=restaurant&k=10&offset=2&radius=3'
+```
+
+### Geofencing (In-memory)
+```
+curl --location 'http://localhost:6060/api/geofence' \
+--header 'Content-Type: application/json' \
+--data '{
+    "fence_name": "ojol"
+}'
+
+
+curl --location 'http://localhost:6060/api/geofence/ojol' \
+--header 'Content-Type: application/json' \
+--data '{
+    "lat": -6.175263997609506,
+    "lon": 106.82716214527025,
+    "fence_point_name": "monumen_nasional",
+    "radius": 1.2
+}'
+
+
+curl --location 'http://localhost:6060/api/geofence/ojol/point' \
+--header 'Content-Type: application/json' \
+--data '{
+    "lat":-6.169884724072774, 
+    "lon":106.8702583208934,
+    "query_point_id": "ojol_budi"
+}'
+
+
+curl --location 'http://localhost:6060/api/geofence/ojol?lat=-6.17749341514094&lon=106.82291254922845&query_point_id=ojol_budi'
+
 ```
 
 
