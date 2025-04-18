@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"math"
 	"os"
 	"sort"
 	"strconv"
@@ -1044,8 +1045,11 @@ func (Idx *DynamicIndex) GetFullAdress(street, postalCode, houseNumber string, c
 		Lon: centerLon,
 	}
 
-	boundingBox := datastructure.NewRtreeBoundingBox(2, []float64{centerLat - 0.0001, centerLon - 0.0001},
-		[]float64{centerLat + 0.0001, centerLon + 0.0001})
+	upperRightLat, upperRightLon :=geo.GetDestinationPoint(centerLat, centerLon, 45, 0.4)
+	lowerLeftLat, lowerLeftLon := geo.GetDestinationPoint(centerLat, centerLon, 225, 0.4)
+
+	boundingBox := datastructure.NewRtreeBoundingBox(2, []float64{lowerLeftLat, lowerLeftLon},
+		[]float64{upperRightLat, upperRightLon})
 
 	// membuat address
 	address := ""
@@ -1071,6 +1075,9 @@ func (Idx *DynamicIndex) GetFullAdress(street, postalCode, houseNumber string, c
 	}
 	kelurahan := ""
 
+	minDist := math.MaxFloat64
+
+
 	for _, currKelurahan := range kelurahans {
 		kelurahanRel := Idx.IndexedData.osmRelations[currKelurahan.Leaf.ID]
 		if postalCode == "" {
@@ -1081,9 +1088,10 @@ func (Idx *DynamicIndex) GetFullAdress(street, postalCode, houseNumber string, c
 		}
 
 		inside := geo.IsPointInPolygon(centerLat, centerLon, kelurahanRel.BoundaryLat, kelurahanRel.BoundaryLon)
-		if inside {
+		dist := datastructure.HaversineDistance(centerLat, centerLon,  currKelurahan.Leaf.Lat, currKelurahan.Leaf.Lon)
+		if inside && dist < minDist{
 			kelurahan = kelurahanRel.Name
-			break
+			minDist = dist
 		}
 	}
 
@@ -1097,6 +1105,7 @@ func (Idx *DynamicIndex) GetFullAdress(street, postalCode, houseNumber string, c
 		kecamatans = Idx.IndexedData.osmSpatialIndex.KecamatanRtree.Search(boundingBox)
 	}
 	kecamatan := ""
+	minDist = math.MaxFloat64
 
 	for _, currKecamatan := range kecamatans {
 		kecamatanRel := Idx.IndexedData.osmRelations[currKecamatan.Leaf.ID]
@@ -1105,10 +1114,11 @@ func (Idx *DynamicIndex) GetFullAdress(street, postalCode, houseNumber string, c
 		}
 
 		inside := geo.IsPointInPolygon(centerLat, centerLon, kecamatanRel.BoundaryLat, kecamatanRel.BoundaryLon)
-		if inside {
+		dist := datastructure.HaversineDistance(centerLat, centerLon,  currKecamatan.Leaf.Lat, currKecamatan.Leaf.Lon)
+		if inside && dist < minDist {
 			kecamatan = kecamatanRel.Name
-			break
-		}
+			minDist = dist
+		}	
 
 	}
 
@@ -1124,15 +1134,18 @@ func (Idx *DynamicIndex) GetFullAdress(street, postalCode, houseNumber string, c
 
 	city := ""
 
+	minDist = math.MaxFloat64
+
 	for _, currCity := range cities {
 		cityRel := Idx.IndexedData.osmRelations[currCity.Leaf.ID]
 		if len(cityRel.BoundaryLat) == 0 {
 			continue
 		}
 		inside := geo.IsPointInPolygon(centerLat, centerLon, cityRel.BoundaryLat, cityRel.BoundaryLon)
-		if inside {
+		dist := datastructure.HaversineDistance(centerLat, centerLon,  currCity.Leaf.Lat, currCity.Leaf.Lon)
+		if inside &&  dist < minDist {
 			city = cityRel.Name
-			break
+			minDist = dist
 		}
 	}
 
@@ -1147,6 +1160,8 @@ func (Idx *DynamicIndex) GetFullAdress(street, postalCode, houseNumber string, c
 
 	}
 	provinsi := ""
+	minDist = math.MaxFloat64
+
 
 	for i := 0; i < len(provinsis); i++ {
 		currProvinsi := provinsis[i]
@@ -1156,9 +1171,12 @@ func (Idx *DynamicIndex) GetFullAdress(street, postalCode, houseNumber string, c
 		}
 
 		inside := geo.IsPointInPolygon(centerLat, centerLon, provinsiRel.BoundaryLat, provinsiRel.BoundaryLon)
-		if inside {
+		dist := datastructure.HaversineDistance(centerLat, centerLon,  currProvinsi.Leaf.Lat, currProvinsi.Leaf.Lon)
+		if inside && dist < minDist {
 			provinsi = provinsiRel.Name
+			minDist = dist
 			// yang inii harus tanpa break
+
 		}
 	}
 
@@ -1171,12 +1189,14 @@ func (Idx *DynamicIndex) GetFullAdress(street, postalCode, houseNumber string, c
 		address += ", " + postalCode
 	} else if Idx.IndexedData.osmSpatialIndex.KelurahanRtree.Size > 0 {
 		nearestWayKelurahan := Idx.IndexedData.osmSpatialIndex.KelurahanRtree.Search(boundingBox)
+		minDist = math.MaxFloat64
 		for _, currKelurahan := range nearestWayKelurahan {
 			kelurahanRel := Idx.IndexedData.osmRelations[currKelurahan.Leaf.ID]
 			inside := geo.IsPointInPolygon(centerLat, centerLon, kelurahanRel.BoundaryLat, kelurahanRel.BoundaryLon)
-			if inside {
+			dist := datastructure.HaversineDistance(centerLat, centerLon,  currKelurahan.Leaf.Lat, currKelurahan.Leaf.Lon)
+			if inside && dist < minDist {
 				address += ", " + kelurahanRel.PostalCode
-				break
+				minDist = dist
 			}
 		}
 
