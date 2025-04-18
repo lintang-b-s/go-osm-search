@@ -106,19 +106,36 @@ func NewSearchResponse(data []datastructure.Node, dists []float64) []searchRespo
 // @Success		200	{object}	searchResponse
 // @Failure		400	{object}	errorResponse
 // @Failure		500	{object}	errorResponse
-func (api *searchAPI) search(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
-	var request searchRequest
-	err := json.NewDecoder(r.Body).Decode(&request)
+func (api *searchAPI) search(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
+	var (
+		request searchRequest
+		err     error
+	)
+	query := r.URL.Query()
+	request.Query = query.Get("query")
+	
+	request.TopK, err = strconv.Atoi(query.Get("top_k"))
 	if err != nil {
-		api.BadRequestResponse(w, r, err)
+		api.BadRequestResponse(w, r, errors.New("top_k must be an integer"))
+		return
+	}
+	request.Offset, err = strconv.Atoi(query.Get("offset"))
+	if err != nil {
+		api.BadRequestResponse(w, r, errors.New("top_k must be an integer"))
+		return
+	}
+	request.Lat, err = strconv.ParseFloat(query.Get("lat"), 64)
+	if err != nil {
+		api.BadRequestResponse(w, r, errors.New("top_k must be an integer"))
+		return
+	}
+	request.Lon, err = strconv.ParseFloat(query.Get("lon"), 64)
+	if err != nil {
+		api.BadRequestResponse(w, r, errors.New("top_k must be an integer"))
 		return
 	}
 
-	if err := r.Body.Close(); err != nil {
-		api.ServerErrorResponse(w, r, err)
-		return
-	}
-
+	
 	validate := validator.New()
 	notMatch := regexSearch.MatchString(request.Query)
 
@@ -171,15 +188,31 @@ func (api *searchAPI) search(w http.ResponseWriter, r *http.Request, _ httproute
 // @Failure		400	{object}	errorResponse
 // @Failure		500	{object}	errorResponse
 func (api *searchAPI) autocomplete(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
-	var request searchRequest
-	err := json.NewDecoder(r.Body).Decode(&request)
+	var (
+		request searchRequest
+		err     error
+	)
+	query := r.URL.Query()
+	request.Query = query.Get("query")
+	
+	request.TopK, err = strconv.Atoi(query.Get("top_k"))
 	if err != nil {
-		api.BadRequestResponse(w, r, err)
+		api.BadRequestResponse(w, r, errors.New("top_k must be an integer"))
 		return
 	}
-
-	if err := r.Body.Close(); err != nil {
-		api.ServerErrorResponse(w, r, err)
+	request.Offset, err = strconv.Atoi(query.Get("offset"))
+	if err != nil {
+		api.BadRequestResponse(w, r, errors.New("top_k must be an integer"))
+		return
+	}
+	request.Lat, err = strconv.ParseFloat(query.Get("lat"), 64)
+	if err != nil {
+		api.BadRequestResponse(w, r, errors.New("top_k must be an integer"))
+		return
+	}
+	request.Lon, err = strconv.ParseFloat(query.Get("lon"), 64)
+	if err != nil {
+		api.BadRequestResponse(w, r, errors.New("top_k must be an integer"))
 		return
 	}
 

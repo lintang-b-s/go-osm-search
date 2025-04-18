@@ -73,19 +73,7 @@ func (idMap *IDMap) IsInVocabulary(term string) bool {
 	return ok
 }
 
-func BinarySearch[T any](arr []T, target T, compare func(a, b T) int) int {
-	left := 0
-	right := len(arr)
-	for left < right {
-		mid := left + (right-left)/2
-		if compare(arr[mid], target) >= 0 {
-			right = mid
-		} else {
-			left = mid + 1
-		}
-	}
-	return left
-}
+
 
 // error
 

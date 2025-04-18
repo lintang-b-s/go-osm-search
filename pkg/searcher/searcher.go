@@ -9,6 +9,7 @@ import (
 
 	"github.com/lintang-b-s/osm-search/pkg"
 	"github.com/lintang-b-s/osm-search/pkg/datastructure"
+	"github.com/lintang-b-s/osm-search/pkg/geo"
 	"github.com/lintang-b-s/osm-search/pkg/index"
 
 	"github.com/RadhiFadlillah/go-sastrawi"
@@ -61,6 +62,7 @@ type InvertedIndexI interface {
 
 type RtreeI interface {
 	ImprovedNearestNeighbor(p datastructure.Point) datastructure.OSMObject
+	Search(bound  datastructure.RtreeBoundingBox) []datastructure.RtreeNode 
 	NearestNeighboursRadiusFilterOSM(k int, offfset int, p datastructure.Point, maxRadius float64, osmFeature int) []datastructure.OSMObject
 }
 
@@ -677,8 +679,23 @@ func (se *Searcher) processQuery(rpnDeque Deque) ([]int, error) {
 }
 
 func (se *Searcher) ReverseGeocoding(lat, lon float64) (datastructure.Node, error) {
-	result := se.osmRtree.ImprovedNearestNeighbor(datastructure.Point{lat, lon})
-	doc, err := se.DocStore.GetDoc(result.ID)
+	upRightLat, upRightLon := geo.GetDestinationPoint(lat, lon, 45, 0.4)
+	downLeftLat, downLeftLon := geo.GetDestinationPoint(lat, lon, 225, 0.4)
+	boundingBox := datastructure.NewRtreeBoundingBox(2,[]float64{downLeftLat, downLeftLon}, []float64{upRightLat, upRightLon})
+	nearbyOsmObjects := se.osmRtree.Search(boundingBox)
+
+	nearestOsmObject := -1
+	minDist := math.MaxFloat64
+	for _, osmObject := range nearbyOsmObjects {
+		distance := datastructure.HaversineDistance(lat, lon, osmObject.Leaf.Lat, osmObject.Leaf.Lon)
+		if distance < minDist {
+			minDist = distance
+			nearestOsmObject = osmObject.Leaf.ID	
+		}
+	}
+
+
+	doc, err := se.DocStore.GetDoc(nearestOsmObject)
 	if err != nil {
 		return datastructure.Node{}, fmt.Errorf("error when get doc: %w", err)
 	}

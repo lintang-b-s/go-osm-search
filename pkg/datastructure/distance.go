@@ -27,7 +27,7 @@ func HaversineDistance(latOne, longOne, latTwo, longTwo float64) float64 {
 	return earthRadiusKM * c
 }
 
-// https://www.movable-type.co.uk/scripts/latlong.html (Equirectangular approximation)
+// https://www.movable-type.co.uk/scripts/latlong.html (Equirectangular approximation )(dont use this, not accurate)
 func euclidianDistanceEquiRectangularAprox(latOne, longOne, latTwo, longTwo float64) float64 {
 	x := (longTwo - longOne) * math.Cos((latOne+latTwo)/2)
 	y := latTwo - latOne

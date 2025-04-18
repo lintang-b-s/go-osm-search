@@ -5,10 +5,10 @@ import (
 )
 
 type Circle struct {
-	key       string  `json:"key"`
-	centerLat float64 `json:"center_lat"`
-	centerLon float64 `json:"center_lon"`
-	radius    float64 `json:"radius"` // in km
+	key       string
+	centerLat float64
+	centerLon float64
+	radius    float64 // in km
 }
 
 func (c *Circle) GetKey() string {

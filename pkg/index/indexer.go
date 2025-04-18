@@ -144,6 +144,8 @@ func (Idx *DynamicIndex) SpimiBatchIndex(ctx context.Context) ([]datastructure.N
 		Error error
 	}
 
+
+	
 	allSearchNodes := make([]datastructure.Node, 0, len(Idx.IndexedData.Ways)+len(Idx.IndexedData.Nodes))
 
 	processOSMWaysBatch := func(ways []geo.OSMWay, wg *sync.WaitGroup, ctx context.Context, lock *sync.RWMutex, indexingRes chan<- IndexingResults) {
@@ -186,14 +188,25 @@ func (Idx *DynamicIndex) SpimiBatchIndex(ctx context.Context) ([]datastructure.N
 				continue
 			}
 
+
 			if IsWayDuplicateCheck(strings.ToLower(name), lat, lon, nodeBoundingBox, lock) {
 				// cek duplikat kalo sebelumnya ada way dengan nama sama dan posisi sama dengan way ini.
 				continue
 			}
 
+		
+			
+
 			address, city := Idx.GetFullAdress(street, postalCode, houseNumber, centerLat, centerLon)
 
 			lock.Lock()
+			if _, ok := nodeBoundingBox[strings.ToLower(name)]; ok {
+				lock.Unlock()
+				continue
+			}
+
+
+			
 			nodeBoundingBox[strings.ToLower(name)] = geo.NewBoundingBox(lat, lon)
 
 			searchNodes = append(searchNodes, datastructure.NewNode(nodeIDX, name, centerLat,
@@ -218,6 +231,7 @@ func (Idx *DynamicIndex) SpimiBatchIndex(ctx context.Context) ([]datastructure.N
 			if len(searchNodes) == BATCH_SIZE {
 				errChan := make(chan error)
 
+		
 				go func() {
 					errChan <- Idx.SpimiInvert(searchNodes, &block, lock, "name", ctx)
 				}()
@@ -345,10 +359,19 @@ func (Idx *DynamicIndex) SpimiBatchIndex(ctx context.Context) ([]datastructure.N
 				continue
 			}
 
+
+			
+
 			address, city := Idx.GetFullAdress(street, postalCode, houseNumber, node.Lat, node.Lon)
 
 			lock.Lock()
 
+			if _, ok := nodeBoundingBox[strings.ToLower(name)]; ok {
+				lock.Unlock()
+				continue
+			}
+			
+			
 			searchNodes = append(searchNodes, datastructure.NewNode(nodeIDX, name, node.Lat,
 				node.Lon, address, tipe, city))
 

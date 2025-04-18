@@ -122,19 +122,34 @@ func IsPointInPolygon(pLat, pLon float64, polygonLat, polygonLon []float64) bool
 }
 
 // Given a start point, initial bearing, and distance, this will calculate the destina­tion point and final bearing travelling along a (shortest distance) great circle arc.
-func GetDestinationPoint(lat1, lon1 float64, bearing float64, distance float64) (float64, float64) {
-	lat1 = degToRad(lat1)
-	lon1 = degToRad(lon1)
-	bearing = degToRad(bearing)
+// GetDestinationPoint returns the destination point given the starting point, bearing and distance
+// dist in km
+func GetDestinationPoint(lat1, lon1 float64, bearing float64, dist float64) (float64, float64) {
 
-	dLat := math.Asin(math.Sin(lat1)*math.Cos(distance/earthRadiusKM) +
-		math.Cos(lat1) + math.Sin(distance/earthRadiusKM)*math.Cos(bearing))
+	dr := dist / earthRadiusKM
 
-	dLon := lon1 + math.Atan2(math.Sin(bearing)*math.Sin(distance/earthRadiusKM)*
-		math.Cos(lat1), math.Cos(distance/earthRadiusKM)-math.Sin(lat1)*math.Sin(dLat))
+	bearing = (bearing * (math.Pi / 180.0))
 
-	dLon = math.Mod(dLon+3*math.Pi, 2*math.Pi) - math.Pi
-	return radToDeg(dLat), radToDeg(dLon)
+	lat1 = (lat1 * (math.Pi / 180.0))
+	lon1 = (lon1 * (math.Pi / 180.0))
+
+	lat2Part1 := math.Sin(lat1) * math.Cos(dr)
+	lat2Part2 := math.Cos(lat1) * math.Sin(dr) * math.Cos(bearing)
+
+	lat2 := math.Asin(lat2Part1 + lat2Part2)
+
+	lon2Part1 := math.Sin(bearing) * math.Sin(dr) * math.Cos(lat1)
+	lon2Part2 := math.Cos(dr) - (math.Sin(lat1) * math.Sin(lat2))
+
+	lon2 := lon1 + math.Atan2(lon2Part1, lon2Part2)
+	lon2 = math.Mod((lon2+3*math.Pi), (2*math.Pi)) - math.Pi
+
+	lat2 = lat2 * (180.0 / math.Pi)
+	lon2 = lon2 * (180.0 / math.Pi)
+
+	return lat2, lon2
 }
 
+
 // TODO: Geofence pake circle
+

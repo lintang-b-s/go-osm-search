@@ -560,7 +560,7 @@ func (p Point) minDist(r RtreeBoundingBox) float64 {
 		rLon = p.Lon
 	}
 
-	sum += euclidianDistanceEquiRectangularAprox(p.Lat, p.Lon, rLat, rLon)
+	sum += HaversineDistance(p.Lat, p.Lon, rLat, rLon) // should use HaversineDistance to get accurate results
 
 	return sum
 }
@@ -588,7 +588,7 @@ func (p Point) maxDist(r RtreeBoundingBox) float64 {
 		rLon = p.Lon
 	}
 
-	sum += euclidianDistanceEquiRectangularAprox(p.Lat, p.Lon, rLat, rLon)
+	sum += HaversineDistance(p.Lat, p.Lon, rLat, rLon)
 
 	return sum
 }
@@ -683,8 +683,8 @@ func (rt *Rtree) incrementalNearestNeighbor(p Point, callback func(OSMObject) bo
 			return
 		}
 		if element.Item.IsData() {
-			qObjectDist := euclidianDistanceEquiRectangularAprox(p.Lat, p.Lon,
-				element.Item.(*OSMObject).Lat, element.Item.(*OSMObject).Lon)
+			qObjectDist := HaversineDistance(p.Lat, p.Lon,
+				element.Item.(*OSMObject).Lat, element.Item.(*OSMObject).Lon) // should use HaversineDistance to get accurate results
 
 			if first, pqSizeMoreThanZero := pq.GetMin(); element.isObjectBoundingRectangle &&
 				pqSizeMoreThanZero && qObjectDist > first.Rank {
