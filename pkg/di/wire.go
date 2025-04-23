@@ -58,7 +58,7 @@ func NewSearchAPIServer(ctx context.Context, log *zap.Logger,
 	return apiService, nil
 }
 
-func InitializeSearcherService(scoring searcher.SimiliarityScoring) (*searchHttp.Server, func(), error) {
+func InitializeSearcherService(scoring searcher.SimiliarityScoring, useRateLimit bool) (*searchHttp.Server, func(), error) {
 
 	panic(wire.Build(searcherSet))
 }

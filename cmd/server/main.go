@@ -14,6 +14,7 @@ import (
 
 var (
 	simiiliarityScoring = flag.String("sc", "BM25_FIELD", "similiarity scoring (only 2: BM25_PLUS or TF_IDF_COSINE)")
+	useRateLimit        = flag.Bool("ratelimit", false, "use rate limit")
 )
 
 //	@title			OSM Search Engine API
@@ -44,7 +45,7 @@ func main() {
 		searcherScoring = searcher.BM25_FIELD
 	}
 
-	service, cleanup, err := di.InitializeSearcherService(searcherScoring)
+	service, cleanup, err := di.InitializeSearcherService(searcherScoring, *useRateLimit)
 	defer cleanup()
 	if err != nil {
 

@@ -26,6 +26,7 @@ func (s *Server) Use(
 
 	searchService controllers.SearchService,
 	geofenceService controllers.GeofenceService,
+	useRateLimit bool,
 
 ) (*Server, error) {
 	viper.SetDefault("API_PORT", 6060)
@@ -44,6 +45,7 @@ func (s *Server) Use(
 	g.Go(func() error {
 		return server.Run(
 			ctx, config, log, searchService, geofenceService,
+			useRateLimit,
 		)
 	})
 

@@ -62,7 +62,7 @@ type InvertedIndexI interface {
 
 type RtreeI interface {
 	ImprovedNearestNeighbor(p datastructure.Point) datastructure.OSMObject
-	Search(bound  datastructure.RtreeBoundingBox) []datastructure.RtreeNode 
+	Search(bound datastructure.RtreeBoundingBox) []datastructure.RtreeNode
 	NearestNeighboursRadiusFilterOSM(k int, offfset int, p datastructure.Point, maxRadius float64, osmFeature int) []datastructure.OSMObject
 }
 
@@ -419,15 +419,28 @@ func (se *Searcher) Autocomplete(query string, k, offset int) ([]datastructure.N
 	for i, tokenizedTerm := range queryTerms {
 
 		originalQueryTerms = append(originalQueryTerms, se.TermIDMap.GetID(tokenizedTerm))
+		isInVocab := se.TermIDMap.IsInVocabulary(tokenizedTerm)
 
-		if i == len(queryTerms)-1 {
-
+		if i == len(queryTerms)-1 && !isInVocab {
+			// regex prefix search
 			matchedWord, err := se.SpellCorrector.GetMatchedWordBasedOnPrefix(tokenizedTerm)
 			if err != nil {
 				return []datastructure.Node{}, err
 			}
 
 			allPossibleQueryTerms[i] = append(allPossibleQueryTerms[i], matchedWord...)
+
+			// spell corrector
+			correctionOne, err := se.SpellCorrector.GetWordCandidates(tokenizedTerm, 1)
+			if err != nil {
+				return []datastructure.Node{}, err
+			}
+			correctionTwo, err := se.SpellCorrector.GetWordCandidates(tokenizedTerm, 2)
+			if err != nil {
+				return []datastructure.Node{}, err
+			}
+			allPossibleQueryTerms[i] = append(allPossibleQueryTerms[i], correctionOne...)
+			allPossibleQueryTerms[i] = append(allPossibleQueryTerms[i], correctionTwo...)
 
 		} else {
 			termID := se.TermIDMap.GetID(tokenizedTerm)
@@ -681,7 +694,7 @@ func (se *Searcher) processQuery(rpnDeque Deque) ([]int, error) {
 func (se *Searcher) ReverseGeocoding(lat, lon float64) (datastructure.Node, error) {
 	upRightLat, upRightLon := geo.GetDestinationPoint(lat, lon, 45, 0.4)
 	downLeftLat, downLeftLon := geo.GetDestinationPoint(lat, lon, 225, 0.4)
-	boundingBox := datastructure.NewRtreeBoundingBox(2,[]float64{downLeftLat, downLeftLon}, []float64{upRightLat, upRightLon})
+	boundingBox := datastructure.NewRtreeBoundingBox(2, []float64{downLeftLat, downLeftLon}, []float64{upRightLat, upRightLon})
 	nearbyOsmObjects := se.osmRtree.Search(boundingBox)
 
 	nearestOsmObject := -1
@@ -690,10 +703,9 @@ func (se *Searcher) ReverseGeocoding(lat, lon float64) (datastructure.Node, erro
 		distance := datastructure.HaversineDistance(lat, lon, osmObject.Leaf.Lat, osmObject.Leaf.Lon)
 		if distance < minDist {
 			minDist = distance
-			nearestOsmObject = osmObject.Leaf.ID	
+			nearestOsmObject = osmObject.Leaf.ID
 		}
 	}
-
 
 	doc, err := se.DocStore.GetDoc(nearestOsmObject)
 	if err != nil {

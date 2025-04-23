@@ -50,6 +50,7 @@ func (api *API) Run(
 
 	searchService controllers.SearchService,
 	geofenceService controllers.GeofenceService,
+	useRateLimit bool,
 ) error {
 	log.Info("Run httprouter API")
 
@@ -75,8 +76,15 @@ func (api *API) Run(
 
 	searcherRoutes.Routes(group)
 
-	mainMwChain := alice.New(corsHandler.Handler, EnforceJSONHandler, api.recoverPanic,
-		RealIP, Heartbeat("healthz"), Logger(log), Labels).Then(router)
+	var mwChain []alice.Constructor
+	if useRateLimit {
+		mwChain = append(mwChain, corsHandler.Handler, EnforceJSONHandler, api.recoverPanic,
+			RealIP, Heartbeat("healthz"), Logger(log), Labels, Limit)
+	} else {
+		mwChain = append(mwChain, corsHandler.Handler, EnforceJSONHandler, api.recoverPanic,
+			RealIP, Heartbeat("healthz"), Logger(log), Labels)
+	}
+	mainMwChain := alice.New(mwChain...).Then(router)
 
 	srv := http_server.New(ctx, mainMwChain, config)
 	log.Info(fmt.Sprintf("API run on port %d", config.Port))

@@ -24,7 +24,7 @@ import (
 
 // Injectors from wire.go:
 
-func InitializeSearcherService(scoring searcher.SimiliarityScoring) (*http.Server, func(), error) {
+func InitializeSearcherService(scoring searcher.SimiliarityScoring, useRateLimit bool) (*http.Server, func(), error) {
 	contextContext, cleanup, err := context.New()
 	if err != nil {
 		return nil, nil, err
@@ -49,7 +49,7 @@ func InitializeSearcherService(scoring searcher.SimiliarityScoring) (*http.Serve
 	searchService := NewSearcherService(logger, usecasesSearcher)
 	geofenceIndex := geofence_di.New(kvdb)
 	geofenceService := NewGeofenceService(geofenceIndex)
-	server, err := NewSearchAPIServer(contextContext, logger, searchService, geofenceService)
+	server, err := NewSearchAPIServer(contextContext, logger, searchService, geofenceService, useRateLimit)
 	if err != nil {
 		cleanup2()
 		cleanup()
@@ -81,11 +81,12 @@ func NewGeofenceService(geofenceIndex usecases.GeofenceIndex) controllers.Geofen
 }
 
 func NewSearchAPIServer(ctx context2.Context, log *zap.Logger,
-	searchService controllers.SearchService, geofenceService controllers.GeofenceService) (*http.Server, error) {
+	searchService controllers.SearchService, geofenceService controllers.GeofenceService, 
+	useRateLimit	bool) (*http.Server, error) {
 	api := http.NewServer(log)
 
 	apiService, err := api.Use(
-		ctx, log, searchService, geofenceService,
+		ctx, log, searchService, geofenceService,useRateLimit,
 	)
 	if err != nil {
 		return nil, err
