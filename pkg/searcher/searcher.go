@@ -6,6 +6,7 @@ import (
 	"math"
 	"os"
 	"sort"
+	"sync"
 
 	"github.com/lintang-b-s/osm-search/pkg"
 	"github.com/lintang-b-s/osm-search/pkg/datastructure"
@@ -16,55 +17,6 @@ import (
 	"github.com/k0kubun/go-ansi"
 	"github.com/schollz/progressbar/v3"
 )
-
-type SimiliarityScoring int
-
-const (
-	TF_IDF_COSINE SimiliarityScoring = iota
-	BM25_PLUS
-	BM25_FIELD
-)
-
-// BM25+ parameter
-const (
-	DELTA = 1.0
-	K1    = 1.2
-	B     = 0.98
-	// param BM25F
-	K1_BM25F       = 10
-	NAME_WEIGHT    = 20
-	ADDRESS_WEIGHT = 1
-	NAME_B         = 0.95
-	ADDRESS_B      = 0.3
-)
-
-type DynamicIndexer interface {
-	GetOutputDir() string
-	GetWorkingDir() string
-	GetDocWordCount() map[int]int
-	GetDocsCount() int
-	GetTermIDMap() *pkg.IDMap
-	GetAverageDocLength() float64
-	BuildVocabulary()
-	GetOSMFeatureMap() *pkg.IDMap
-}
-
-type SearcherDocStore interface {
-	GetDoc(docID int) (datastructure.Node, error)
-}
-
-type InvertedIndexI interface {
-	Close() error
-	GetPostingList(termID int) ([]int, error)
-	GetLenFieldInDoc() map[int]int
-	GetAverageFieldLength() float64
-}
-
-type RtreeI interface {
-	ImprovedNearestNeighbor(p datastructure.Point) datastructure.OSMObject
-	Search(bound datastructure.RtreeBoundingBox) []datastructure.RtreeNode
-	NearestNeighboursRadiusFilterOSM(k int, offfset int, p datastructure.Point, maxRadius float64, osmFeature int) []datastructure.OSMObject
-}
 
 type Searcher struct {
 	Idx                   DynamicIndexer
@@ -144,9 +96,16 @@ func (se *Searcher) Close() error {
 	return err
 }
 
-type DocWithScore struct {
+type docWithScore struct {
 	DocID int
 	Score float64
+}
+
+func newDocWithScore(docID int, score float64) docWithScore {
+	return docWithScore{
+		DocID: docID,
+		Score: score,
+	}
 }
 
 func (se *Searcher) FreeFormQuery(query string, k, offset int) ([]datastructure.Node, error) {
@@ -162,7 +121,7 @@ func (se *Searcher) FreeFormQuery(query string, k, offset int) ([]datastructure.
 	queryTermsID := make([]int, 0, len(queryTerms))
 
 	// {{term1,term1OneEdit}, {term2, term2Edit}, ...}
-	allPossibleQueryTerms := make([][]int, len(queryTerms))
+	allPossibleQueryTerms := make([][]datastructure.WordCandidate, len(queryTerms))
 
 	queryWordCount := make(map[int]int, len(queryTerms))
 
@@ -171,19 +130,31 @@ func (se *Searcher) FreeFormQuery(query string, k, offset int) ([]datastructure.
 
 		if !isInVocab {
 
-			correctionOne, err := se.SpellCorrector.GetWordCandidates(tokenizedTerm, 1)
+			correctionOne, correctionOneString, err := se.SpellCorrector.GetWordCandidates(tokenizedTerm, 1)
 			if err != nil {
 				return []datastructure.Node{}, err
 			}
-			correctionTwo, err := se.SpellCorrector.GetWordCandidates(tokenizedTerm, 2)
+			correctionTwo, correctionTwoString, err := se.SpellCorrector.GetWordCandidates(tokenizedTerm, 2)
 			if err != nil {
 				return []datastructure.Node{}, err
 			}
-			allPossibleQueryTerms[i] = append(allPossibleQueryTerms[i], correctionOne...)
-			allPossibleQueryTerms[i] = append(allPossibleQueryTerms[i], correctionTwo...)
+
+			wordCandidates := make([]datastructure.WordCandidate, 0, len(correctionOne))
+			for i, correction := range correctionOne {
+				wordCandidates = append(wordCandidates, datastructure.NewWordCandidate(correction, tokenizedTerm, correctionOneString[i]))
+			}
+
+			wordCandidatesTwo := make([]datastructure.WordCandidate, 0, len(correctionTwo))
+			for i, correction := range correctionTwo {
+				wordCandidatesTwo = append(wordCandidatesTwo, datastructure.NewWordCandidate(correction, tokenizedTerm, correctionTwoString[i]))
+			}
+
+			allPossibleQueryTerms[i] = append(allPossibleQueryTerms[i], wordCandidates...)
+			allPossibleQueryTerms[i] = append(allPossibleQueryTerms[i], wordCandidatesTwo...)
+
 		} else {
 			termID := se.TermIDMap.GetID(tokenizedTerm)
-			allPossibleQueryTerms[i] = []int{termID}
+			allPossibleQueryTerms[i] = []datastructure.WordCandidate{datastructure.NewWordCandidate(termID, tokenizedTerm, tokenizedTerm)}
 		}
 	}
 
@@ -247,160 +218,6 @@ func (se *Searcher) FreeFormQuery(query string, k, offset int) ([]datastructure.
 	return relevantDocs, nil
 }
 
-// https://trec.nist.gov/pubs/trec13/papers/microsoft-cambridge.web.hard.pdf
-func (se *Searcher) scoreBM25Field(allPostingsNameField map[int][]int,
-	allPostingsAddressField map[int][]int, allQueryTermIDs []int) []int {
-
-	documentScore := make(map[int]float64)
-
-	docCount := float64(se.Idx.GetDocsCount())
-
-	nameLenDF := se.MainIndexNameField.GetLenFieldInDoc()
-	addressLenDF := se.MainIndexAddressField.GetLenFieldInDoc()
-	averageNameLenDF := se.MainIndexNameField.GetAverageFieldLength()
-	averageAddressLenDF := se.MainIndexAddressField.GetAverageFieldLength()
-
-	for _, qTermID := range allQueryTermIDs {
-
-		namePostingsList, ok := allPostingsNameField[qTermID]
-		addressPostingsList, ok := allPostingsAddressField[qTermID]
-
-		uniqueDocContainingTerm := make(map[int]struct{}, len(namePostingsList)+len(addressPostingsList))
-
-		// name field
-		tfTermDocNameField := make(map[int]float64, len(namePostingsList))
-
-		if ok {
-			for _, docID := range namePostingsList {
-				tfTermDocNameField[docID]++ // conunt(t,d)
-				uniqueDocContainingTerm[docID] = struct{}{}
-			}
-		}
-
-		// address field
-
-		tfTermDocAddressField := make(map[int]float64, len(addressPostingsList))
-
-		if ok {
-			for _, docID := range addressPostingsList {
-				tfTermDocAddressField[docID]++ // conunt(t,d)
-				uniqueDocContainingTerm[docID] = struct{}{}
-			}
-		}
-
-		// score untuk doc yang include term di name field
-
-		idf := math.Log10(docCount-float64(len(uniqueDocContainingTerm))+0.5) - math.Log10(float64(len(uniqueDocContainingTerm))+0.5) // log(N-df_t+0.5/df_t+0.5)
-
-		for docID, tftd := range tfTermDocNameField {
-			weightTD := NAME_WEIGHT * (tftd / (1 + NAME_B*((float64(nameLenDF[docID])/averageNameLenDF)-1)))
-			documentScore[docID] += (weightTD / (K1_BM25F + weightTD)) * idf
-		}
-
-		for docID, tftd := range tfTermDocAddressField {
-			weightTD := ADDRESS_WEIGHT * (tftd / (1 + NAME_B*((float64(addressLenDF[docID])/averageAddressLenDF)-1)))
-			documentScore[docID] += (weightTD / (K1_BM25F + weightTD)) * idf
-		}
-
-	}
-
-	documentIDs := make([]int, 0, len(documentScore))
-	for k := range documentScore {
-		documentIDs = append(documentIDs, k)
-	}
-
-	sort.SliceStable(documentIDs, func(i, j int) bool {
-		return documentScore[documentIDs[i]] > documentScore[documentIDs[j]]
-	})
-
-	return documentIDs
-}
-
-func (se *Searcher) scoreBM25Plus(allPostingsField map[int][]int) []int {
-	// param bm25+
-
-	documentScore := make(map[int]float64)
-
-	docsCount := float64(se.Idx.GetDocsCount())
-	docWordCount := se.Idx.GetDocWordCount()
-
-	avgDocLength := se.Idx.GetAverageDocLength()
-
-	for _, postings := range allPostingsField {
-
-		tfTermDoc := make(map[int]float64)
-		for _, docID := range postings {
-			tfTermDoc[docID]++ // conunt(t,d)
-		}
-
-		idf := math.Log10(docsCount+1) - math.Log10(float64(len(tfTermDoc))) // log(N/df_t)
-
-		for docID, tftd := range tfTermDoc {
-			// https://www.cs.otago.ac.nz/homepages/andrew/papers/2014-2.pdf
-
-			documentScore[docID] += idf * (DELTA +
-				((K1+1)+tftd)/(K1*(1-B+B*float64(docWordCount[docID])/avgDocLength)+tftd))
-		}
-	}
-
-	documentIDs := make([]int, 0, len(documentScore))
-	for k := range documentScore {
-		documentIDs = append(documentIDs, k)
-	}
-
-	sort.SliceStable(documentIDs, func(i, j int) bool {
-		return documentScore[documentIDs[i]] > documentScore[documentIDs[j]]
-	})
-
-	return documentIDs
-}
-
-func (se *Searcher) scoreTFIDFCosine(allPostings map[int][]int,
-	queryWordCount map[int]int) []int {
-	documentScore := make(map[int]float64) // menyimpan skor cosine tf-idf docs \dot tf-idf query
-
-	docsCount := float64(se.Idx.GetDocsCount())
-	docNorm := make(map[int]float64)
-	queryNorm := 0.0
-	for qTermID, postings := range allPostings {
-		// iterate semua term di query, hitung tf-idf query dan tf-idf document, accumulate skor cosine di docScore
-
-		termCountInDoc := make(map[int]int)
-		for _, docID := range postings {
-			termCountInDoc[docID]++ // conunt(t,d)
-		}
-
-		tfTermQuery := 1 + math.Log10(float64(queryWordCount[qTermID]))                  //  1 + log(count(t,q))
-		idfTermQuery := math.Log10(docsCount) - math.Log10(float64(len(termCountInDoc))) // log(N/df_t)
-		tfIDFTermQuery := tfTermQuery * idfTermQuery
-
-		for docID, termCount := range termCountInDoc {
-			tf := 1 + math.Log10(float64(termCount)) //  //  1 + log(count(t,d))
-
-			tfIDFTermDoc := tf * idfTermQuery //tfidf docID
-
-			documentScore[docID] += tfIDFTermDoc * tfIDFTermQuery // summation tfidfDoc*tfIDfquery over query terms
-
-			docNorm[docID] += tfIDFTermDoc * tfIDFTermDoc // document Norm
-		}
-
-		queryNorm += tfIDFTermQuery * tfIDFTermQuery
-	}
-
-	queryNorm = math.Sqrt(queryNorm)
-
-	documentIDs := make([]int, 0, len(documentScore))
-	for k := range documentScore {
-		documentIDs = append(documentIDs, k)
-	}
-
-	sort.SliceStable(documentIDs, func(i, j int) bool {
-		return documentScore[documentIDs[i]] > documentScore[documentIDs[j]]
-	})
-
-	return documentIDs
-}
-
 func (se *Searcher) Autocomplete(query string, k, offset int) ([]datastructure.Node, error) {
 	if query == "" {
 		return []datastructure.Node{}, errors.New("query is empty")
@@ -413,7 +230,7 @@ func (se *Searcher) Autocomplete(query string, k, offset int) ([]datastructure.N
 	queryTerms := sastrawi.Tokenize(query)
 
 	// {{term1,term1OneEdit}, {term2, term2Edit}, ...}
-	allPossibleQueryTerms := make([][]int, len(queryTerms))
+	allPossibleQueryTerms := make([][]datastructure.WordCandidate, len(queryTerms))
 	originalQueryTerms := make([]int, 0, len(queryTerms))
 
 	for i, tokenizedTerm := range queryTerms {
@@ -422,29 +239,87 @@ func (se *Searcher) Autocomplete(query string, k, offset int) ([]datastructure.N
 		isInVocab := se.TermIDMap.IsInVocabulary(tokenizedTerm)
 
 		if i == len(queryTerms)-1 && !isInVocab {
-			// regex prefix search
-			matchedWord, err := se.SpellCorrector.GetMatchedWordBasedOnPrefix(tokenizedTerm)
-			if err != nil {
-				return []datastructure.Node{}, err
-			}
+			var (
+				wg                  sync.WaitGroup
+				matchedWord         []int
+				correctionOne       []int
+				correctionTwo       []int
+				correctionOneString []string
+				correctionTwoString []string
+				errChan             chan error
+			)
+			wg.Add(3)
+			errChan = make(chan error, 3)
 
-			allPossibleQueryTerms[i] = append(allPossibleQueryTerms[i], matchedWord...)
+			// regex prefix search
+			go func() {
+				defer wg.Done()
+				var err error
+				matchedWord, err = se.SpellCorrector.GetMatchedWordBasedOnPrefix(tokenizedTerm)
+				if err != nil {
+					errChan <- err
+				}
+			}()
 
 			// spell corrector
-			correctionOne, err := se.SpellCorrector.GetWordCandidates(tokenizedTerm, 1)
-			if err != nil {
-				return []datastructure.Node{}, err
+
+			go func() {
+				defer wg.Done()
+				var err error
+				correctionOne, correctionOneString, err = se.SpellCorrector.GetWordCandidates(tokenizedTerm, 1)
+				if err != nil {
+					errChan <- err
+				}
+
+			}()
+
+			go func() {
+				defer wg.Done()
+				var err error
+				correctionTwo, correctionTwoString, err = se.SpellCorrector.GetWordCandidates(tokenizedTerm, 2)
+				if err != nil {
+					errChan <- err
+				}
+			}()
+
+			go func() {
+				wg.Wait()
+				close(errChan)
+			}()
+
+			for err := range errChan {
+				if err != nil {
+					return []datastructure.Node{}, err
+				}
 			}
-			correctionTwo, err := se.SpellCorrector.GetWordCandidates(tokenizedTerm, 2)
-			if err != nil {
-				return []datastructure.Node{}, err
+
+			// collect matched word
+
+			// prefix
+			matchedWordCandidates := make([]datastructure.WordCandidate, len(matchedWord))
+			for j, autocompleteWordID := range matchedWord {
+				matchedWordCandidates[j] = datastructure.NewWordCandidate(autocompleteWordID, tokenizedTerm, tokenizedTerm)
 			}
-			allPossibleQueryTerms[i] = append(allPossibleQueryTerms[i], correctionOne...)
-			allPossibleQueryTerms[i] = append(allPossibleQueryTerms[i], correctionTwo...)
+
+			// correction one
+			wordCandidates := make([]datastructure.WordCandidate, 0, len(correctionOne))
+			for i, correction := range correctionOne {
+				wordCandidates = append(wordCandidates, datastructure.NewWordCandidate(correction, tokenizedTerm, correctionOneString[i]))
+			}
+
+			// correction two
+			wordCandidatesTwo := make([]datastructure.WordCandidate, 0, len(correctionTwo))
+			for i, correction := range correctionTwo {
+				wordCandidatesTwo = append(wordCandidatesTwo, datastructure.NewWordCandidate(correction, tokenizedTerm, correctionTwoString[i]))
+			}
+
+			allPossibleQueryTerms[i] = append(allPossibleQueryTerms[i], matchedWordCandidates...)
+			allPossibleQueryTerms[i] = append(allPossibleQueryTerms[i], wordCandidates...)
+			allPossibleQueryTerms[i] = append(allPossibleQueryTerms[i], wordCandidatesTwo...)
 
 		} else {
 			termID := se.TermIDMap.GetID(tokenizedTerm)
-			allPossibleQueryTerms[i] = []int{termID}
+			allPossibleQueryTerms[i] = []datastructure.WordCandidate{datastructure.NewWordCandidate(termID, tokenizedTerm, tokenizedTerm)}
 		}
 	}
 
@@ -455,38 +330,55 @@ func (se *Searcher) Autocomplete(query string, k, offset int) ([]datastructure.N
 		return []datastructure.Node{}, err
 	}
 
-	relDocIDs := []int{}
+	var (
+		wg                sync.WaitGroup
+		errChan           chan error
+		docWithScoresChan = make(chan []docWithScore, len(matchedQueries))
+	)
+	wg.Add(len(matchedQueries))
+
+	relDocIDs := []docWithScore{}
 	for _, queryTerms := range matchedQueries {
+		go func(queryTerms []int) {
+			defer wg.Done()
 
-		allPostings := make(map[int][]int, len(queryTerms))
+			allPostingsNameField := make(map[int][]int, len(queryTerms))
+			allPostingsAddressField := make(map[int][]int, len(queryTerms))
+			queryWordCount := make(map[int]int, len(queryTerms))
 
-		tokens := make([]int, 0, len(queryTerms)-1)
-		for j, termID := range queryTerms {
-			tokens = append(tokens, termID)
-			if j != len(queryTerms)-1 {
-				tokens = append(tokens, -1) // AND
+			for _, termID := range queryTerms {
+				postings, err := se.MainIndexNameField.GetPostingList(termID)
+				if err != nil {
+					errChan <- err
+					return
+				}
+				postingsAddress, err := se.MainIndexAddressField.GetPostingList(termID)
+				if err != nil {
+					errChan <- err
+					return
+				}
+				allPostingsNameField[termID] = postings
+				allPostingsAddressField[termID] = postingsAddress
+				queryWordCount[termID] += 1
 			}
 
-			postings, err := se.MainIndexNameField.GetPostingList(termID)
-			if err != nil {
-				return []datastructure.Node{}, err
-			}
+			docWithScoresChan <- se.scoreBM25FieldWithScores(allPostingsNameField, allPostingsAddressField, queryTerms)
 
-			allPostings[termID] = postings
-		}
+		}(queryTerms)
+	}
+	go func() {
+		wg.Wait()
+		close(docWithScoresChan)
+	}()
 
-		// shunting Yard
-		rpnDeque := NewDeque(shuntingYardRPN(tokens))
-		docIDsRes, err := se.processQuery(rpnDeque)
-		if err != nil {
-			return []datastructure.Node{}, err
-		}
-
-		scoredDocs := se.scoreBM25FAutocomplete(allPostings, queryTerms, docIDsRes)
-
-		relDocIDs = append(relDocIDs, scoredDocs...)
+	for docs := range docWithScoresChan {
+		relDocIDs = append(relDocIDs, docs...)
 
 	}
+
+	sort.Slice(relDocIDs, func(i, j int) bool {
+		return relDocIDs[i].Score > relDocIDs[j].Score
+	})
 
 	relevantDocs := make([]datastructure.Node, 0, len(relDocIDs))
 
@@ -495,7 +387,7 @@ func (se *Searcher) Autocomplete(query string, k, offset int) ([]datastructure.N
 			break
 		}
 
-		doc, err := se.DocStore.GetDoc(relDocIDs[i])
+		doc, err := se.DocStore.GetDoc(relDocIDs[i].DocID)
 		if err != nil {
 			return []datastructure.Node{}, err
 		}
@@ -503,192 +395,6 @@ func (se *Searcher) Autocomplete(query string, k, offset int) ([]datastructure.N
 	}
 
 	return relevantDocs, nil
-}
-
-func (se *Searcher) scoreBM25FAutocomplete(allPostings map[int][]int, queryTermIDs []int,
-	intersectedDocIDs []int) []int {
-
-	documentScore := make(map[int]float64)
-
-	docsCount := float64(se.Idx.GetDocsCount())
-
-	nameLenDF := se.MainIndexNameField.GetLenFieldInDoc()
-	averageNameLenDF := se.MainIndexNameField.GetAverageFieldLength()
-
-	for _, postings := range allPostings {
-
-		tfTermDoc := make(map[int]float64)
-		for _, docID := range postings {
-			tfTermDoc[docID]++ // conunt(t,d)
-		}
-
-		idf := math.Log10(docsCount-float64(len(tfTermDoc))+0.5) - math.Log10(float64(len(tfTermDoc))+0.5) // log(N-df_t+0.5/df_t+0.5)
-
-		for i := 0; i < len(intersectedDocIDs); i++ {
-			docID := intersectedDocIDs[i]
-			tftd := tfTermDoc[docID]
-
-			weightTD := NAME_WEIGHT * (tftd / (1 + NAME_B*((float64(nameLenDF[docID])/averageNameLenDF)-1)))
-			documentScore[docID] += (weightTD / (K1_BM25F + weightTD)) * idf
-
-		}
-	}
-
-	documentIDs := make([]int, 0, len(documentScore))
-	for k := range documentScore {
-		documentIDs = append(documentIDs, k)
-	}
-
-	sort.SliceStable(documentIDs, func(i, j int) bool {
-		return documentScore[documentIDs[i]] > documentScore[documentIDs[j]]
-	})
-
-	return documentIDs
-}
-
-type Deque struct {
-	items []int
-}
-
-func NewDeque(items []int) Deque {
-	return Deque{items}
-}
-
-func (d *Deque) GetSize() int {
-	return len(d.items)
-}
-
-func (d *Deque) PushFront(item int) {
-	d.items = append([]int{item}, d.items...)
-}
-
-func (d *Deque) PushBack(item int) {
-	d.items = append(d.items, item)
-}
-
-func (d *Deque) PopFront() (int, bool) {
-	if len(d.items) == 0 {
-		return 0, false
-	}
-	frontElement := d.items[0]
-	d.items = d.items[1:]
-	return frontElement, true
-}
-
-func (d *Deque) PopBack() (int, bool) {
-	if len(d.items) == 0 {
-		return 0, false
-	}
-	rearElement := d.items[len(d.items)-1]
-	d.items = d.items[:len(d.items)-1]
-	return rearElement, true
-}
-
-func shuntingYardRPN(tokens []int) []int {
-	precedence := make(map[int]int)
-	precedence[-1] = 2 // AND
-	precedence[-2] = 0 // (
-	precedence[-3] = 0 // )
-	precedence[-4] = 1 // OR
-	precedence[-5] = 3 // NOT
-
-	output := make([]int, 0, len(tokens))
-	stack := []int{}
-
-	for _, token := range tokens {
-		if token == -2 {
-			stack = append(stack, -2)
-		} else if token == -3 {
-			// pop
-			n := len(stack) - 1
-			operator := stack[n]
-			stack = stack[:n]
-
-			for operator != -2 {
-				output = append(output, operator)
-				// pop
-				n = len(stack) - 1
-				operator = stack[n]
-				stack = stack[:n]
-			}
-		} else if _, ok := precedence[token]; ok {
-			if len(stack) != 0 {
-				n := len(stack) - 1
-				operator := stack[n]
-
-				for len(stack) != 0 && precedence[token] < precedence[operator] {
-					output = append(output, operator)
-
-					n = len(stack) - 1
-					stack = stack[:n]
-					if len(stack) != 0 {
-						n = len(stack) - 1
-						operator = stack[n]
-					}
-				}
-			}
-
-			stack = append(stack, token)
-		} else {
-			// term
-			output = append(output, token)
-		}
-	}
-
-	for len(stack) != 0 {
-		n := len(stack) - 1
-		token := stack[n]
-		stack = stack[:n]
-		output = append(output, token)
-	}
-	return output
-}
-
-// processQuery. process query -> return hasil boolean query (AND/OR/NOT) berupa posting lists (docIDs)
-func (se *Searcher) processQuery(rpnDeque Deque) ([]int, error) {
-	operator := map[int]struct{}{
-		-1: struct{}{},
-		-5: struct{}{},
-		-4: struct{}{},
-	}
-	postingListStack := [][]int{}
-	for rpnDeque.GetSize() != 0 {
-		token, valid := rpnDeque.PopFront()
-		if !valid {
-			return []int{}, fmt.Errorf("rpn deque size is 0")
-		}
-
-		if _, ok := operator[token]; !ok {
-			postingList, err := se.MainIndexNameField.GetPostingList(token)
-			if err != nil {
-				return []int{}, fmt.Errorf("error when get posting list skip list: %w", err)
-			}
-			postingListStack = append(postingListStack, postingList)
-		} else {
-
-			if token == -1 {
-				// AND
-				right := postingListStack[len(postingListStack)-1]
-				postingListStack = postingListStack[:len(postingListStack)-1]
-				left := postingListStack[len(postingListStack)-1]
-				postingListStack = postingListStack[:len(postingListStack)-1]
-
-				postingListIntersection := PostingListIntersection2(left, right)
-
-				postingListStack = append(postingListStack, postingListIntersection)
-			} else if token == -4 {
-				// OR
-				// NOT IMPLEMENTED YET
-			} else {
-				// NOT
-				// NOT IMPLEMENTED YET
-			}
-		}
-	}
-
-	docIDsResult := postingListStack[len(postingListStack)-1]
-
-	return docIDsResult, nil
 }
 
 func (se *Searcher) ReverseGeocoding(lat, lon float64) (datastructure.Node, error) {
@@ -700,7 +406,8 @@ func (se *Searcher) ReverseGeocoding(lat, lon float64) (datastructure.Node, erro
 	nearestOsmObject := -1
 	minDist := math.MaxFloat64
 	for _, osmObject := range nearbyOsmObjects {
-		distance := datastructure.HaversineDistance(lat, lon, osmObject.Leaf.Lat, osmObject.Leaf.Lon)
+		distance := pointDistanceToOsmWay(osmObject.Leaf.BoundaryLatLons, lat, lon,
+			osmObject.Leaf.Lat, osmObject.Leaf.Lon)
 		if distance < minDist {
 			minDist = distance
 			nearestOsmObject = osmObject.Leaf.ID
@@ -712,6 +419,26 @@ func (se *Searcher) ReverseGeocoding(lat, lon float64) (datastructure.Node, erro
 		return datastructure.Node{}, fmt.Errorf("error when get doc: %w", err)
 	}
 	return doc, nil
+}
+
+func pointDistanceToOsmWay(wayBoundary [][]float64, pointLat, pointLon float64,
+	wayCenterLat, wayCenterLon float64) float64 {
+	if len(wayBoundary) == 0 {
+		dist := datastructure.HaversineDistance(pointLat, pointLon, wayCenterLat, wayCenterLon)
+		return dist
+	}
+	minDist := math.MaxFloat64
+
+	for i := 0; i < len(wayBoundary); i++ {
+		j := (i + 1) % len(wayBoundary)
+		projection := geo.ProjectPointToLineCoord(geo.NewCoordinate(wayBoundary[i][0], wayBoundary[i][1]),
+			geo.NewCoordinate(wayBoundary[j][0], wayBoundary[j][1]), geo.NewCoordinate(pointLat, pointLon))
+		distance := datastructure.HaversineDistance(pointLat, pointLon, projection.Lat, projection.Lon)
+		if distance < minDist {
+			minDist = distance
+		}
+	}
+	return minDist
 }
 
 func (se *Searcher) NearestNeighboursRadiusWithFeatureFilter(k, offset int, lat, lon, radius float64, featureType string) ([]datastructure.Node, error) {
@@ -726,23 +453,4 @@ func (se *Searcher) NearestNeighboursRadiusWithFeatureFilter(k, offset int, lat,
 		docs = append(docs, doc)
 	}
 	return docs, nil
-}
-
-func PostingListIntersection2(a, b []int) []int {
-
-	idx1, idx2 := 0, 0
-	result := []int{}
-
-	for idx1 < len(a) && idx2 < len(b) {
-		if a[idx1] < b[idx2] {
-			idx1++
-		} else if b[idx2] < a[idx1] {
-			idx2++
-		} else {
-			result = append(result, a[idx1])
-			idx1++
-			idx2++
-		}
-	}
-	return result
 }

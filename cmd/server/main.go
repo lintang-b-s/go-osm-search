@@ -48,7 +48,6 @@ func main() {
 	service, cleanup, err := di.InitializeSearcherService(searcherScoring, *useRateLimit)
 	defer cleanup()
 	if err != nil {
-
 		panic(err)
 	}
 

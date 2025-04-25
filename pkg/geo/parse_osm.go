@@ -1,14 +1,14 @@
 package geo
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"os"
 	"sort"
-	"strconv"
-	"strings"
 
 	"github.com/lintang-b-s/osm-search/pkg"
 	"github.com/lintang-b-s/osm-search/pkg/datastructure"
@@ -19,121 +19,16 @@ import (
 	"github.com/schollz/progressbar/v3"
 )
 
-type NodeMapContainer struct {
-	nodeMap map[int64]*osm.Node
-}
-
-func (nm *NodeMapContainer) SetNodeMap(nodeMap map[int64]*osm.Node) {
-	nm.nodeMap = nodeMap
-}
-
-func (nm *NodeMapContainer) GetNode(id int64) *osm.Node {
-	return nm.nodeMap[id]
-}
-
-var ValidSearchTags = map[string]bool{
-	"amenity":          true,
-	"building":         true,
-	"sport":            true,
-	"tourism":          true,
-	"leisure":          true,
-	"boundary":         true,
-	"landuse":          true,
-	"craft":            true,
-	"aeroway":          true,
-	"historic":         true,
-	"residential":      true,
-	"railway":          true,
-	"shop":             true,
-	"junction":         true,
-	"route":            true,
-	"ferry":            true,
-	"highway":          true,
-	"motorcar":         true,
-	"motor_vehicle":    true,
-	"access":           true,
-	"industrial":       true,
-	"service":          true,
-	"healthcare":       true,
-	"office":           true,
-	"public_transport": true,
-	"waterway":         true,
-	"water":            true,
-	"telecom":          true,
-	"power":            true,
-	"place":            true,
-	"geological":       true,
-	"emergency":        true,
-	"bulding":          true,
-	"aerialway":        true,
-	"barrier":          true,
-}
-
-var ValidNodeSearchTag = map[string]bool{
-	"historic": true,
-	"name":     true,
-}
-
-type OSMWay struct {
-	ID      int64
-	NodeIDs []int64
-	TagMap  map[string]string
-}
-
-func NewOSMWay(id int64, nodeIDs []int64, tagMap map[string]string) OSMWay {
-	return OSMWay{
-		NodeIDs: nodeIDs,
-		TagMap:  tagMap,
-	}
-}
-
-type OSMNode struct {
-	ID     int64
-	Lat    float64
-	Lon    float64
-	TagMap map[string]string
-}
-
-func NewOSMNode(id int64, lat float64, lon float64, tagMap map[string]string) OSMNode {
-	return OSMNode{
-		Lat:    lat,
-		Lon:    lon,
-		TagMap: tagMap,
-	}
-}
-
-type OSMSpatialIndex struct {
-	StreetRtree        *datastructure.Rtree
-	KelurahanRtree     *datastructure.Rtree
-	KecamatanRtree     *datastructure.Rtree
-	KotaKabupatenRtree *datastructure.Rtree
-	ProvinsiRtree      *datastructure.Rtree
-	CountryRtree       *datastructure.Rtree
-}
-
-type OsmRelation struct {
-	Name        string
-	ways        []int64
-	AdminLevel  string
-	BoundaryLat []float64
-	BoundaryLon []float64
-	PostalCode  string
-}
-
-func ParseOSM(mapfile string) ([]OSMWay, []OSMNode, NodeMapContainer, *pkg.IDMap, OSMSpatialIndex, []OsmRelation, error) {
+func ParseOSM(mapfile string, mapBoundaryFile string) ([]OSMWay, []OSMNode, NodeMapContainer, *pkg.IDMap, OSMSpatialIndex, []Boundary, error) {
 	var TagIDMap *pkg.IDMap = pkg.NewIDMap()
 
 	streetRtree := datastructure.NewRtree(25, 50, 2)
-	kelurahanRtree := datastructure.NewRtree(25, 50, 2)
-	kecamatanRtree := datastructure.NewRtree(25, 50, 2)
-	kotaKabupatenRtree := datastructure.NewRtree(25, 50, 2)
-	provinsiRtree := datastructure.NewRtree(25, 50, 2)
-	countryRtree := datastructure.NewRtree(25, 50, 2)
+	regionRtree := datastructure.NewRtree(25, 50, 2)
 
 	f, err := os.Open(mapfile)
 
 	if err != nil {
-		return []OSMWay{}, []OSMNode{}, NodeMapContainer{}, &pkg.IDMap{}, OSMSpatialIndex{}, []OsmRelation{}, err
+		return []OSMWay{}, []OSMNode{}, NodeMapContainer{}, &pkg.IDMap{}, OSMSpatialIndex{}, []Boundary{}, err
 	}
 
 	defer f.Close()
@@ -160,63 +55,13 @@ func ParseOSM(mapfile string) ([]OSMWay, []OSMNode, NodeMapContainer, *pkg.IDMap
 		}))
 	bar.Add(1)
 
-	// process relation administrative Boundaries
-	wayAdministrativeBoundary := make(map[int64]bool)
-
-	relations := []OsmRelation{}
+	regionBoundaries := make([]Boundary, 0)
 
 	scanner := osmpbf.New(context.Background(), f, 1)
 
 	fmt.Printf("\n")
 	log.Printf("\n Parsing osm relation objects...\n")
 
-	for scanner.Scan() {
-		o := scanner.Object()
-		if o.ObjectID().Type() == osm.TypeRelation {
-			rel := o.(*osm.Relation)
-			isAdministrativeBoundary := false
-			for _, tag := range rel.Tags {
-				if tag.Key == "boundary" && tag.Value == "administrative" {
-					isAdministrativeBoundary = true
-				}
-			}
-
-			if !isAdministrativeBoundary {
-				continue
-			}
-
-			name := rel.Tags.Find("name")
-			if name == "" || strings.Contains(name, "UNKNOWN") {
-				continue
-			}
-			adminLevel, err := strconv.Atoi(rel.Tags.Find("admin_level"))
-			if err != nil || adminLevel < 2 || adminLevel > 7 {
-				continue
-			}
-
-			postalCode := rel.Tags.Find("postal_code")
-
-			wayIDs := []int64{}
-			for _, m := range rel.Members {
-				if m.Type == osm.TypeWay && m.Role == "outer" {
-
-					wayAdministrativeBoundary[m.Ref] = true
-					wayIDs = append(wayIDs, m.Ref)
-
-				}
-			}
-
-			relations = append(relations, OsmRelation{
-				Name:        rel.Tags.Find("name"),
-				ways:        wayIDs,
-				AdminLevel:  rel.Tags.Find("admin_level"),
-				BoundaryLat: []float64{},
-				BoundaryLon: []float64{},
-				PostalCode:  postalCode,
-			})
-
-		}
-	}
 	bar.Add(1)
 
 	fmt.Printf("\n")
@@ -224,7 +69,7 @@ func ParseOSM(mapfile string) ([]OSMWay, []OSMNode, NodeMapContainer, *pkg.IDMap
 
 	scanErr := scanner.Err()
 	if scanErr != nil {
-		return []OSMWay{}, []OSMNode{}, NodeMapContainer{}, &pkg.IDMap{}, OSMSpatialIndex{}, relations, err
+		return []OSMWay{}, []OSMNode{}, NodeMapContainer{}, &pkg.IDMap{}, OSMSpatialIndex{}, regionBoundaries, err
 	}
 
 	scanner.Close()
@@ -232,11 +77,9 @@ func ParseOSM(mapfile string) ([]OSMWay, []OSMNode, NodeMapContainer, *pkg.IDMap
 	// process osm ways
 	wayNodesMap := make(map[osm.NodeID]bool)
 
-	boundaryWayMap := make(map[int64]OSMWay)
-
 	fWay, err := os.Open(mapfile)
 	if err != nil {
-		return []OSMWay{}, []OSMNode{}, NodeMapContainer{}, &pkg.IDMap{}, OSMSpatialIndex{}, relations, err
+		return []OSMWay{}, []OSMNode{}, NodeMapContainer{}, &pkg.IDMap{}, OSMSpatialIndex{}, regionBoundaries, err
 	}
 	defer fWay.Close()
 
@@ -255,18 +98,6 @@ func ParseOSM(mapfile string) ([]OSMWay, []OSMNode, NodeMapContainer, *pkg.IDMap
 
 		tag := o.(*osm.Way).TagMap()
 
-		_, ok := wayAdministrativeBoundary[int64(o.(*osm.Way).ID)]
-		if ok {
-			nodeIDs := []int64{}
-			for _, node := range o.(*osm.Way).Nodes {
-				wayNodesMap[node.ID] = true
-				nodeIDs = append(nodeIDs, int64(node.ID))
-			}
-
-			way := NewOSMWay(int64(o.(*osm.Way).ID), nodeIDs, tag)
-			boundaryWayMap[int64(o.(*osm.Way).ID)] = way
-		}
-
 		name, _, _, _, _ := GetNameAddressTypeFromOSMWay(tag)
 		if name == "" {
 			continue
@@ -281,7 +112,10 @@ func ParseOSM(mapfile string) ([]OSMWay, []OSMNode, NodeMapContainer, *pkg.IDMap
 			wayNodesMap[node.ID] = true
 			nodeIDs = append(nodeIDs, int64(node.ID))
 		}
-		way := NewOSMWay(int64(o.(*osm.Way).ID), nodeIDs, tag)
+
+		containWikiData := containWikiData(o.(*osm.Way).Tags)
+
+		way := NewOSMWay(int64(o.(*osm.Way).ID), nodeIDs, tag, containWikiData)
 		ways = append(ways, way)
 
 		count++
@@ -289,14 +123,14 @@ func ParseOSM(mapfile string) ([]OSMWay, []OSMNode, NodeMapContainer, *pkg.IDMap
 
 	scanErr = scannerWay.Err()
 	if scanErr != nil {
-		return []OSMWay{}, []OSMNode{}, NodeMapContainer{}, &pkg.IDMap{}, OSMSpatialIndex{}, relations, err
+		return []OSMWay{}, []OSMNode{}, NodeMapContainer{}, &pkg.IDMap{}, OSMSpatialIndex{}, regionBoundaries, err
 	}
 	scannerWay.Close()
 
 	bar.Add(1)
 	_, err = f.Seek(0, io.SeekStart)
 	if err != nil {
-		return []OSMWay{}, []OSMNode{}, NodeMapContainer{}, &pkg.IDMap{}, OSMSpatialIndex{}, relations, err
+		return []OSMWay{}, []OSMNode{}, NodeMapContainer{}, &pkg.IDMap{}, OSMSpatialIndex{}, regionBoundaries, err
 	}
 
 	fmt.Printf("\n")
@@ -325,7 +159,9 @@ func ParseOSM(mapfile string) ([]OSMWay, []OSMNode, NodeMapContainer, *pkg.IDMap
 				lon := node.Lon
 				tag := node.TagMap()
 
-				onlyOsmNodes = append(onlyOsmNodes, NewOSMNode(int64(o.(*osm.Node).ID), lat, lon, tag))
+				containWikiData := containWikiData(o.(*osm.Node).Tags)
+
+				onlyOsmNodes = append(onlyOsmNodes, NewOSMNode(int64(o.(*osm.Node).ID), lat, lon, tag, containWikiData))
 			}
 
 		}
@@ -335,9 +171,7 @@ func ParseOSM(mapfile string) ([]OSMWay, []OSMNode, NodeMapContainer, *pkg.IDMap
 
 	scanErr = scanner.Err()
 	if scanErr != nil {
-		return []OSMWay{}, []OSMNode{}, NodeMapContainer{}, &pkg.IDMap{}, OSMSpatialIndex{}, relations, err
-
-		fmt.Printf("\n")
+		return []OSMWay{}, []OSMNode{}, NodeMapContainer{}, &pkg.IDMap{}, OSMSpatialIndex{}, regionBoundaries, err
 	}
 	log.Printf("Parsing osm node objects done \n")
 
@@ -345,27 +179,46 @@ func ParseOSM(mapfile string) ([]OSMWay, []OSMNode, NodeMapContainer, *pkg.IDMap
 	log.Printf("processing osm relation & way objects...\n")
 
 	// process poligon administrative boundary & rtree administrative boundary
-	for relID, rel := range relations {
+	indoBoundaryFile, err := os.Open(mapBoundaryFile)
+	if err != nil {
+		return []OSMWay{}, []OSMNode{}, NodeMapContainer{}, &pkg.IDMap{}, OSMSpatialIndex{}, regionBoundaries, err
+	}
+
+	defer indoBoundaryFile.Close()
+
+	var indoRegionsBoundary []Boundary
+
+	indoBoundaryFileStat, err := indoBoundaryFile.Stat()
+	if err != nil {
+		return []OSMWay{}, []OSMNode{}, NodeMapContainer{}, &pkg.IDMap{}, OSMSpatialIndex{}, regionBoundaries, err
+	}
+
+	buffer := bytes.NewBuffer(make([]byte, indoBoundaryFileStat.Size()))
+	_, err = indoBoundaryFile.Read(buffer.Bytes())
+	if err != nil {
+		return []OSMWay{}, []OSMNode{}, NodeMapContainer{}, &pkg.IDMap{}, OSMSpatialIndex{}, regionBoundaries, err
+	}
+
+	err = json.Unmarshal(buffer.Bytes(), &indoRegionsBoundary)
+	if err != nil {
+		return []OSMWay{}, []OSMNode{}, NodeMapContainer{}, &pkg.IDMap{}, OSMSpatialIndex{}, regionBoundaries, err
+	}
+
+	for relID, village := range indoRegionsBoundary {
+		regionBoundaries = append(regionBoundaries, NewBoundary(
+			village.Province, village.District, village.SubDistrict, village.Village,
+			village.PostalCode, village.Border,
+		))
 
 		boundaryLat, boundaryLon := []float64{}, []float64{}
-		for _, relway := range rel.ways {
-			wway, ok := boundaryWayMap[relway]
-			if !ok {
-				continue
-			}
-			for _, nodeID := range wway.NodeIDs {
-				node := ctr.GetNode(nodeID)
-				boundaryLat = append(boundaryLat, node.Lat)
-				boundaryLon = append(boundaryLon, node.Lon)
-			}
+		for _, relway := range village.Border {
+			boundaryLat = append(boundaryLat, relway[1])
+			boundaryLon = append(boundaryLon, relway[0])
 		}
 
 		if len(boundaryLat) == 0 || len(boundaryLon) == 0 {
 			continue
 		}
-
-		relations[relID].BoundaryLat = append(relations[relID].BoundaryLat, boundaryLat...)
-		relations[relID].BoundaryLon = append(relations[relID].BoundaryLon, boundaryLon...)
 
 		sortedBoundaryLat, sortedBoundaryLon := make([]float64, len(boundaryLat)), make([]float64, len(boundaryLon))
 
@@ -377,9 +230,10 @@ func ParseOSM(mapfile string) ([]OSMWay, []OSMNode, NodeMapContainer, *pkg.IDMap
 		centerLat, centerLon := sortedBoundaryLat[len(sortedBoundaryLat)/2], sortedBoundaryLon[len(sortedBoundaryLon)/2]
 
 		rtreeLeaf := datastructure.OSMObject{
-			ID:  relID,
-			Lat: centerLat,
-			Lon: centerLon,
+			ID:       relID,
+			Lat:      centerLat,
+			Lon:      centerLon,
+			OsmBound: [2][]float64{boundaryLat, boundaryLon},
 		}
 
 		// // bound = [minLat, minLon, maxLat, maxLon]
@@ -387,27 +241,18 @@ func ParseOSM(mapfile string) ([]OSMWay, []OSMNode, NodeMapContainer, *pkg.IDMap
 			[]float64{sortedBoundaryLat[len(sortedBoundaryLat)-1], sortedBoundaryLon[len(sortedBoundaryLon)-1]})
 
 		// insert r-tree per administrative level
-		if rel.AdminLevel == "7" {
-			kelurahanRtree.InsertLeaf(bound, rtreeLeaf, false)
-		} else if rel.AdminLevel == "6" {
-			kecamatanRtree.InsertLeaf(bound, rtreeLeaf, false)
-		} else if rel.AdminLevel == "5" {
-			kotaKabupatenRtree.InsertLeaf(bound, rtreeLeaf, false)
-		} else if rel.AdminLevel == "4" {
-			provinsiRtree.InsertLeaf(bound, rtreeLeaf, false)
-		} else if rel.AdminLevel == "2" {
-			countryRtree.InsertLeaf(bound, rtreeLeaf, false)
-		}
-
+		regionRtree.InsertLeaf(bound, rtreeLeaf, false)
 	}
 
 	// process osm streets & rtree streets. buat menentukan nama jalan dari osm way kalau di tag "addr:street" gak ada.
 	for idx, way := range ways {
 		lat, lon := []float64{}, []float64{}
+		latLons := [][]float64{}
 		for _, nodeID := range way.NodeIDs {
 			node := ctr.GetNode(nodeID)
 			lat = append(lat, node.Lat)
 			lon = append(lon, node.Lon)
+			latLons = append(latLons, []float64{node.Lat, node.Lon})
 		}
 		sort.Float64s(lat)
 		sort.Float64s(lon)
@@ -415,9 +260,10 @@ func ParseOSM(mapfile string) ([]OSMWay, []OSMNode, NodeMapContainer, *pkg.IDMap
 		midLat, midLon := MidPoint(lat[0], lon[0], lat[len(lat)-1], lon[len(lon)-1])
 
 		rtreeLeaf := datastructure.OSMObject{
-			ID:  idx,
-			Lat: midLat,
-			Lon: midLon,
+			ID:              idx,
+			Lat:             midLat,
+			Lon:             midLon,
+			BoundaryLatLons: latLons,
 		}
 
 		highway, ok := way.TagMap["highway"]
@@ -437,19 +283,16 @@ func ParseOSM(mapfile string) ([]OSMWay, []OSMNode, NodeMapContainer, *pkg.IDMap
 			highway == "tertiary_link") {
 			bound := datastructure.NewRtreeBoundingBox(2, []float64{rtreeLeaf.Lat - 0.0001,
 				rtreeLeaf.Lon - 0.0001}, []float64{rtreeLeaf.Lat + 0.0001, rtreeLeaf.Lon + 0.0001})
-
+			rtreeLeaf.Tag = make(map[int]int)
+			rtreeLeaf.Tag[ROAD_PRIORITY_KEY] = roadTypeMaxSpeed[highway]
 			streetRtree.InsertLeaf(bound, rtreeLeaf, false)
 		}
 	}
 
 	// update adress dari osm ways dan osm nodes
 	spatialIndex := OSMSpatialIndex{
-		StreetRtree:        streetRtree,
-		KelurahanRtree:     kelurahanRtree,
-		KecamatanRtree:     kecamatanRtree,
-		KotaKabupatenRtree: kotaKabupatenRtree,
-		ProvinsiRtree:      provinsiRtree,
-		CountryRtree:       countryRtree,
+		StreetRtree:                 streetRtree,
+		AdministrativeBoundaryRtree: regionRtree,
 	}
 
 	bar.Add(1)
@@ -457,7 +300,13 @@ func ParseOSM(mapfile string) ([]OSMWay, []OSMNode, NodeMapContainer, *pkg.IDMap
 	fmt.Printf("\n")
 	log.Printf("processing osm relation & way objects done \n")
 
-	return ways, onlyOsmNodes, ctr, TagIDMap, spatialIndex, relations, nil
+	return ways, onlyOsmNodes, ctr, TagIDMap, spatialIndex, indoRegionsBoundary, nil
+}
+
+func containWikiData(tags osm.Tags) bool {
+	return tags.Find("wikidata") != "" ||
+		tags.Find("wikipedia") != "" ||
+		tags.Find("wikimedia_commons") != ""
 }
 
 // TODO: ngikutin Nominatim, infer dari administrative boundary & nearest street dari osm way.

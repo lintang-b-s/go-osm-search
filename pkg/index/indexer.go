@@ -21,27 +21,6 @@ import (
 	"github.com/vmihailenco/msgpack/v5"
 )
 
-const (
-	BATCH_SIZE = 100000
-)
-
-type SpellCorrectorI interface {
-	Preprocessdata(tokenizedDocs [][]string)
-	GetWordCandidates(mispelledWord string, editDistance int) ([]int, error)
-	GetCorrectQueryCandidates(allPossibleQueryTerms [][]int) [][]int
-	GetCorrectSpellingSuggestion(allCorrectQueryCandidates [][]int) ([]int, error)
-	GetMatchedWordBasedOnPrefix(prefixWord string) ([]int, error)
-	GetMatchedWordsAutocomplete(allQueryCandidates [][]int, originalQueryTerms []int) ([][]int, error)
-}
-
-type DocumentStoreI interface {
-	WriteDocs(docs []datastructure.Node)
-}
-
-type BboltDBI interface {
-	SaveDocs(nodes []datastructure.Node) error
-}
-
 type DynamicIndex struct {
 	TermIDMap                 *pkg.IDMap
 	workingDir                string
@@ -55,6 +34,7 @@ type DynamicIndex struct {
 	IndexedData               IndexedData
 	documentStore             BboltDBI //DocumentStoreI
 	OSMFeatureMap             *pkg.IDMap
+	WikidataObjects           map[int]struct{}
 }
 
 type IndexedData struct {
@@ -63,18 +43,18 @@ type IndexedData struct {
 	Ctr             geo.NodeMapContainer
 	TagIDMap        *pkg.IDMap
 	osmSpatialIndex geo.OSMSpatialIndex
-	osmRelations    []geo.OsmRelation
+	regionsBoundary []geo.Boundary
 }
 
 func NewIndexedData(ways []geo.OSMWay, nodes []geo.OSMNode, ctr geo.NodeMapContainer, tagIDMap *pkg.IDMap,
-	osmSpatialIndex geo.OSMSpatialIndex, osmRelations []geo.OsmRelation) IndexedData {
+	osmSpatialIndex geo.OSMSpatialIndex, regionsBoundary []geo.Boundary) IndexedData {
 	return IndexedData{
 		Ways:            ways,
 		Nodes:           nodes,
 		Ctr:             ctr,
 		TagIDMap:        tagIDMap,
 		osmSpatialIndex: osmSpatialIndex,
-		osmRelations:    osmRelations,
+		regionsBoundary: regionsBoundary,
 	}
 }
 
@@ -100,6 +80,7 @@ func NewDynamicIndex(outputDir string, maxPostingListSize int,
 		IndexedData:               indexedData,
 		documentStore:             boltDB,
 		OSMFeatureMap:             pkg.NewIDMap(),
+		WikidataObjects:           make(map[int]struct{}),
 	}
 	if server {
 		err := idx.LoadMeta()
@@ -145,8 +126,6 @@ func (Idx *DynamicIndex) SpimiBatchIndex(ctx context.Context) ([]datastructure.N
 		Error error
 	}
 
-
-	
 	allSearchNodes := make([]datastructure.Node, 0, len(Idx.IndexedData.Ways)+len(Idx.IndexedData.Nodes))
 
 	processOSMWaysBatch := func(ways []geo.OSMWay, wg *sync.WaitGroup, ctx context.Context, lock *sync.RWMutex, indexingRes chan<- IndexingResults) {
@@ -170,12 +149,14 @@ func (Idx *DynamicIndex) SpimiBatchIndex(ctx context.Context) ([]datastructure.N
 
 			lat := make([]float64, len(way.NodeIDs))
 			lon := make([]float64, len(way.NodeIDs))
+			latLons := make([][]float64, len(way.NodeIDs))
 			for i := 0; i < len(way.NodeIDs); i++ {
 				node := way.NodeIDs[i]
 				nodeLat := Idx.IndexedData.Ctr.GetNode(node).Lat
 				nodeLon := Idx.IndexedData.Ctr.GetNode(node).Lon
 				lat[i] = nodeLat
 				lon[i] = nodeLon
+				latLons[i] = []float64{nodeLat, nodeLon}
 			}
 
 			sort.Float64s(lat)
@@ -185,18 +166,14 @@ func (Idx *DynamicIndex) SpimiBatchIndex(ctx context.Context) ([]datastructure.N
 
 			name, street, tipe, postalCode, houseNumber := geo.GetNameAddressTypeFromOSMWay(way.TagMap)
 
-			if name == "" || tipe == "chalet" {
+			if name == "" {
 				continue
 			}
-
 
 			if IsWayDuplicateCheck(strings.ToLower(name), lat, lon, nodeBoundingBox, lock) {
 				// cek duplikat kalo sebelumnya ada way dengan nama sama dan posisi sama dengan way ini.
 				continue
 			}
-
-		
-			
 
 			address, city := Idx.GetFullAdress(street, postalCode, houseNumber, centerLat, centerLon)
 
@@ -206,12 +183,10 @@ func (Idx *DynamicIndex) SpimiBatchIndex(ctx context.Context) ([]datastructure.N
 				continue
 			}
 
-
-			
 			nodeBoundingBox[strings.ToLower(name)] = geo.NewBoundingBox(lat, lon)
 
 			searchNodes = append(searchNodes, datastructure.NewNode(nodeIDX, name, centerLat,
-				centerLon, address, tipe, city))
+				centerLon, address, tipe, city, way.ContainWikidata))
 
 			osmFeature := getOSMFeature(way.TagMap)
 			osmFeatureInt := make(map[int]int, len(osmFeature))
@@ -219,12 +194,18 @@ func (Idx *DynamicIndex) SpimiBatchIndex(ctx context.Context) ([]datastructure.N
 				osmFeatureInt[Idx.OSMFeatureMap.GetID(k)] = Idx.OSMFeatureMap.GetID(v)
 			}
 			rtreeItem := datastructure.OSMObject{
-				ID:  nodeIDX,
-				Lat: centerLat,
-				Lon: centerLon,
-				Tag: osmFeatureInt,
+				ID:              nodeIDX,
+				Lat:             centerLat,
+				Lon:             centerLon,
+				Tag:             osmFeatureInt,
+				BoundaryLatLons: latLons,
 			}
 			osmData = append(osmData, rtreeItem)
+
+			if way.ContainWikidata {
+
+				Idx.WikidataObjects[nodeIDX] = struct{}{}
+			}
 
 			nodeIDX++
 			lock.Unlock()
@@ -232,7 +213,6 @@ func (Idx *DynamicIndex) SpimiBatchIndex(ctx context.Context) ([]datastructure.N
 			if len(searchNodes) == BATCH_SIZE {
 				errChan := make(chan error)
 
-		
 				go func() {
 					errChan <- Idx.SpimiInvert(searchNodes, &block, lock, "name", ctx)
 				}()
@@ -351,7 +331,7 @@ func (Idx *DynamicIndex) SpimiBatchIndex(ctx context.Context) ([]datastructure.N
 			}
 
 			name, street, tipe, postalCode, houseNumber := geo.GetNameAddressTypeFromOSMWay(node.TagMap)
-			if name == "" || tipe == "chalet" {
+			if name == "" {
 				continue
 			}
 
@@ -359,9 +339,6 @@ func (Idx *DynamicIndex) SpimiBatchIndex(ctx context.Context) ([]datastructure.N
 				// cek duplikat kalo sebelumnya ada way dengan nama sama dan posisi sama dengan node ini. gak usah set bounding box buat node.
 				continue
 			}
-
-
-			
 
 			address, city := Idx.GetFullAdress(street, postalCode, houseNumber, node.Lat, node.Lon)
 
@@ -371,10 +348,9 @@ func (Idx *DynamicIndex) SpimiBatchIndex(ctx context.Context) ([]datastructure.N
 				lock.Unlock()
 				continue
 			}
-			
-			
+
 			searchNodes = append(searchNodes, datastructure.NewNode(nodeIDX, name, node.Lat,
-				node.Lon, address, tipe, city))
+				node.Lon, address, tipe, city, node.ContainWikiData))
 
 			osmFeature := getOSMFeature(node.TagMap)
 			osmFeatureInt := make(map[int]int, len(osmFeature))
@@ -388,6 +364,11 @@ func (Idx *DynamicIndex) SpimiBatchIndex(ctx context.Context) ([]datastructure.N
 				Tag: osmFeatureInt,
 			}
 			osmData = append(osmData, rtreeItem)
+
+			if node.ContainWikiData {
+
+				Idx.WikidataObjects[nodeIDX] = struct{}{}
+			}
 
 			nodeIDX++
 			lock.Unlock()
@@ -532,8 +513,11 @@ func (Idx *DynamicIndex) SpimiBatchIndex(ctx context.Context) ([]datastructure.N
 	}
 
 	for i := 0; i < len(osmData); i++ {
+		upperRightLat, upperRightLon := geo.GetDestinationPoint(osmData[i].Lat, osmData[i].Lon, 45, 0.4)
+		lowerLeftLat, lowerLeftLon := geo.GetDestinationPoint(osmData[i].Lat, osmData[i].Lon, 225, 0.4)
+
 		osmData[i].SetBound(datastructure.NewRtreeBoundingBox(2,
-			[]float64{osmData[i].Lat - 0.0001, osmData[i].Lon - 0.0001}, []float64{osmData[i].Lat + 0.0001, osmData[i].Lon + 0.0001}))
+			[]float64{lowerLeftLat, lowerLeftLon}, []float64{upperRightLat, upperRightLon}))
 	}
 	err := datastructure.SerializeRtreeData(Idx.workingDir, Idx.outputDir, osmData)
 	if err != nil {
@@ -859,7 +843,7 @@ func (Idx *DynamicIndex) SpimiParseOSMNodes(nodes []datastructure.Node, lock *sy
 }
 
 func (Idx *DynamicIndex) BuildSpellCorrectorAndNgram(ctx context.Context, allSearchNodes []datastructure.Node, osmSpatialIdx geo.OSMSpatialIndex,
-	osmRelations []geo.OsmRelation) error {
+	regionsBoundary []geo.Boundary) error {
 	fmt.Println("")
 	bar := progressbar.NewOptions(5,
 		progressbar.OptionSetWriter(ansi.NewAnsiStdout()),
@@ -904,19 +888,21 @@ func (Idx *DynamicIndex) BuildSpellCorrectorAndNgram(ctx context.Context, allSea
 }
 
 type SpimiIndexMetadata struct {
-	TermIDMap     *pkg.IDMap
-	DocWordCount  map[int]int
-	DocsCount     int
-	OSMFeatureMap *pkg.IDMap
+	TermIDMap       *pkg.IDMap
+	DocWordCount    map[int]int
+	DocsCount       int
+	OSMFeatureMap   *pkg.IDMap
+	WikidataObjects map[int]struct{}
 }
 
 func NewSpimiIndexMetadata(termIDMap *pkg.IDMap, docWordCount map[int]int, docsCount int,
-	osmFeatureMap *pkg.IDMap) SpimiIndexMetadata {
+	osmFeatureMap *pkg.IDMap, wikidataObjects map[int]struct{}) SpimiIndexMetadata {
 	return SpimiIndexMetadata{
-		TermIDMap:     termIDMap,
-		DocWordCount:  docWordCount,
-		DocsCount:     docsCount,
-		OSMFeatureMap: osmFeatureMap,
+		TermIDMap:       termIDMap,
+		DocWordCount:    docWordCount,
+		DocsCount:       docsCount,
+		OSMFeatureMap:   osmFeatureMap,
+		WikidataObjects: wikidataObjects,
 	}
 }
 func (Idx *DynamicIndex) Close() error {
@@ -927,7 +913,7 @@ func (Idx *DynamicIndex) Close() error {
 // SaveMeta is a function to save the metadata of the main inverted index to disk.
 func (Idx *DynamicIndex) SaveMeta() error {
 	// save to disk
-	SpimiMeta := NewSpimiIndexMetadata(Idx.TermIDMap, Idx.docWordCount, Idx.docsCount, Idx.OSMFeatureMap)
+	SpimiMeta := NewSpimiIndexMetadata(Idx.TermIDMap, Idx.docWordCount, Idx.docsCount, Idx.OSMFeatureMap, Idx.WikidataObjects)
 
 	buf, err := msgpack.Marshal(&SpimiMeta)
 	if err != nil {
@@ -998,6 +984,7 @@ func (Idx *DynamicIndex) LoadMeta() error {
 	Idx.docWordCount = save.DocWordCount
 	Idx.docsCount = save.DocsCount
 	Idx.OSMFeatureMap = save.OSMFeatureMap
+	Idx.WikidataObjects = save.WikidataObjects
 
 	for i := 0; i < Idx.docsCount; i++ {
 		Idx.averageDocLength += float64(Idx.docWordCount[i])
@@ -1040,13 +1027,9 @@ func (Idx *DynamicIndex) GetOSMFeatureMap() *pkg.IDMap {
 
 func (Idx *DynamicIndex) GetFullAdress(street, postalCode, houseNumber string, centerLat, centerLon float64,
 ) (string, string) {
-	centerItem := datastructure.Point{
-		Lat: centerLat,
-		Lon: centerLon,
-	}
 
-	upperRightLat, upperRightLon :=geo.GetDestinationPoint(centerLat, centerLon, 45, 0.4)
-	lowerLeftLat, lowerLeftLon := geo.GetDestinationPoint(centerLat, centerLon, 225, 0.4)
+	upperRightLat, upperRightLon := geo.GetDestinationPoint(centerLat, centerLon, 45, 1.0)
+	lowerLeftLat, lowerLeftLon := geo.GetDestinationPoint(centerLat, centerLon, 225, 1.0)
 
 	boundingBox := datastructure.NewRtreeBoundingBox(2, []float64{lowerLeftLat, lowerLeftLon},
 		[]float64{upperRightLat, upperRightLon})
@@ -1058,10 +1041,30 @@ func (Idx *DynamicIndex) GetFullAdress(street, postalCode, houseNumber string, c
 		address += street
 	} else if Idx.IndexedData.osmSpatialIndex.StreetRtree.Size > 0 {
 		// pick nearest street
-		street := Idx.IndexedData.osmSpatialIndex.StreetRtree.ImprovedNearestNeighbor(centerItem)
+		streets := Idx.IndexedData.osmSpatialIndex.StreetRtree.Search(boundingBox)
 
-		streetName, _, _, _, _ := geo.GetNameAddressTypeFromOSMWay(Idx.IndexedData.Ways[street.ID].TagMap)
-		address += streetName
+		nearestStreetID := -1
+		minDist := math.MaxFloat64
+		for _, currStreet := range streets {
+
+			streetBoundary := currStreet.Leaf.BoundaryLatLons
+			projection := geo.ProjectPointToLineCoord(
+				geo.NewCoordinate(streetBoundary[0][0],
+					streetBoundary[0][1]),
+				geo.NewCoordinate(streetBoundary[len(streetBoundary)-1][0],
+					streetBoundary[len(streetBoundary)-1][1]), geo.NewCoordinate(centerLat, centerLon),
+			)
+
+			dist := datastructure.HaversineDistance(centerLat, centerLon, projection.Lat, projection.Lon)
+			if dist < minDist {
+				minDist = dist
+				nearestStreetID = currStreet.Leaf.ID
+			}
+		}
+		if nearestStreetID != -1 {
+			streetName, _, _, _, _ := geo.GetNameAddressTypeFromOSMWay(Idx.IndexedData.Ways[nearestStreetID].TagMap)
+			address += streetName
+		}
 	}
 
 	if houseNumber != "" {
@@ -1069,147 +1072,46 @@ func (Idx *DynamicIndex) GetFullAdress(street, postalCode, houseNumber string, c
 	}
 
 	// kelurahan
-	kelurahans := []datastructure.RtreeNode{}
-	if Idx.IndexedData.osmSpatialIndex.KelurahanRtree.Size > 0 {
-		kelurahans = Idx.IndexedData.osmSpatialIndex.KelurahanRtree.Search(boundingBox)
-	}
-	kelurahan := ""
-
-	minDist := math.MaxFloat64
-
-
-	for _, currKelurahan := range kelurahans {
-		kelurahanRel := Idx.IndexedData.osmRelations[currKelurahan.Leaf.ID]
-		if postalCode == "" {
-			postalCode = kelurahanRel.PostalCode
-		}
-		if len(kelurahanRel.BoundaryLat) == 0 {
-			continue
-		}
-
-		inside := geo.IsPointInPolygon(centerLat, centerLon, kelurahanRel.BoundaryLat, kelurahanRel.BoundaryLon)
-		dist := datastructure.HaversineDistance(centerLat, centerLon,  currKelurahan.Leaf.Lat, currKelurahan.Leaf.Lon)
-		if inside && dist < minDist{
-			kelurahan = kelurahanRel.Name
-			minDist = dist
-		}
-	}
-
-	if kelurahan != "" {
-		address += ", " + kelurahan
-	}
-
-	// // kecamatan
-	kecamatans := []datastructure.RtreeNode{}
-	if Idx.IndexedData.osmSpatialIndex.KecamatanRtree.Size > 0 {
-		kecamatans = Idx.IndexedData.osmSpatialIndex.KecamatanRtree.Search(boundingBox)
-	}
-	kecamatan := ""
-	minDist = math.MaxFloat64
-
-	for _, currKecamatan := range kecamatans {
-		kecamatanRel := Idx.IndexedData.osmRelations[currKecamatan.Leaf.ID]
-		if len(kecamatanRel.BoundaryLat) == 0 {
-			continue
-		}
-
-		inside := geo.IsPointInPolygon(centerLat, centerLon, kecamatanRel.BoundaryLat, kecamatanRel.BoundaryLon)
-		dist := datastructure.HaversineDistance(centerLat, centerLon,  currKecamatan.Leaf.Lat, currKecamatan.Leaf.Lon)
-		if inside && dist < minDist {
-			kecamatan = kecamatanRel.Name
-			minDist = dist
-		}	
-
-	}
-
-	if kecamatan != "" {
-		address += ", " + kecamatan
-	}
-
-	// // city
-	cities := []datastructure.RtreeNode{}
-	if Idx.IndexedData.osmSpatialIndex.KotaKabupatenRtree.Size > 0 {
-		cities = Idx.IndexedData.osmSpatialIndex.KotaKabupatenRtree.Search(boundingBox)
-	}
-
+	addressRegion := ""
 	city := ""
+	if Idx.IndexedData.osmSpatialIndex.AdministrativeBoundaryRtree.Size > 0 {
+		regions := Idx.IndexedData.osmSpatialIndex.AdministrativeBoundaryRtree.Search(boundingBox)
 
-	minDist = math.MaxFloat64
+		for _, region := range regions {
+			boundaryLat := make([]float64, 0, len(region.Leaf.OsmBound))
+			boundaryLon := make([]float64, 0, len(region.Leaf.OsmBound))
 
-	for _, currCity := range cities {
-		cityRel := Idx.IndexedData.osmRelations[currCity.Leaf.ID]
-		if len(cityRel.BoundaryLat) == 0 {
-			continue
-		}
-		inside := geo.IsPointInPolygon(centerLat, centerLon, cityRel.BoundaryLat, cityRel.BoundaryLon)
-		dist := datastructure.HaversineDistance(centerLat, centerLon,  currCity.Leaf.Lat, currCity.Leaf.Lon)
-		if inside &&  dist < minDist {
-			city = cityRel.Name
-			minDist = dist
-		}
-	}
+			for _, boundLat := range region.Leaf.OsmBound[0] {
+				boundaryLat = append(boundaryLat, boundLat)
+			}
 
-	if city != "" {
-		address += ", " + city
-	}
+			for _, boundLon := range region.Leaf.OsmBound[1] {
+				boundaryLon = append(boundaryLon, boundLon)
+			}
 
-	// // provinsi
-	provinsis := []datastructure.RtreeNode{}
-	if Idx.IndexedData.osmSpatialIndex.ProvinsiRtree.Size > 0 {
-		provinsis = Idx.IndexedData.osmSpatialIndex.ProvinsiRtree.Search(boundingBox)
+			isPointInRegionBoundary := geo.IsPointInPolygon(centerLat, centerLon, boundaryLat, boundaryLon)
+			if isPointInRegionBoundary {
+				regionObj := Idx.IndexedData.regionsBoundary[region.Leaf.ID]
 
-	}
-	provinsi := ""
-	minDist = math.MaxFloat64
+				addressRegion = capitalize(regionObj.Village) + ", " + capitalize(regionObj.SubDistrict) + ", " + capitalize(regionObj.District) +
+					", " + capitalize(regionObj.Province)
 
-
-	for i := 0; i < len(provinsis); i++ {
-		currProvinsi := provinsis[i]
-		provinsiRel := Idx.IndexedData.osmRelations[currProvinsi.Leaf.ID]
-		if len(provinsiRel.BoundaryLat) == 0 {
-			continue
-		}
-
-		inside := geo.IsPointInPolygon(centerLat, centerLon, provinsiRel.BoundaryLat, provinsiRel.BoundaryLon)
-		dist := datastructure.HaversineDistance(centerLat, centerLon,  currProvinsi.Leaf.Lat, currProvinsi.Leaf.Lon)
-		if inside && dist < minDist {
-			provinsi = provinsiRel.Name
-			minDist = dist
-			// yang inii harus tanpa break
-
-		}
-	}
-
-	if provinsi != "" {
-		address += ", " + provinsi
-	}
-
-	// // postalCode
-	if postalCode != "" {
-		address += ", " + postalCode
-	} else if Idx.IndexedData.osmSpatialIndex.KelurahanRtree.Size > 0 {
-		nearestWayKelurahan := Idx.IndexedData.osmSpatialIndex.KelurahanRtree.Search(boundingBox)
-		minDist = math.MaxFloat64
-		for _, currKelurahan := range nearestWayKelurahan {
-			kelurahanRel := Idx.IndexedData.osmRelations[currKelurahan.Leaf.ID]
-			inside := geo.IsPointInPolygon(centerLat, centerLon, kelurahanRel.BoundaryLat, kelurahanRel.BoundaryLon)
-			dist := datastructure.HaversineDistance(centerLat, centerLon,  currKelurahan.Leaf.Lat, currKelurahan.Leaf.Lon)
-			if inside && dist < minDist {
-				address += ", " + kelurahanRel.PostalCode
-				minDist = dist
+				city = regionObj.District
+				break
 			}
 		}
-
 	}
-	// country
-	if Idx.IndexedData.osmSpatialIndex.CountryRtree.Size != 0 {
-		country := Idx.IndexedData.osmSpatialIndex.CountryRtree.Search(boundingBox)
 
-		countryRel := Idx.IndexedData.osmRelations[country[0].Leaf.ID]
-		address += ", " + countryRel.Name
-	}
+	address += ", " + addressRegion
 
 	return address, city
+}
+
+func capitalize(s string) string {
+	if s == "" {
+		return s
+	}
+	return strings.ToUpper(s[:1]) + strings.ToLower(s[1:])
 }
 
 func getOSMFeature(tagMap map[string]string) map[string]string {
@@ -1220,4 +1122,9 @@ func getOSMFeature(tagMap map[string]string) map[string]string {
 		}
 	}
 	return featureTag
+}
+
+func (Idx *DynamicIndex) IsWikiData(nodeID int) bool {
+	_, ok := Idx.WikidataObjects[nodeID]
+	return ok
 }

@@ -481,13 +481,10 @@ func TestEstimateQueryProbabilities(t *testing.T) {
 			math.Log(float64(1)/float64(1)) + math.Log(0.4*0.4*float64(1)/float64(4)) +
 			math.Log(0.4*0.4*float64(2)/float64(5))
 
-		probs := lm.EstimateQueriesProbabilities([][]int{query, queryTwo}, 4)
+		probs := lm.GetQueryNgramProbability([][]int{query, queryTwo}, 4)
 
-		
+		assert.InDelta(t, expectedProbOne, probs[0], 0.1)
 
-		
-		assert.InDelta(t,expectedProbOne, probs[0], 0.1)
-
-		assert.InDelta(t,expectedProbTwo, probs[1], 0.1)
+		assert.InDelta(t, expectedProbTwo, probs[1], 0.1)
 	})
 }

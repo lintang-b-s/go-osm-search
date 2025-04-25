@@ -19,7 +19,7 @@ type RtreeBoundingBox struct {
 func NewRtreeBoundingBox(dim int, minVal []float64, maxVal []float64) RtreeBoundingBox {
 	b := RtreeBoundingBox{Dim: dim, Edges: make([][2]float64, dim)}
 	for axis := 0; axis < dim; axis++ {
-		b.Edges[axis] = [2]float64{minVal[axis], maxVal[axis]}
+		b.Edges[axis] = [2]float64{minVal[axis], maxVal[axis]} // axis = 2 (lat,lon)
 	}
 
 	return b
@@ -497,7 +497,8 @@ func (rt *Rtree) chooseLeaf(node *RtreeNode, bound RtreeBoundingBox) *RtreeNode 
 
 func (rt *Rtree) Search(bound RtreeBoundingBox) []RtreeNode {
 	results := []RtreeNode{}
-	return rt.search(rt.Root, bound, results)
+	results = rt.search(rt.Root, bound, results)
+	return results
 }
 
 func (rt *Rtree) search(node *RtreeNode, bound RtreeBoundingBox,
@@ -594,11 +595,13 @@ func (p Point) maxDist(r RtreeBoundingBox) float64 {
 }
 
 type OSMObject struct {
-	ID    int
-	Lat   float64
-	Lon   float64
-	Tag   map[int]int
-	Bound RtreeBoundingBox
+	ID              int
+	Lat             float64
+	Lon             float64
+	Tag             map[int]int
+	Bound           RtreeBoundingBox
+	OsmBound        [2][]float64
+	BoundaryLatLons [][]float64
 }
 
 func NewOSMObject(id int, lat, lon float64, tag map[int]int,
@@ -644,6 +647,10 @@ func (rt *Rtree) NearestNeighboursPQ(k int, p Point) []OSMObject {
 	return nearestLists
 }
 
+const (
+	SKIP_OSM_FEATURE = -9999
+)
+
 // NearestNeighboursRadiusFilterOSM. returns the k nearest neighbours (with filtered osm feature) within a given radius in km.
 func (rt *Rtree) NearestNeighboursRadiusFilterOSM(k, offfset int, p Point, maxRadius float64,
 	osmFeature int) []OSMObject {
@@ -651,7 +658,9 @@ func (rt *Rtree) NearestNeighboursRadiusFilterOSM(k, offfset int, p Point, maxRa
 
 	callback := func(n OSMObject) bool {
 		dist := HaversineDistance(p.Lat, p.Lon, n.Lat, n.Lon)
-		if _, ok := n.Tag[osmFeature]; ok && dist <= maxRadius {
+		if _, ok := n.Tag[osmFeature]; osmFeature != SKIP_OSM_FEATURE && ok && dist <= maxRadius {
+			nearestLists = append(nearestLists, n)
+		} else if osmFeature == SKIP_OSM_FEATURE && dist <= maxRadius {
 			nearestLists = append(nearestLists, n)
 		}
 

@@ -7,7 +7,10 @@ Openstreetmap Full Text Search Engine (support Autocomplete & Spell Corrector Up
 ## Indexing
 
 ```
-1. download the jabodetabek openstreetmap pbf file at: https://drive.google.com/file/d/1MZfZhFAFLUGouAeQK8-g-S4O2HBDHLRn/view?usp=sharing
+1. download jabodetabek openstreetmap pbf file at: https://drive.google.com/file/d/1MZfZhFAFLUGouAeQK8-g-S4O2HBDHLRn/view?usp=sharing
+
+1b. download indonesia boundary json file: https://drive.google.com/file/d/1f4PjHCWviamYIritR8QaLwBineviIvh2/view?usp=sharing
+
 Note: or you can also use another openstreetmap file with the osm.pbf format (https://download.geofabrik.de/)
 2. go mod tidy &&  mkdir bin
 3. go build -o ./bin/osm-search-indexer ./cmd/indexing

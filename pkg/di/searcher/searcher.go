@@ -11,7 +11,7 @@ import (
 
 func New(ctx context.Context, db *kvdb.KVDB, scoring searcher.SimiliarityScoring) (usecases.Searcher, error) {
 	ngramLM := searcher.NewNGramLanguageModel("lintang")
-	spellCorrector := searcher.NewSpellCorrector(ngramLM)
+	spellCorrector := searcher.NewSpellCorrector(ngramLM, "lintang")
 	invertedIndex, err := index.NewDynamicIndex("lintang", 1e7, true, spellCorrector, index.IndexedData{},
 		db)
 	if err != nil {
@@ -28,8 +28,10 @@ func New(ctx context.Context, db *kvdb.KVDB, scoring searcher.SimiliarityScoring
 	if err != nil {
 		return nil, err
 	}
-
-	
+	err = spellCorrector.LoadNoisyChannelData()
+	if err != nil {
+		return nil, err
+	}
 
 	cleanup := func() {
 		osmSearcher.Close()

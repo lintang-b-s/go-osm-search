@@ -33,3 +33,7 @@ go-osm-search-server-profile
 main
 
 *.out
+
+!spell-errors.txt
+
+*.json

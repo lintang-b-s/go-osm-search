@@ -1,6 +1,10 @@
 package geo
 
-import "math"
+import (
+	"math"
+
+	"github.com/golang/geo/s2"
+)
 
 const (
 	earthRadiusKM = 6371.0
@@ -88,11 +92,11 @@ func crossProduct(hLat, hLon, tLat, tLon, qLat, qLon float64) float64 {
 }
 
 func isPointOnSegment(pLat, pLon, aLat, aLon, bLat, bLon float64) bool {
-	if (pLon >= math.Min(aLon, bLon) && pLon <= math.Max(aLon, bLon )&&
-	pLat >= math.Min(aLat, bLat) && 
-	pLat <= math.Max(aLat, bLat)) {
+	if pLon >= math.Min(aLon, bLon) && pLon <= math.Max(aLon, bLon) &&
+		pLat >= math.Min(aLat, bLat) &&
+		pLat <= math.Max(aLat, bLat) {
 		return true
-	}else {
+	} else {
 		return false
 	}
 }
@@ -102,7 +106,7 @@ func windingNumber(pLat, pLon float64, polygonLat, polygonLon []float64) (wn int
 	for i := range polygonLat[:len(polygonLon)-1] {
 		if isPointOnSegment(pLat, pLon, polygonLat[i], polygonLon[i], polygonLat[i+1], polygonLon[i+1]) {
 			wn = 1
-			return 
+			return
 		}
 		if polygonLat[i] <= pLat {
 			if polygonLat[i+1] > pLat &&
@@ -150,6 +154,31 @@ func GetDestinationPoint(lat1, lon1 float64, bearing float64, dist float64) (flo
 	return lat2, lon2
 }
 
-
 // TODO: Geofence pake circle
 
+type Coordinate struct {
+	Lat float64
+	Lon float64
+}
+
+func NewCoordinate(lat, lon float64) Coordinate {
+	return Coordinate{
+		Lat: lat,
+		Lon: lon,
+	}
+}
+
+func ProjectPointToLineCoord(nearestStPoint Coordinate, secondNearestStPoint Coordinate,
+	snap Coordinate) Coordinate {
+	nearestStPoint = nearestStPoint
+	secondNearestStPoint = secondNearestStPoint
+	snapLat := snap.Lat
+	snapLon := snap.Lon
+
+	nearestStS2 := s2.PointFromLatLng(s2.LatLngFromDegrees(nearestStPoint.Lat, nearestStPoint.Lon))
+	secondNearestStS2 := s2.PointFromLatLng(s2.LatLngFromDegrees(secondNearestStPoint.Lat, secondNearestStPoint.Lon))
+	snapS2 := s2.PointFromLatLng(s2.LatLngFromDegrees(snapLat, snapLon))
+	projection := s2.Project(snapS2, nearestStS2, secondNearestStS2)
+	projectLatLng := s2.LatLngFromPoint(projection)
+	return NewCoordinate(projectLatLng.Lat.Degrees(), projectLatLng.Lng.Degrees())
+}

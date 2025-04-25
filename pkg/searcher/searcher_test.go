@@ -23,7 +23,7 @@ const (
 func LoadIndex() (*Searcher, *bolt.DB) {
 
 	ngramLM := NewNGramLanguageModel("lintang")
-	spellCorrector := NewSpellCorrector(ngramLM)
+	spellCorrector := NewSpellCorrector(ngramLM, "lintang")
 
 	db, err := bolt.Open("docs_store.db", 0600, nil)
 	if err != nil {
@@ -289,5 +289,5 @@ func BenchmarkReverseGeocoding(b *testing.B) {
 			b.Fatal(err)
 		}
 	}
-	
+
 }

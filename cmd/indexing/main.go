@@ -17,10 +17,12 @@ import (
 )
 
 var (
-	mapFile    = flag.String("f", "jabodetabek.osm.pbf", "openstreeetmap file")
-	outputDir  = flag.String("o", "lintang", "output directory buat simpan inverted index, ngram, dll")
-	cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
-	memprofile = flag.String("memprofile", "", "write memory profile to this file")
+	mapFile            = flag.String("f", "jabodetabek.osm.pbf", "openstreeetmap file")
+	outputDir          = flag.String("o", "lintang", "output directory buat simpan inverted index, ngram, dll")
+	cpuprofile         = flag.String("cpuprofile", "", "write cpu profile to file")
+	memprofile         = flag.String("memprofile", "", "write memory profile to this file")
+	regionBoundaryFile = flag.String("region-boundary", "region_boundary.json", "region boundary file")
+	spellErrorFile     = flag.String("spell-error", "spell-errors.txt", "spell error file")
 )
 
 func main() {
@@ -43,7 +45,7 @@ func main() {
 		os.Mkdir(*outputDir, 0700)
 	}
 
-	ways, onylySearchNodes, nodeMap, tagIDMap, spatialIndex, osmRelations, err := geo.ParseOSM(*mapFile)
+	ways, onylySearchNodes, nodeMap, tagIDMap, spatialIndex, osmRelations, err := geo.ParseOSM(*mapFile, *regionBoundaryFile)
 	if err != nil {
 		panic(err)
 	}
@@ -65,7 +67,16 @@ func main() {
 	bboltKV := kvdb.NewKVDB(db)
 
 	ngramLM := searcher.NewNGramLanguageModel(*outputDir)
-	spellCorrectorBuilder := searcher.NewSpellCorrector(ngramLM)
+	spellCorrectorBuilder := searcher.NewSpellCorrector(ngramLM, *outputDir)
+	err = spellCorrectorBuilder.BuildEditProb(*spellErrorFile)
+	if err != nil {
+		panic(err)
+	}
+
+	err = spellCorrectorBuilder.SaveNoisyChannelModelData()
+	if err != nil {
+		panic(err)
+	}
 
 	indexedData := index.NewIndexedData(ways, onylySearchNodes, nodeMap, tagIDMap, spatialIndex, osmRelations)
 	invertedIndex, _ := index.NewDynamicIndex(*outputDir, 1e7, false, spellCorrectorBuilder,

@@ -309,7 +309,7 @@ func (lm *NGramLanguageModel) estimateQueryProbability(query []int) float64 {
 	return probability
 }
 
-func (lm *NGramLanguageModel) EstimateQueriesProbabilities(queries [][]int, n int) []float64 {
+func (lm *NGramLanguageModel) GetQueryNgramProbability(queries [][]int, n int) []float64 {
 
 	var sentencesProbabilities = make([]float64, 0, len(queries))
 	for _, sentence := range queries {
