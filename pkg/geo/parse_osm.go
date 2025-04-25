@@ -25,18 +25,10 @@ func ParseOSM(mapfile string, mapBoundaryFile string) ([]OSMWay, []OSMNode, Node
 	streetRtree := datastructure.NewRtree(25, 50, 2)
 	regionRtree := datastructure.NewRtree(25, 50, 2)
 
-	f, err := os.Open(mapfile)
-
-	if err != nil {
-		return []OSMWay{}, []OSMNode{}, NodeMapContainer{}, &pkg.IDMap{}, OSMSpatialIndex{}, []Boundary{}, err
-	}
-
-	defer f.Close()
-
 	count := 0
 
 	ctr := NodeMapContainer{
-		nodeMap: make(map[int64]*osm.Node),
+		nodeMap: make(map[int64]osm.Node),
 	}
 
 	ways := []OSMWay{}
@@ -57,25 +49,10 @@ func ParseOSM(mapfile string, mapBoundaryFile string) ([]OSMWay, []OSMNode, Node
 
 	regionBoundaries := make([]Boundary, 0)
 
-	scanner := osmpbf.New(context.Background(), f, 1)
-
-	fmt.Printf("\n")
-	log.Printf("\n Parsing osm relation objects...\n")
-
-	bar.Add(1)
-
-	fmt.Printf("\n")
-	log.Printf("Parsing osm relation objects done\n")
-
-	scanErr := scanner.Err()
-	if scanErr != nil {
-		return []OSMWay{}, []OSMNode{}, NodeMapContainer{}, &pkg.IDMap{}, OSMSpatialIndex{}, regionBoundaries, err
-	}
-
-	scanner.Close()
+	onlyOsmNodes := []OSMNode{}
 
 	// process osm ways
-	wayNodesMap := make(map[osm.NodeID]bool)
+	wayNodesMap := make(map[int64]bool)
 
 	fWay, err := os.Open(mapfile)
 	if err != nil {
@@ -84,99 +61,98 @@ func ParseOSM(mapfile string, mapBoundaryFile string) ([]OSMWay, []OSMNode, Node
 	defer fWay.Close()
 
 	scannerWay := osmpbf.New(context.Background(), fWay, 1)
-	defer scannerWay.Close()
 
 	fmt.Printf("\n")
 	log.Printf("Parsing osm way objects...\n")
 	for scannerWay.Scan() {
 		o := scannerWay.Object()
 		tipe := o.ObjectID().Type()
+		switch tipe {
+		case osm.TypeNode:
+			{
+				node := o.(*osm.Node)
 
-		if tipe != osm.TypeWay {
-			continue
+				name, _, _, _, _ := GetNameAddressTypeFromOSMWay(node.TagMap())
+				if name == "" {
+					continue
+				}
+				if checkIsNodeAlowed(node.TagMap()) {
+					lat := node.Lat
+					lon := node.Lon
+					tag := node.TagMap()
+
+					containWikiData := containWikiData(o.(*osm.Node).Tags)
+
+					onlyOsmNodes = append(onlyOsmNodes, NewOSMNode(int64(o.(*osm.Node).ID), lat, lon, tag, containWikiData))
+				}
+			}
+		case osm.TypeWay:
+			{
+
+				tag := o.(*osm.Way).TagMap()
+
+				name, _, _, _, _ := GetNameAddressTypeFromOSMWay(tag)
+				if name == "" {
+					continue
+				}
+
+				if !checkIsWayAlowed(tag) {
+					continue
+				}
+
+				nodeIDs := []int64{}
+				for _, node := range o.(*osm.Way).Nodes {
+					wayNodesMap[int64(node.ID)] = true
+					nodeIDs = append(nodeIDs, int64(node.ID))
+				}
+
+				containWikiData := containWikiData(o.(*osm.Way).Tags)
+
+				way := NewOSMWay(int64(o.(*osm.Way).ID), nodeIDs, tag, containWikiData)
+				ways = append(ways, way)
+
+				count++
+			}
 		}
 
-		tag := o.(*osm.Way).TagMap()
-
-		name, _, _, _, _ := GetNameAddressTypeFromOSMWay(tag)
-		if name == "" {
-			continue
-		}
-
-		if !checkIsWayAlowed(tag) {
-			continue
-		}
-
-		nodeIDs := []int64{}
-		for _, node := range o.(*osm.Way).Nodes {
-			wayNodesMap[node.ID] = true
-			nodeIDs = append(nodeIDs, int64(node.ID))
-		}
-
-		containWikiData := containWikiData(o.(*osm.Way).Tags)
-
-		way := NewOSMWay(int64(o.(*osm.Way).ID), nodeIDs, tag, containWikiData)
-		ways = append(ways, way)
-
-		count++
 	}
 
-	scanErr = scannerWay.Err()
+	scanErr := scannerWay.Err()
 	if scanErr != nil {
 		return []OSMWay{}, []OSMNode{}, NodeMapContainer{}, &pkg.IDMap{}, OSMSpatialIndex{}, regionBoundaries, err
 	}
 	scannerWay.Close()
 
 	bar.Add(1)
-	_, err = f.Seek(0, io.SeekStart)
+	_, err = fWay.Seek(0, io.SeekStart)
 	if err != nil {
+		return []OSMWay{}, []OSMNode{}, NodeMapContainer{}, &pkg.IDMap{}, OSMSpatialIndex{}, regionBoundaries, err
+	}
+
+	scannerWay = osmpbf.New(context.Background(), fWay, 1)
+	defer scannerWay.Close()
+
+	for scannerWay.Scan() {
+		o := scannerWay.Object()
+		tipe := o.ObjectID().Type()
+		switch tipe {
+		case osm.TypeNode:
+			{
+				node := o.(*osm.Node)
+				if _, ok := wayNodesMap[int64(node.ID)]; ok {
+					ctr.nodeMap[int64(node.ID)] = *node
+				}
+			}
+		}
+	}
+
+	scanErr = scannerWay.Err()
+	if scanErr != nil {
 		return []OSMWay{}, []OSMNode{}, NodeMapContainer{}, &pkg.IDMap{}, OSMSpatialIndex{}, regionBoundaries, err
 	}
 
 	fmt.Printf("\n")
 	log.Printf("Parsing osm way objects done\n")
-
-	fmt.Printf("\n")
-	log.Printf("Parsing osm node objects...\n")
-
-	scanner = osmpbf.New(context.Background(), f, 1)
-	defer scanner.Close()
-
-	onlyOsmNodes := []OSMNode{}
-	for scanner.Scan() {
-		o := scanner.Object()
-		if o.ObjectID().Type() == osm.TypeNode {
-			node := o.(*osm.Node)
-			if _, ok := wayNodesMap[node.ID]; ok {
-				ctr.nodeMap[int64(o.(*osm.Node).ID)] = o.(*osm.Node)
-			}
-			name, _, _, _, _ := GetNameAddressTypeFromOSMWay(node.TagMap())
-			if name == "" {
-				continue
-			}
-			if checkIsNodeAlowed(node.TagMap()) {
-				lat := node.Lat
-				lon := node.Lon
-				tag := node.TagMap()
-
-				containWikiData := containWikiData(o.(*osm.Node).Tags)
-
-				onlyOsmNodes = append(onlyOsmNodes, NewOSMNode(int64(o.(*osm.Node).ID), lat, lon, tag, containWikiData))
-			}
-
-		}
-	}
-
-	bar.Add(1)
-
-	scanErr = scanner.Err()
-	if scanErr != nil {
-		return []OSMWay{}, []OSMNode{}, NodeMapContainer{}, &pkg.IDMap{}, OSMSpatialIndex{}, regionBoundaries, err
-	}
-	log.Printf("Parsing osm node objects done \n")
-
-	fmt.Printf("\n")
-	log.Printf("processing osm relation & way objects...\n")
 
 	// process poligon administrative boundary & rtree administrative boundary
 	indoBoundaryFile, err := os.Open(mapBoundaryFile)

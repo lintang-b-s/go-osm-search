@@ -6,14 +6,14 @@ import (
 )
 
 type NodeMapContainer struct {
-	nodeMap map[int64]*osm.Node
+	nodeMap map[int64]osm.Node
 }
 
-func (nm *NodeMapContainer) SetNodeMap(nodeMap map[int64]*osm.Node) {
+func (nm *NodeMapContainer) SetNodeMap(nodeMap map[int64]osm.Node) {
 	nm.nodeMap = nodeMap
 }
 
-func (nm *NodeMapContainer) GetNode(id int64) *osm.Node {
+func (nm *NodeMapContainer) GetNode(id int64) osm.Node {
 	return nm.nodeMap[id]
 }
 

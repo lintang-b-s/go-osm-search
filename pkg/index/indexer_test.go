@@ -411,7 +411,7 @@ func TestSpimiBatchIndex(t *testing.T) {
 		inputNodes         []geo.OSMNode
 		expectedOsmObjects []datastructure.Node
 
-		nodeMap map[int64]*osm.Node
+		nodeMap map[int64]osm.Node
 
 		expectedPostings map[string][]int
 		expectedTermIDs  []int
@@ -466,7 +466,7 @@ func TestSpimiBatchIndex(t *testing.T) {
 				},
 			},
 
-			nodeMap: map[int64]*osm.Node{
+			nodeMap: map[int64]osm.Node{
 				1: {
 					ID: 1, Lat: 1.0, Lon: 1.0,
 				},

@@ -31,19 +31,20 @@ Note: The indexing process takes 1-3 minutes, please wait. you can also replace 
 ### Search With Spell Correction
 
 ```
-curl 'http://localhost:6060/api/search?query=Dunia gantadi&top_k=10&offset=0&lat=-6.17473908506388&lon=106.82749962074273'
+curl --location  'http://localhost:6060/api/search?query=Dunia%20gantadi&top_k=10&offset=0&lat=-6.17473908506388&lon=106.82749962074273'
+
 ```
 
 ### Autocomplete
 
 ```
-curl 'http://localhost:6060/api/autocomplete?query=Kebun Binatang Ra&top_k=10&offset=0&lat=-6.17473908506388&lon=106.82749962074273'
+curl 'http://localhost:6060/api/autocomplete?query=Kebun%20Binatang%20Ra&top_k=10&offset=0&lat=-6.17473908506388&lon=106.82749962074273'
 ```
 
 ### Reverse Geocoding
 
 ```
-curl --location 'http://localhost:6060/api/reverse?lat=-6.179842&lon=106.749864'
+curl --location 'http://localhost:6060/api/reverse?lat=-6.224371&lon=106.823268'
 ```
 
 ### Nearby places With a Specific Openstreetmap Tag and Within a Specific Radius
@@ -52,7 +53,7 @@ curl --location 'http://localhost:6060/api/reverse?lat=-6.179842&lon=106.749864'
 curl --location 'http://localhost:6060/api/places?lat=-6.179842&lon=106.749864&feature=amenity=restaurant&k=10&offset=0&radius=3'
 ```
 
-### Geofencing (In-memory)
+### Geofencing 
 
 ```
 curl --location 'http://localhost:6060/api/geofence' \
