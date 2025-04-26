@@ -238,7 +238,7 @@ func (se *Searcher) Autocomplete(query string, k, offset int) ([]datastructure.N
 		originalQueryTerms = append(originalQueryTerms, se.TermIDMap.GetID(tokenizedTerm))
 		isInVocab := se.TermIDMap.IsInVocabulary(tokenizedTerm)
 
-		if i == len(queryTerms)-1 && !isInVocab {
+		if i == len(queryTerms)-1 || !isInVocab {
 			var (
 				wg                  sync.WaitGroup
 				matchedWord         []int

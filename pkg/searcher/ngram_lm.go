@@ -330,6 +330,11 @@ func (lm *NGramLanguageModel) stupidBackoff(nextWord int, prevNgrams []int, n in
 		if newProb != 0 {
 			break
 		}
+		if len(prevNgrams) == 1 {
+			prevNgrams = []int{}
+			lambda = lambda * 0.4
+			continue
+		}
 		prevNgrams = prevNgrams[1:]
 		lambda = lambda * 0.4
 	}
