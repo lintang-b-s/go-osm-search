@@ -238,7 +238,7 @@ func (se *Searcher) Autocomplete(query string, k, offset int) ([]datastructure.N
 		originalQueryTerms = append(originalQueryTerms, se.TermIDMap.GetID(tokenizedTerm))
 		isInVocab := se.TermIDMap.IsInVocabulary(tokenizedTerm)
 
-		if i == len(queryTerms)-1 || !isInVocab {
+		if (i == len(queryTerms)-1 && !isInVocab) || !isInVocab {
 			var (
 				wg                  sync.WaitGroup
 				matchedWord         []int
@@ -295,22 +295,33 @@ func (se *Searcher) Autocomplete(query string, k, offset int) ([]datastructure.N
 
 			// collect matched word
 
+			correctedWordSet := make(map[int32]struct{})
+
 			// prefix
 			matchedWordCandidates := make([]datastructure.WordCandidate, len(matchedWord))
 			for j, autocompleteWordID := range matchedWord {
 				matchedWordCandidates[j] = datastructure.NewWordCandidate(autocompleteWordID, tokenizedTerm, tokenizedTerm)
+				correctedWordSet[int32(autocompleteWordID)] = struct{}{}
 			}
 
 			// correction one
 			wordCandidates := make([]datastructure.WordCandidate, 0, len(correctionOne))
 			for i, correction := range correctionOne {
+				if _, ok := correctedWordSet[int32(correction)]; ok {
+					continue
+				}
 				wordCandidates = append(wordCandidates, datastructure.NewWordCandidate(correction, tokenizedTerm, correctionOneString[i]))
+				correctedWordSet[int32(correction)] = struct{}{}
 			}
 
 			// correction two
 			wordCandidatesTwo := make([]datastructure.WordCandidate, 0, len(correctionTwo))
 			for i, correction := range correctionTwo {
+				if _, ok := correctedWordSet[int32(correction)]; ok {
+					continue
+				}
 				wordCandidatesTwo = append(wordCandidatesTwo, datastructure.NewWordCandidate(correction, tokenizedTerm, correctionTwoString[i]))
+				correctedWordSet[int32(correction)] = struct{}{}
 			}
 
 			allPossibleQueryTerms[i] = append(allPossibleQueryTerms[i], matchedWordCandidates...)
@@ -338,7 +349,7 @@ func (se *Searcher) Autocomplete(query string, k, offset int) ([]datastructure.N
 	wg.Add(len(matchedQueries))
 
 	relDocIDs := []docWithScore{}
-	for _, queryTerms := range matchedQueries {
+	for i, queryTerms := range matchedQueries {
 		go func(queryTerms []int) {
 			defer wg.Done()
 
@@ -362,7 +373,12 @@ func (se *Searcher) Autocomplete(query string, k, offset int) ([]datastructure.N
 				queryWordCount[termID] += 1
 			}
 
-			docWithScoresChan <- se.scoreBM25FieldWithScores(allPostingsNameField, allPostingsAddressField, queryTerms)
+			if i == 0 {
+				docWithScoresChan <- se.scoreBM25FieldWithScores(allPostingsNameField, allPostingsAddressField, queryTerms)
+			} else {
+				docWithScoresChan <- se.scoreBM25FieldWithScores(allPostingsNameField, allPostingsAddressField, queryTerms)
+
+			}
 
 		}(queryTerms)
 	}

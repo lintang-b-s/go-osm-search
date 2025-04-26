@@ -64,9 +64,7 @@ func (se *Searcher) scoreBM25Field(allPostingsNameField map[int][]int,
 
 	documentIDs := make([]int, 0, len(documentScore))
 	for k := range documentScore {
-		if se.Idx.IsWikiData(k) {
-			documentScore[k] += osmObjContainWikiDataWeight
-		}
+
 		documentIDs = append(documentIDs, k)
 	}
 
@@ -135,9 +133,7 @@ func (se *Searcher) scoreBM25FieldWithScores(allPostingsNameField map[int][]int,
 
 	documentIDs := make([]docWithScore, 0, len(documentScore))
 	for k := range documentScore {
-		if se.Idx.IsWikiData(k) {
-			documentScore[k] += osmObjContainWikiDataWeight
-		}
+
 		documentIDs = append(documentIDs, newDocWithScore(k, documentScore[k]))
 	}
 
@@ -173,9 +169,7 @@ func (se *Searcher) scoreBM25Plus(allPostingsField map[int][]int) []int {
 
 	documentIDs := make([]int, 0, len(documentScore))
 	for k := range documentScore {
-		if se.Idx.IsWikiData(k) {
-			documentScore[k] += osmObjContainWikiDataWeight
-		}
+
 		documentIDs = append(documentIDs, k)
 	}
 
@@ -222,9 +216,7 @@ func (se *Searcher) scoreTFIDFCosine(allPostings map[int][]int,
 
 	documentIDs := make([]int, 0, len(documentScore))
 	for k := range documentScore {
-		if se.Idx.IsWikiData(k) {
-			documentScore[k] += osmObjContainWikiDataWeight
-		}
+
 		documentIDs = append(documentIDs, k)
 	}
 

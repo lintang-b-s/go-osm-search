@@ -23,7 +23,7 @@ import (
 )
 
 var (
-	regexSearch     = regexp.MustCompile("^[A-Za-z0-9_ +,.()]+$")
+	regexSearch     = regexp.MustCompile("^[A-Za-z0-9_ +,.()'-]+$")
 	regexOSMFeature = regexp.MustCompile("^[a-zA-Z0-9_:=]+$")
 	regexFenceName  = regexp.MustCompile("^[A-Za-z0-9_]+$")
 )
@@ -113,7 +113,7 @@ func (api *searchAPI) search(w http.ResponseWriter, r *http.Request, p httproute
 	)
 	query := r.URL.Query()
 	request.Query = query.Get("query")
-	
+
 	request.TopK, err = strconv.Atoi(query.Get("top_k"))
 	if err != nil {
 		api.BadRequestResponse(w, r, errors.New("top_k must be an integer"))
@@ -135,7 +135,6 @@ func (api *searchAPI) search(w http.ResponseWriter, r *http.Request, p httproute
 		return
 	}
 
-	
 	validate := validator.New()
 	notMatch := regexSearch.MatchString(request.Query)
 
@@ -194,7 +193,7 @@ func (api *searchAPI) autocomplete(w http.ResponseWriter, r *http.Request, _ htt
 	)
 	query := r.URL.Query()
 	request.Query = query.Get("query")
-	
+
 	request.TopK, err = strconv.Atoi(query.Get("top_k"))
 	if err != nil {
 		api.BadRequestResponse(w, r, errors.New("top_k must be an integer"))
