@@ -3,6 +3,7 @@ package searcher
 import (
 	"errors"
 	"fmt"
+	"log"
 	"math"
 	"os"
 	"sort"
@@ -14,8 +15,6 @@ import (
 	"github.com/lintang-b-s/osm-search/pkg/index"
 
 	"github.com/RadhiFadlillah/go-sastrawi"
-	"github.com/k0kubun/go-ansi"
-	"github.com/schollz/progressbar/v3"
 )
 
 type Searcher struct {
@@ -36,19 +35,7 @@ func NewSearcher(idx DynamicIndexer, docStore SearcherDocStore, spell index.Spel
 }
 
 func (se *Searcher) LoadMainIndex() error {
-	bar := progressbar.NewOptions(5,
-		progressbar.OptionSetWriter(ansi.NewAnsiStdout()),
-		progressbar.OptionEnableColorCodes(true),
-		progressbar.OptionShowBytes(true),
-		progressbar.OptionSetWidth(15),
-		progressbar.OptionSetDescription("[cyan][1/3]Loading Inverted & R-tree Index..."),
-		progressbar.OptionSetTheme(progressbar.Theme{
-			Saucer:        "[green]=[reset]",
-			SaucerHead:    "[green]>[reset]",
-			SaucerPadding: " ",
-			BarStart:      "[",
-			BarEnd:        "]",
-		}))
+
 	fmt.Println("")
 
 	pwd, err := os.Getwd()
@@ -68,21 +55,20 @@ func (se *Searcher) LoadMainIndex() error {
 		return err
 	}
 	se.MainIndexAddressField = mainIndexAddressField
-	bar.Add(1)
 
 	// build vocabulary
 	se.Idx.BuildVocabulary()
 	se.TermIDMap = se.Idx.GetTermIDMap()
-	bar.Add(1)
 
 	// load r*-tree
 	rt := datastructure.NewRtree(25, 50, 2)
+	log.Printf("deserializing rtree...")
 	err = rt.Deserialize(se.Idx.GetWorkingDir(), se.Idx.GetOutputDir())
 	if err != nil {
 		return fmt.Errorf("error when deserialize rtree: %w", err)
 	}
+	log.Printf("deserialized rtree done...")
 	se.osmRtree = rt
-	bar.Add(1)
 	return nil
 }
 
@@ -414,19 +400,22 @@ func (se *Searcher) Autocomplete(query string, k, offset int) ([]datastructure.N
 }
 
 func (se *Searcher) ReverseGeocoding(lat, lon float64) (datastructure.Node, error) {
-	upRightLat, upRightLon := geo.GetDestinationPoint(lat, lon, 45, 0.4)
-	downLeftLat, downLeftLon := geo.GetDestinationPoint(lat, lon, 225, 0.4)
+	upRightLat, upRightLon := geo.GetDestinationPoint(lat, lon, 45, 0.35)
+	downLeftLat, downLeftLon := geo.GetDestinationPoint(lat, lon, 225, 0.35)
 	boundingBox := datastructure.NewRtreeBoundingBox(2, []float64{downLeftLat, downLeftLon}, []float64{upRightLat, upRightLon})
 	nearbyOsmObjects := se.osmRtree.Search(boundingBox)
 
+	projectedLat, projectedLon := -1.0, -1.0
 	nearestOsmObject := -1
 	minDist := math.MaxFloat64
 	for _, osmObject := range nearbyOsmObjects {
-		distance := pointDistanceToOsmWay(osmObject.Leaf.BoundaryLatLons, lat, lon,
+		distance, currProjectedLat, currProjectedLon := pointDistanceToOsmWay(osmObject.Leaf.BoundaryLatLons, lat, lon,
 			osmObject.Leaf.Lat, osmObject.Leaf.Lon)
 		if distance < minDist {
 			minDist = distance
 			nearestOsmObject = osmObject.Leaf.ID
+			projectedLat = currProjectedLat
+			projectedLon = currProjectedLon
 		}
 	}
 
@@ -434,16 +423,26 @@ func (se *Searcher) ReverseGeocoding(lat, lon float64) (datastructure.Node, erro
 	if err != nil {
 		return datastructure.Node{}, fmt.Errorf("error when get doc: %w", err)
 	}
+	if doc.Name == "" {
+
+		doc.Name = fmt.Sprintf("%.4f,%.4f,%s", projectedLat, projectedLon, doc.Address)
+
+	}
+	doc.Lat = projectedLat
+	doc.Lon = projectedLon
+
 	return doc, nil
 }
 
 func pointDistanceToOsmWay(wayBoundary [][]float64, pointLat, pointLon float64,
-	wayCenterLat, wayCenterLon float64) float64 {
+	wayCenterLat, wayCenterLon float64) (float64, float64, float64) {
 	if len(wayBoundary) == 0 {
 		dist := datastructure.HaversineDistance(pointLat, pointLon, wayCenterLat, wayCenterLon)
-		return dist
+		return dist, -1, -1
 	}
 	minDist := math.MaxFloat64
+
+	projectedLat, projectedLon := -1.0, -1.0
 
 	for i := 0; i < len(wayBoundary); i++ {
 		j := (i + 1) % len(wayBoundary)
@@ -452,9 +451,11 @@ func pointDistanceToOsmWay(wayBoundary [][]float64, pointLat, pointLon float64,
 		distance := datastructure.HaversineDistance(pointLat, pointLon, projection.Lat, projection.Lon)
 		if distance < minDist {
 			minDist = distance
+			projectedLat = projection.Lat
+			projectedLon = projection.Lon
 		}
 	}
-	return minDist
+	return minDist, projectedLat, projectedLon
 }
 
 func (se *Searcher) NearestNeighboursRadiusWithFeatureFilter(k, offset int, lat, lon, radius float64, featureType string) ([]datastructure.Node, error) {

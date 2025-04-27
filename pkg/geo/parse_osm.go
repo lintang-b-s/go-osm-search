@@ -13,10 +13,8 @@ import (
 	"github.com/lintang-b-s/osm-search/pkg"
 	"github.com/lintang-b-s/osm-search/pkg/datastructure"
 
-	"github.com/k0kubun/go-ansi"
 	"github.com/paulmach/osm"
 	"github.com/paulmach/osm/osmpbf"
-	"github.com/schollz/progressbar/v3"
 )
 
 func ParseOSM(mapfile string, mapBoundaryFile string) ([]OSMWay, []OSMNode, NodeMapContainer, *pkg.IDMap, OSMSpatialIndex, []Boundary, error) {
@@ -32,20 +30,7 @@ func ParseOSM(mapfile string, mapBoundaryFile string) ([]OSMWay, []OSMNode, Node
 	}
 
 	ways := []OSMWay{}
-	bar := progressbar.NewOptions(5,
-		progressbar.OptionSetWriter(ansi.NewAnsiStdout()),
-		progressbar.OptionEnableColorCodes(true),
-		progressbar.OptionShowBytes(true),
-		progressbar.OptionSetWidth(15),
-		progressbar.OptionSetDescription("[cyan][1/3]Parsing osm objects..."),
-		progressbar.OptionSetTheme(progressbar.Theme{
-			Saucer:        "[green]=[reset]",
-			SaucerHead:    "[green]>[reset]",
-			SaucerPadding: " ",
-			BarStart:      "[",
-			BarEnd:        "]",
-		}))
-	bar.Add(1)
+	log.Printf("Parsing osm way objects...\n")
 
 	regionBoundaries := make([]Boundary, 0)
 
@@ -92,7 +77,7 @@ func ParseOSM(mapfile string, mapBoundaryFile string) ([]OSMWay, []OSMNode, Node
 				tag := o.(*osm.Way).TagMap()
 
 				name, _, _, _, _ := GetNameAddressTypeFromOSMWay(tag)
-				if name == "" {
+				if _, ok := tag["highway"]; !ok && name == "" {
 					continue
 				}
 
@@ -123,7 +108,6 @@ func ParseOSM(mapfile string, mapBoundaryFile string) ([]OSMWay, []OSMNode, Node
 	}
 	scannerWay.Close()
 
-	bar.Add(1)
 	_, err = fWay.Seek(0, io.SeekStart)
 	if err != nil {
 		return []OSMWay{}, []OSMNode{}, NodeMapContainer{}, &pkg.IDMap{}, OSMSpatialIndex{}, regionBoundaries, err
@@ -151,7 +135,6 @@ func ParseOSM(mapfile string, mapBoundaryFile string) ([]OSMWay, []OSMNode, Node
 		return []OSMWay{}, []OSMNode{}, NodeMapContainer{}, &pkg.IDMap{}, OSMSpatialIndex{}, regionBoundaries, err
 	}
 
-	fmt.Printf("\n")
 	log.Printf("Parsing osm way objects done\n")
 
 	// process poligon administrative boundary & rtree administrative boundary
@@ -270,8 +253,6 @@ func ParseOSM(mapfile string, mapBoundaryFile string) ([]OSMWay, []OSMNode, Node
 		StreetRtree:                 streetRtree,
 		AdministrativeBoundaryRtree: regionRtree,
 	}
-
-	bar.Add(1)
 
 	fmt.Printf("\n")
 	log.Printf("processing osm relation & way objects done \n")

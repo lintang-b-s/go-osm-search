@@ -184,7 +184,7 @@ type visitor struct {
 }
 
 const (
-	qps = 60
+	qps = 20
 )
 
 var visitors = make(map[string]*visitor)

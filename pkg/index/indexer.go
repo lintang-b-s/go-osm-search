@@ -16,8 +16,6 @@ import (
 	"github.com/lintang-b-s/osm-search/pkg/geo"
 
 	"github.com/RadhiFadlillah/go-sastrawi"
-	"github.com/k0kubun/go-ansi"
-	"github.com/schollz/progressbar/v3"
 	"github.com/vmihailenco/msgpack/v5"
 )
 
@@ -99,23 +97,7 @@ func (Idx *DynamicIndex) SpimiBatchIndex(ctx context.Context) ([]datastructure.N
 
 	osmData := make([]datastructure.OSMObject, 0, len(Idx.IndexedData.Ways)+len(Idx.IndexedData.Nodes))
 
-	fmt.Println("")
-	bar := progressbar.NewOptions(4,
-		progressbar.OptionSetWriter(ansi.NewAnsiStdout()),
-		progressbar.OptionEnableColorCodes(true),
-		progressbar.OptionShowBytes(true),
-		progressbar.OptionSetWidth(15),
-		progressbar.OptionSetDescription("[cyan][2/3]Indexing osm objects..."),
-		progressbar.OptionSetTheme(progressbar.Theme{
-			Saucer:        "[green]=[reset]",
-			SaucerHead:    "[green]>[reset]",
-			SaucerPadding: " ",
-			BarStart:      "[",
-			BarEnd:        "]",
-		}))
-	fmt.Println("")
-	bar.Add(1)
-	fmt.Println("")
+	log.Printf("indexing osm objects...\n")
 
 	block := 0
 	nodeIDX := 0
@@ -166,11 +148,12 @@ func (Idx *DynamicIndex) SpimiBatchIndex(ctx context.Context) ([]datastructure.N
 
 			name, street, tipe, postalCode, houseNumber := geo.GetNameAddressTypeFromOSMWay(way.TagMap)
 
-			if name == "" {
+			isHighway := way.TagMap["highway"]
+			if name == "" && isHighway == "" {
 				continue
 			}
 
-			if IsWayDuplicateCheck(strings.ToLower(name), lat, lon, nodeBoundingBox, lock) {
+			if isWayDuplicateCheck(strings.ToLower(name), lat, lon, nodeBoundingBox, lock) {
 				// cek duplikat kalo sebelumnya ada way dengan nama sama dan posisi sama dengan way ini.
 				continue
 			}
@@ -178,10 +161,6 @@ func (Idx *DynamicIndex) SpimiBatchIndex(ctx context.Context) ([]datastructure.N
 			address, city := Idx.GetFullAdress(street, postalCode, houseNumber, centerLat, centerLon)
 
 			lock.Lock()
-			if _, ok := nodeBoundingBox[strings.ToLower(name)]; ok {
-				lock.Unlock()
-				continue
-			}
 
 			nodeBoundingBox[strings.ToLower(name)] = geo.NewBoundingBox(lat, lon)
 
@@ -335,7 +314,7 @@ func (Idx *DynamicIndex) SpimiBatchIndex(ctx context.Context) ([]datastructure.N
 				continue
 			}
 
-			if IsNodeDuplicateCheck(strings.ToLower(name), node.Lat, node.Lon, nodeBoundingBox, lock) {
+			if isNodeDuplicateCheck(strings.ToLower(name), node.Lat, node.Lon, nodeBoundingBox, lock) {
 				// cek duplikat kalo sebelumnya ada way dengan nama sama dan posisi sama dengan node ini. gak usah set bounding box buat node.
 				continue
 			}
@@ -343,11 +322,6 @@ func (Idx *DynamicIndex) SpimiBatchIndex(ctx context.Context) ([]datastructure.N
 			address, city := Idx.GetFullAdress(street, postalCode, houseNumber, node.Lat, node.Lon)
 
 			lock.Lock()
-
-			if _, ok := nodeBoundingBox[strings.ToLower(name)]; ok {
-				lock.Unlock()
-				continue
-			}
 
 			searchNodes = append(searchNodes, datastructure.NewNode(nodeIDX, name, node.Lat,
 				node.Lon, address, tipe, city, node.ContainWikiData))
@@ -504,11 +478,10 @@ func (Idx *DynamicIndex) SpimiBatchIndex(ctx context.Context) ([]datastructure.N
 		// kalau error -> return err , cancel context, wg.Wait() unblock & close errChan
 		// kalau error == nil semua -> wg.Wait() unblock & close errChan. keluar dari loop ini.
 		if err != nil {
-			bar.Add(3)
+
 			fmt.Println("")
 			return nil, err
 		}
-		bar.Add(1)
 		fmt.Println("")
 	}
 
@@ -601,15 +574,16 @@ func (Idx *DynamicIndex) SpimiBatchIndex(ctx context.Context) ([]datastructure.N
 
 	log.Printf("merging address field inverted index done \n")
 
-	bar.Add(1)
-	fmt.Println("")
 
 	log.Printf("indexing osm objects done.\n")
 	return allSearchNodes, nil
 }
 
-func IsWayDuplicateCheck(name string, lats, lons []float64, nodeBoundingBox map[string]geo.BoundingBox,
+func isWayDuplicateCheck(name string, lats, lons []float64, nodeBoundingBox map[string]geo.BoundingBox,
 	lock *sync.RWMutex) bool {
+	if name == "" {
+		return false
+	}
 	lock.Lock()
 	prevBB, ok := nodeBoundingBox[name]
 
@@ -630,8 +604,9 @@ func IsWayDuplicateCheck(name string, lats, lons []float64, nodeBoundingBox map[
 	return contain || inverseContain
 }
 
-func IsNodeDuplicateCheck(name string, lats, lon float64, nodeBoundingBox map[string]geo.BoundingBox,
+func isNodeDuplicateCheck(name string, lats, lon float64, nodeBoundingBox map[string]geo.BoundingBox,
 	lock *sync.RWMutex) bool {
+
 	lock.Lock()
 	defer lock.Unlock()
 	prevBB, ok := nodeBoundingBox[name]
@@ -844,22 +819,8 @@ func (Idx *DynamicIndex) SpimiParseOSMNodes(nodes []datastructure.Node, lock *sy
 
 func (Idx *DynamicIndex) BuildSpellCorrectorAndNgram(ctx context.Context, allSearchNodes []datastructure.Node, osmSpatialIdx geo.OSMSpatialIndex,
 	regionsBoundary []geo.Boundary) error {
-	fmt.Println("")
-	bar := progressbar.NewOptions(5,
-		progressbar.OptionSetWriter(ansi.NewAnsiStdout()),
-		progressbar.OptionEnableColorCodes(true),
-		progressbar.OptionShowBytes(true),
-		progressbar.OptionSetWidth(15),
-		progressbar.OptionSetDescription("[cyan][3/3]Building Ngram..."),
-		progressbar.OptionSetTheme(progressbar.Theme{
-			Saucer:        "[green]=[reset]",
-			SaucerHead:    "[green]>[reset]",
-			SaucerPadding: " ",
-			BarStart:      "[",
-			BarEnd:        "]",
-		}))
-	fmt.Println("")
-	bar.Add(1)
+
+	log.Printf("building ngram index...\n")
 
 	Idx.docsCount = len(allSearchNodes)
 	log.Printf("building ngram (1/2): tokenizing all osm objects name+address field...\n")
@@ -877,13 +838,10 @@ func (Idx *DynamicIndex) BuildSpellCorrectorAndNgram(ctx context.Context, allSea
 	}
 	log.Printf("building ngram (1/2): tokeninzing all osm objects name+address field done \n")
 
-	bar.Add(1)
-
 	log.Printf("building ngram (2/2): building ngram index...\n")
 	Idx.spellCorrectorBuilder.Preprocessdata(tokenizedDocs)
 	log.Printf("building ngram (2/2): building ngram index done\n")
-	bar.Add(1)
-	fmt.Println("")
+
 	return nil
 }
 

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/gob"
 	"fmt"
+	"log"
 	"math"
 	"os"
 )
@@ -1017,7 +1018,10 @@ func (rt *Rtree) Deserialize(workingDir string, outputDir string) error {
 		return err
 	}
 
-	for _, item := range items {
+	for i, item := range items {
+		if (i+1)%100000 == 0 {
+			log.Printf("inserted %d rtree items \n", i+1)
+		}
 
 		rt.InsertLeaf(item.GetBound(), item, false)
 	}
